@@ -375,6 +375,9 @@ fn construct_playback_text(
                         _ => {}
                     }
                 }
+                if !ui.mouse_capture {
+                    parts.push("mouse: off (select text)".to_string());
+                }
 
                 let metadata_str = parts.join(" | ");
                 (metadata_str, ui.theme.playback_metadata())

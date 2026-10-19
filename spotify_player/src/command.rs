@@ -90,6 +90,7 @@ pub enum Command {
 
     CreatePlaylist,
     OpenLogs,
+    ToggleMouseCapture,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -380,6 +381,9 @@ impl Command {
             Self::CreatePlaylist => "create a new playlist",
             Self::VolumeChange { offset: _ } => unreachable!(),
             Self::OpenLogs => "go to the application logs page",
+            Self::ToggleMouseCapture => {
+                "toggle mouse capture (off: the terminal can select text again)"
+            }
         }
         .to_string()
     }

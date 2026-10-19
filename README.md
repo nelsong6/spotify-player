@@ -489,6 +489,7 @@ List of supported commands:
 | `OpenCommandHelp`               | go to the command help page                                                                        | `?`, `C-h`         |
 | `PreviousPage`                  | go to the previous page                                                                            | `backspace`, `C-q` |
 | `OpenLogs`                      | go the the application logs page                                                                   | `g o`              |
+| `ToggleMouseCapture`            | toggle mouse capture (off: the terminal can select text again)                                     | `M`                |
 | `OpenSpotifyLinkFromClipboard`  | open a Spotify link from clipboard                                                                 | `O`                |
 | `SortTrackByTitle`              | sort the track table (if any) by track's title                                                     | `s t`              |
 | `SortTrackByArtists`            | sort the track table (if any) by track's artists                                                   | `s a`              |

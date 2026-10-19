@@ -41,6 +41,9 @@ impl std::fmt::Debug for ImageRenderInfo {
 #[derive(Debug)]
 pub struct UIState {
     pub is_running: bool,
+    /// Whether the app takes mouse events. When off, the terminal handles the mouse, so text
+    /// can be selected and copied.
+    pub mouse_capture: bool,
     pub theme: config::Theme,
     pub input_key_sequence: key::KeySequence,
     pub orientation: ui::Orientation,
@@ -113,6 +116,7 @@ impl Default for UIState {
     fn default() -> Self {
         Self {
             is_running: true,
+            mouse_capture: true,
             theme: Theme::default(),
             input_key_sequence: key::KeySequence { keys: vec![] },
             orientation: match crossterm::terminal::size() {

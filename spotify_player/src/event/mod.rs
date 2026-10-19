@@ -648,6 +648,10 @@ fn handle_global_command(
         Command::OpenLogs => {
             ui.new_page(PageState::Logs { scroll_offset: 0 });
         }
+        Command::ToggleMouseCapture => {
+            // applied to the terminal by the UI loop, which owns the terminal's output
+            ui.mouse_capture = !ui.mouse_capture;
+        }
         Command::RefreshPlayback => {
             client_pub.send(ClientRequest::GetCurrentPlayback)?;
         }

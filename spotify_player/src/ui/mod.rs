@@ -40,6 +40,7 @@ pub fn run(state: &SharedState, mut terminal: Terminal) -> Result<()> {
         config::get_config().app_config.app_refresh_duration_in_ms,
     );
     let mut last_terminal_size = None;
+    let mut mouse_captured = true;
 
     loop {
         {
@@ -47,6 +48,21 @@ pub fn run(state: &SharedState, mut terminal: Terminal) -> Result<()> {
             if !ui.is_running {
                 clean_up(terminal).context("clean up UI resources")?;
                 std::process::exit(0);
+            }
+
+            if ui.mouse_capture != mouse_captured {
+                mouse_captured = ui.mouse_capture;
+                if mouse_captured {
+                    crossterm::execute!(
+                        terminal.backend_mut(),
+                        crossterm::event::EnableMouseCapture
+                    )?;
+                } else {
+                    crossterm::execute!(
+                        terminal.backend_mut(),
+                        crossterm::event::DisableMouseCapture
+                    )?;
+                }
             }
 
             let terminal_size = terminal.size()?;
