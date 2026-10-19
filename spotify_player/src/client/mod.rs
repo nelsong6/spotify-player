@@ -2130,7 +2130,20 @@ pub fn show_radio_page(state: &SharedState, seed_uri: &str, seed_name: &str, tra
 }
 
 fn move_seed_track_to_front(tracks: &mut Vec<Track>, seed_track: Track) {
-    tracks.retain(|track| track.id != seed_track.id);
+    // The radio can include the seed as another release of the same song (same title and
+    // artists, different track ID), so match on those too.
+    let artist_ids = |track: &Track| {
+        track
+            .artists
+            .iter()
+            .map(|a| a.id.clone())
+            .collect::<Vec<_>>()
+    };
+    let seed_artist_ids = artist_ids(&seed_track);
+    tracks.retain(|track| {
+        track.id != seed_track.id
+            && !(track.name == seed_track.name && artist_ids(track) == seed_artist_ids)
+    });
     tracks.insert(0, seed_track);
 }
 
@@ -2171,6 +2184,20 @@ mod tests {
         let seed = sample_track("3n3Ppam7vgaVa1iaRUc9Lp", "seed");
         let second = sample_track("4uLU6hMCjMI75M1A2tKUQC", "second");
         let mut tracks = vec![second.clone(), seed.clone()];
+
+        move_seed_track_to_front(&mut tracks, seed.clone());
+
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[0].id, seed.id);
+        assert_eq!(tracks[1].id, second.id);
+    }
+
+    #[test]
+    fn move_seed_track_to_front_drops_other_release_of_seed() {
+        let seed = sample_track("3n3Ppam7vgaVa1iaRUc9Lp", "seed");
+        let other_release = sample_track("1301WleyT98MSxVHPZCA6M", "seed");
+        let second = sample_track("4uLU6hMCjMI75M1A2tKUQC", "second");
+        let mut tracks = vec![other_release, second.clone()];
 
         move_seed_track_to_front(&mut tracks, seed.clone());
 
