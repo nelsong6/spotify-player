@@ -874,7 +874,7 @@ pub fn render_queue_page(
                     Cell::from(format!("{}", i + 1)),
                     Cell::from(get_playable_name(x)),
                     Cell::from(get_playable_artists(x)),
-                    Cell::from(get_playable_duration(x)),
+                    Cell::from(Text::from(get_playable_duration(x)).alignment(Alignment::Right)),
                 ])
             })
             .collect::<Vec<_>>(),
@@ -890,7 +890,7 @@ pub fn render_queue_page(
             Cell::from("#"),
             Cell::from("Title"),
             Cell::from("Artists"),
-            Cell::from("Duration"),
+            Cell::from(Text::from("Duration").alignment(Alignment::Right)),
         ])
         .style(ui.theme.table_header()),
     );
@@ -1145,11 +1145,7 @@ fn render_track_table(
                 } else {
                     Cell::from("")
                 },
-                Cell::from(format!(
-                    "{}:{:02}",
-                    t.duration.as_secs() / 60,
-                    t.duration.as_secs() % 60,
-                )),
+                duration_cell(t.duration.as_secs()),
             ])
             .style(style)
         })
@@ -1194,7 +1190,7 @@ fn render_track_table(
             } else {
                 Cell::from("")
             },
-            Cell::from("Duration"),
+            Cell::from(Text::from("Duration").alignment(Alignment::Right)),
         ])
         .style(ui.theme.table_header()),
     )
@@ -1282,11 +1278,7 @@ fn render_episode_table(
                 Cell::from(id_str),
                 Cell::from(to_bidi_string(&e.name)),
                 Cell::from(e.release_date.clone()),
-                Cell::from(format!(
-                    "{}:{:02}",
-                    e.duration.as_secs() / 60,
-                    e.duration.as_secs() % 60,
-                )),
+                duration_cell(e.duration.as_secs()),
             ])
             .style(style)
         })
@@ -1305,7 +1297,7 @@ fn render_episode_table(
             Cell::from("#"),
             Cell::from("Title"),
             Cell::from("Date"),
-            Cell::from("Duration"),
+            Cell::from(Text::from("Duration").alignment(Alignment::Right)),
         ])
         .style(ui.theme.table_header()),
     )
@@ -1355,4 +1347,9 @@ pub fn render_logs_page(frame: &mut Frame, state: &SharedState, ui: &mut UIState
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, rect);
+}
+
+/// A right-aligned `m:ss` duration cell, so the colons line up down the column
+fn duration_cell(secs: u64) -> Cell<'static> {
+    Cell::from(Text::from(format!("{}:{:02}", secs / 60, secs % 60)).alignment(Alignment::Right))
 }
