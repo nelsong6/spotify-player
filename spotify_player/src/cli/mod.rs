@@ -108,7 +108,9 @@ pub enum Command {
         limit: usize,
         random: bool,
     },
-    StartRadio(ItemType, IdOrName),
+    /// Item to seed the radio with, and whether to seed it with a random song from that
+    /// playlist instead
+    StartRadio(ItemType, IdOrName, bool),
     PlayPause,
     Play,
     Pause,
@@ -132,6 +134,7 @@ pub enum Request {
     Playlist(PlaylistCommand),
     Search { query: String },
     Lyrics { id_or_name: Option<IdOrName> },
+    Quit,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -179,6 +182,7 @@ pub fn init_cli() -> anyhow::Result<clap::Command> {
         .subcommand(commands::init_search_command())
         .subcommand(commands::init_print_features_command())
         .subcommand(commands::init_lyrics_command())
+        .subcommand(commands::init_quit_command())
         .arg(
             clap::Arg::new("theme")
                 .short('t')

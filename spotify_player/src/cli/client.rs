@@ -13,11 +13,11 @@ use tracing::Instrument;
 
 use crate::{
     cli::Request,
-    client::{AppClient, PlayerRequest},
+    client::{show_radio_page, AppClient, PlayerRequest},
     config::{self, get_cache_folder_path},
     state::{
-        AlbumId, ArtistId, Context, ContextId, ContextPageType, Id, PageState, PlayableId,
-        Playback, PlaybackMetadata, PlaylistId, SharedState, TrackId, TracksId, TTL_CACHE_DURATION,
+        AlbumId, ArtistId, Context, ContextId, Id, PlayableId, Playback, PlaybackMetadata,
+        PlaylistId, SharedState, TrackId,
     },
 };
 use rspotify::{
@@ -195,6 +195,14 @@ async fn handle_socket_request(
             Ok(resp)
         }
         Request::Lyrics { id_or_name } => handle_lyrics_request(client, state, id_or_name).await,
+        Request::Quit => {
+            // Let the UI loop exit on its next tick, which restores the terminal first.
+            match state {
+                Some(state) => state.ui.lock().is_running = false,
+                None => std::process::exit(0),
+            }
+            Ok(Vec::new())
+        }
     }
 }
 
@@ -372,29 +380,27 @@ async fn handle_playback_request(
     };
 
     let player_request = match command {
-        Command::StartRadio(item_type, id_or_name) => {
+        Command::StartRadio(item_type, id_or_name, random_song) => {
             let sid = get_spotify_id(client, item_type, id_or_name).await?;
-            let tracks = client.radio_tracks(sid.uri()).await?;
 
-            // Open the radio's page in the running app, the same page the "go to radio" action
-            // shows, filled with the tracks that are about to play.
+            // With `--random-song`, seed the radio with a random song from the playlist instead
+            // of the playlist itself.
+            let (seed_uri, seed_name) = match (random_song, &sid) {
+                (true, ItemId::Playlist(id)) => {
+                    let track = client.random_playlist_track(state, id.clone()).await?;
+                    (track.id.uri(), Some(track.name))
+                }
+                (true, _) => anyhow::bail!("--random-song needs a playlist"),
+                (false, _) => (sid.uri(), None),
+            };
+            let tracks = client.radio_tracks(seed_uri.clone()).await?;
+
             if let Some(state) = state {
-                let seed_name = radio_seed_name(client, &sid).await;
-                let radio_id =
-                    TracksId::new(format!("radio:{}", sid.uri()), format!("{seed_name} Radio"));
-                state.data.write().caches.context.insert(
-                    radio_id.uri.clone(),
-                    Context::Tracks {
-                        tracks: tracks.clone(),
-                        desc: radio_id.kind.clone(),
-                    },
-                    *TTL_CACHE_DURATION,
-                );
-                state.ui.lock().new_page(PageState::Context {
-                    id: None,
-                    context_page_type: ContextPageType::Browsing(ContextId::Tracks(radio_id)),
-                    state: None,
-                });
+                let seed_name = match seed_name {
+                    Some(name) => name,
+                    None => radio_seed_name(client, &sid).await,
+                };
+                show_radio_page(state, &seed_uri, &seed_name, tracks.clone());
             }
 
             PlayerRequest::StartPlayback(

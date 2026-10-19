@@ -8,10 +8,10 @@ use crate::{
     auth::AuthConfig,
     state::{
         store_data_into_file_cache, Album, AlbumId, Artist, ArtistId, Category, Context, ContextId,
-        Device, FileCacheKey, Item, ItemId, MemoryCaches, Playback, PlaybackMetadata, Playlist,
-        PlaylistFolderItem, PlaylistId, SearchResults, SharedState, Show, ShowId, Track, TrackId,
-        UserId, TTL_CACHE_DURATION, USER_LIKED_TRACKS_URI, USER_RECENTLY_PLAYED_TRACKS_URI,
-        USER_TOP_TRACKS_URI,
+        ContextPageType, Device, FileCacheKey, Item, ItemId, MemoryCaches, PageState, Playback,
+        PlaybackMetadata, Playlist, PlaylistFolderItem, PlaylistId, SearchResults, SharedState,
+        Show, ShowId, Track, TrackId, TracksId, UserId, TTL_CACHE_DURATION, USER_LIKED_TRACKS_URI,
+        USER_RECENTLY_PLAYED_TRACKS_URI, USER_TOP_TRACKS_URI,
     },
 };
 
@@ -23,6 +23,7 @@ use anyhow::Result;
 use librespot_core::SpotifyUri;
 #[cfg(feature = "streaming")]
 use parking_lot::Mutex;
+use rand::seq::IndexedRandom as _;
 
 use rspotify::model::LibraryId;
 use rspotify::{http::Query, prelude::*};
@@ -582,6 +583,9 @@ impl AppClient {
                 .context("store user's saved shows into the cache folder")?;
                 state.data.write().user_data.saved_shows = shows;
             }
+            ClientRequest::StartRandomTrackRadio(playlist_id) => {
+                self.start_random_track_radio(state, playlist_id).await?;
+            }
             ClientRequest::GetContext(context) => {
                 let uri = context.uri();
                 // Liked tracks must always be refreshed to keep user_data.saved_tracks in sync.
@@ -1054,6 +1058,56 @@ impl AppClient {
             }
         }
 
+        Ok(())
+    }
+
+    /// Pick a random track from a playlist, using the app's cached copy of the playlist when it
+    /// has one.
+    pub async fn random_playlist_track(
+        &self,
+        state: Option<&SharedState>,
+        playlist_id: PlaylistId<'static>,
+    ) -> Result<Track> {
+        let uri = playlist_id.uri();
+        let cached = state.and_then(|state| match state.data.read().caches.context.get(&uri) {
+            Some(Context::Playlist { tracks, .. }) => Some(tracks.clone()),
+            _ => None,
+        });
+        let tracks = match cached {
+            Some(tracks) => tracks,
+            None => match self.playlist_context(playlist_id).await? {
+                Context::Playlist { tracks, .. } => tracks,
+                _ => unreachable!("playlist_context returns a playlist context"),
+            },
+        };
+        tracks
+            .choose(&mut rand::rng())
+            .cloned()
+            .context(format!("playlist {uri} has no tracks"))
+    }
+
+    /// Start a radio seeded by a random track from a playlist: open the radio's page in the app
+    /// and play it.
+    pub async fn start_random_track_radio(
+        &self,
+        state: &SharedState,
+        playlist_id: PlaylistId<'static>,
+    ) -> Result<()> {
+        let seed = self.random_playlist_track(Some(state), playlist_id).await?;
+        let tracks = self.radio_tracks(seed.id.uri()).await?;
+        show_radio_page(state, &seed.id.uri(), &seed.name, tracks.clone());
+
+        let playback = state.player.read().buffered_playback.clone();
+        let playback = self
+            .handle_player_request(
+                PlayerRequest::StartPlayback(
+                    Playback::URIs(tracks.into_iter().map(|t| t.id.into()).collect(), None),
+                    None,
+                ),
+                playback,
+            )
+            .await?;
+        state.player.write().buffered_playback = playback;
         Ok(())
     }
 
@@ -2054,6 +2108,25 @@ impl AppClient {
 
         albums
     }
+}
+
+/// Open a radio's page in the app, the same page the "go to radio" action shows, filled with
+/// `tracks` so the page lists what is about to play instead of fetching a new radio.
+pub fn show_radio_page(state: &SharedState, seed_uri: &str, seed_name: &str, tracks: Vec<Track>) {
+    let radio_id = TracksId::new(format!("radio:{seed_uri}"), format!("{seed_name} Radio"));
+    state.data.write().caches.context.insert(
+        radio_id.uri.clone(),
+        Context::Tracks {
+            tracks,
+            desc: radio_id.kind.clone(),
+        },
+        *TTL_CACHE_DURATION,
+    );
+    state.ui.lock().new_page(PageState::Context {
+        id: None,
+        context_page_type: ContextPageType::Browsing(ContextId::Tracks(radio_id)),
+        state: None,
+    });
 }
 
 fn move_seed_track_to_front(tracks: &mut Vec<Track>, seed_track: Track) {

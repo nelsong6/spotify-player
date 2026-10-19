@@ -76,8 +76,19 @@ fn init_playback_start_subcommand() -> Command {
         .subcommand(add_id_or_name_group(
             Command::new("radio")
                 .about("Start a radio playback")
-                .arg(Arg::new("item_type").value_parser(EnumValueParser::<ItemType>::new())),
+                .arg(Arg::new("item_type").value_parser(EnumValueParser::<ItemType>::new()))
+                .arg(
+                    Arg::new("random-song")
+                        .short('r')
+                        .long("random-song")
+                        .action(ArgAction::SetTrue)
+                        .help("Seed the radio with a random song from the playlist"),
+                ),
         ))
+}
+
+pub fn init_quit_command() -> Command {
+    Command::new("quit").about("Quit the running application")
 }
 
 fn add_id_or_name_group(cmd: Command) -> Command {

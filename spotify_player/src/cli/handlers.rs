@@ -104,7 +104,8 @@ fn handle_playback_subcommand(args: &ArgMatches) -> Result<Request> {
                     .expect("item_type is required")
                     .to_owned();
                 let id_or_name = get_id_or_name(args);
-                Command::StartRadio(item_type, id_or_name)
+                let random_song = args.get_flag("random-song");
+                Command::StartRadio(item_type, id_or_name, random_song)
             }
             _ => {
                 anyhow::bail!("invalid command!");
@@ -224,6 +225,7 @@ pub fn handle_cli_subcommand(cmd: &str, args: &ArgMatches) -> Result<()> {
         "like" => Request::Like {
             unlike: args.get_flag("unlike"),
         },
+        "quit" => Request::Quit,
         "search" => Request::Search {
             query: args
                 .get_one::<String>("query")

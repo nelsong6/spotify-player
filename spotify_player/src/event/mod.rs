@@ -375,6 +375,11 @@ pub fn handle_action_in_context(
                 handle_go_to_radio(&playlist.id.uri(), &playlist.name, ui, client_pub)?;
                 Ok(true)
             }
+            Action::GoToRandomSongRadio => {
+                client_pub.send(ClientRequest::StartRandomTrackRadio(playlist.id))?;
+                ui.popup = None;
+                Ok(true)
+            }
             Action::CopyLink => {
                 let playlist_url =
                     format!("https://open.spotify.com/playlist/{}", playlist.id.id());

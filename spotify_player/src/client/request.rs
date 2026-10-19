@@ -31,6 +31,8 @@ pub enum ClientRequest {
     GetUserSavedShows,
     GetUserFollowedArtists,
     GetContext(ContextId),
+    /// Start a radio seeded by a random track from a playlist
+    StartRandomTrackRadio(PlaylistId<'static>),
     GetCurrentPlayback,
     Search(String),
     AddPlayableToQueue(PlayableId<'static>),
