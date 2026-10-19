@@ -282,6 +282,8 @@ impl ContextPageType {
                 ContextId::Playlist(_) => String::from("Playlist"),
                 ContextId::Album(_) => String::from("Album"),
                 ContextId::Artist(_) => String::from("Artist"),
+                // the radio's name is already on the description line below the title
+                ContextId::Tracks(id) if id.uri.starts_with("radio:") => String::from("Radio"),
                 ContextId::Tracks(id) => id.kind.clone(),
                 ContextId::Show(_) => String::from("Show"),
             },
