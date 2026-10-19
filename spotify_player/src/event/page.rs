@@ -572,9 +572,20 @@ fn handle_command_for_command_help_page(command: Command, ui: &mut UIStateGuard)
         PageState::CommandHelp { scroll_offset } => *scroll_offset,
         _ => return false,
     };
-    if command == Command::Search {
-        ui.new_search_popup();
-        return true;
+    match command {
+        Command::Search => {
+            ui.new_search_popup();
+            return true;
+        }
+        // `esc` (with no popup open) and the help key again close the help page, as in
+        // lazygit and k9s
+        Command::ClosePopup | Command::OpenCommandHelp => {
+            if ui.history.len() > 1 {
+                ui.history.pop();
+            }
+            return true;
+        }
+        _ => {}
     }
     let count = ui.count_prefix;
     handle_navigation_command(command, ui.current_page_mut(), scroll_offset, 10000, count)

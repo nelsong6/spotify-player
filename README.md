@@ -431,7 +431,7 @@ spotify_player playback start track --id $(spotify_player search "$query" | jq '
 
 ## Commands
 
-Press `?` or `C-h` to open the shortcut help page (default for `OpenCommandHelp`).
+Press `?` or `C-h` to open the shortcut help page (default for `OpenCommandHelp`). Press `esc`, `?` or `backspace` to close it.
 
 **Tips**:
 
