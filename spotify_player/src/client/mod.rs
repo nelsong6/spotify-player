@@ -1106,15 +1106,23 @@ impl AppClient {
             .into_iter()
             .filter_map(|t| TrackId::from_id(t.original_gid).ok());
 
-        // Retrieve tracks based on IDs
-        #[allow(deprecated)]
-        let tracks = self
-            .tracks(track_ids, Some(rspotify::model::Market::FromToken))
-            .await?;
-        let mut tracks: Vec<_> = tracks
-            .into_iter()
-            .filter_map(Track::try_from_full_track)
-            .collect();
+        // Retrieve tracks based on IDs, one request per track. Development-mode apps get
+        // 403 from the batch `GET /tracks?ids=` endpoint, while `GET /tracks/{id}` still works.
+        // Results keep the radio's order; tracks that fail to load are skipped.
+        let track_ids: Vec<_> = track_ids.collect();
+        let mut tracks = Vec::with_capacity(track_ids.len());
+        for chunk in track_ids.chunks(5) {
+            let results =
+                futures::future::join_all(chunk.iter().map(|id| self.track(id.clone()))).await;
+            for (id, result) in chunk.iter().zip(results) {
+                match result {
+                    Ok(track) => tracks.push(track),
+                    Err(err) => {
+                        tracing::warn!("Failed to fetch radio track {}: {err:#}", id.uri());
+                    }
+                }
+            }
+        }
 
         // Track-seeded radios in the official Spotify clients include the seed track itself
         // as the first item in the generated session.
