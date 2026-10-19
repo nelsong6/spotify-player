@@ -1100,6 +1100,16 @@ impl AppClient {
             );
         }
 
+        if let Ok(station) = serde_json::from_slice::<serde_json::Value>(&response.payload[0]) {
+            let mut summary = station.clone();
+            if let Some(obj) = summary.as_object_mut() {
+                obj.remove("tracks");
+            }
+            tracing::info!(
+                "Radio station for {seed_uri}: autoplay_uri={autoplay_uri} station={summary}"
+            );
+        }
+
         // Parse a list consisting of IDs of tracks inside the radio station
         let track_ids = serde_json::from_slice::<RadioStationResponse>(&response.payload[0])?
             .tracks
