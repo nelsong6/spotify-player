@@ -33,7 +33,11 @@ pub struct ActionMap {
 impl Default for KeymapConfig {
     fn default() -> Self {
         KeymapConfig {
-            actions: vec![],
+            actions: vec![ActionMap {
+                key_sequence: "g R".into(),
+                target: ActionTarget::SelectedItem,
+                action: Action::GoToRandomSongRadio,
+            }],
             keymaps: vec![
                 Keymap {
                     key_sequence: "n".into(),

@@ -497,6 +497,10 @@ async fn handle_playback_request(
         }
     };
 
+    if let (Some(state), PlayerRequest::StartPlayback(started, _)) = (state, &player_request) {
+        state.session.lock().record_start(started);
+    }
+
     if let Some(state) = state {
         // A non-null application's state indicates there is a running application instance.
         // To reduce the latency of the CLI command, the player request is handled asynchronously

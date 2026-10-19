@@ -7,11 +7,11 @@ use crate::{auth, config};
 use crate::{
     auth::AuthConfig,
     state::{
-        store_data_into_file_cache, Album, AlbumId, Artist, ArtistId, Category, Context, ContextId,
-        ContextPageType, Device, FileCacheKey, Item, ItemId, MemoryCaches, PageState, Playback,
-        PlaybackMetadata, Playlist, PlaylistFolderItem, PlaylistId, SearchResults, SharedState,
-        Show, ShowId, Track, TrackId, TracksId, UserId, TTL_CACHE_DURATION, USER_LIKED_TRACKS_URI,
-        USER_RECENTLY_PLAYED_TRACKS_URI, USER_TOP_TRACKS_URI,
+        session, store_data_into_file_cache, Album, AlbumId, Artist, ArtistId, Category, Context,
+        ContextId, ContextPageType, Device, FileCacheKey, Item, ItemId, MemoryCaches, PageState,
+        Playback, PlaybackMetadata, Playlist, PlaylistFolderItem, PlaylistId, SearchResults,
+        SharedState, Show, ShowId, Track, TrackId, TracksId, UserId, TTL_CACHE_DURATION,
+        USER_LIKED_TRACKS_URI, USER_RECENTLY_PLAYED_TRACKS_URI, USER_TOP_TRACKS_URI,
     },
 };
 
@@ -233,6 +233,15 @@ impl AppClient {
                             tracing::warn!(%device_id, "Connection failed: {err:#}");
                         } else {
                             tracing::info!(%device_id, "Connection succeeded!");
+                            if !resume {
+                                if let Err(err) =
+                                    client.restore_session(&state, device_id.as_ref()).await
+                                {
+                                    tracing::warn!(
+                                        "Failed to restore the previous session: {err:#}"
+                                    );
+                                }
+                            }
                             if resume {
                                 if let Err(err) =
                                     client.resume_playback(Some(device_id.as_ref()), None).await
@@ -511,7 +520,14 @@ impl AppClient {
             }
             ClientRequest::Player(request) => {
                 let playback = state.player.read().buffered_playback.clone();
+                let started = match &request {
+                    PlayerRequest::StartPlayback(p, _) => Some(p.clone()),
+                    _ => None,
+                };
                 let playback = self.handle_player_request(request, playback).await?;
+                if let Some(started) = started {
+                    state.session.lock().record_start(&started);
+                }
                 state.player.write().buffered_playback = playback;
                 self.update_playback_non_blocking(state);
             }
@@ -1097,17 +1113,76 @@ impl AppClient {
         let tracks = self.radio_tracks(seed.id.uri()).await?;
         show_radio_page(state, &seed.id.uri(), &seed.name, tracks.clone());
 
+        let started = Playback::URIs(tracks.into_iter().map(|t| t.id.into()).collect(), None);
         let playback = state.player.read().buffered_playback.clone();
         let playback = self
             .handle_player_request(
-                PlayerRequest::StartPlayback(
-                    Playback::URIs(tracks.into_iter().map(|t| t.id.into()).collect(), None),
-                    None,
-                ),
+                PlayerRequest::StartPlayback(started.clone(), None),
                 playback,
             )
             .await?;
         state.player.write().buffered_playback = playback;
+        state.session.lock().record_start(&started);
+        Ok(())
+    }
+
+    /// Load the playback saved by the previous run onto `device_id`, paused at the saved
+    /// position, and reopen its radio page if it was a radio.
+    async fn restore_session(&self, state: &SharedState, device_id: &str) -> Result<()> {
+        // only on the first connection after startup, not when the session reconnects
+        static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if RESTORED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return Ok(());
+        }
+        let Some(saved) = session::load() else {
+            return Ok(());
+        };
+        tracing::info!(
+            "Restoring the previous session: context={:?}, {} tracks, at {:?} {}ms",
+            saved.context_uri,
+            saved.uris.len(),
+            saved.current_uri,
+            saved.progress_ms
+        );
+
+        let position = Some(chrono::Duration::milliseconds(saved.progress_ms));
+        if let Some(uri) = &saved.context_uri {
+            let context = match uri.split(':').nth(1) {
+                Some("playlist") => PlayContextId::from(PlaylistId::from_uri(uri)?),
+                Some("album") => PlayContextId::from(AlbumId::from_uri(uri)?),
+                Some("artist") => PlayContextId::from(ArtistId::from_uri(uri)?),
+                Some("show") => PlayContextId::from(ShowId::from_uri(uri)?),
+                _ => anyhow::bail!("cannot restore a playback of {uri}"),
+            };
+            let offset = saved.current_uri.clone().map(rspotify::model::Offset::Uri);
+            self.start_context_playback(context, Some(device_id), offset, position)
+                .await?;
+        } else {
+            let ids = saved
+                .uris
+                .iter()
+                .filter_map(|uri| TrackId::from_uri(uri).ok())
+                .map(|id| PlayableId::Track(id.into_static()))
+                .collect::<Vec<_>>();
+            // start from the saved item only if it belongs to the saved tracks
+            let (offset, position) = match &saved.current_uri {
+                Some(uri) if saved.uris.contains(uri) => {
+                    (Some(rspotify::model::Offset::Uri(uri.clone())), position)
+                }
+                _ => (None, None),
+            };
+            self.start_uris_playback(ids, Some(device_id), offset, position)
+                .await?;
+        }
+        self.pause_playback(Some(device_id)).await?;
+
+        if let Some(radio) = &saved.radio {
+            if let Some(seed_uri) = radio.uri.strip_prefix("radio:") {
+                let seed_name = radio.kind.strip_suffix(" Radio").unwrap_or(&radio.kind);
+                show_radio_page(state, seed_uri, seed_name, radio.tracks.clone());
+            }
+        }
+        state.session.lock().session = saved;
         Ok(())
     }
 
@@ -2114,6 +2189,10 @@ impl AppClient {
 /// `tracks` so the page lists what is about to play instead of fetching a new radio.
 pub fn show_radio_page(state: &SharedState, seed_uri: &str, seed_name: &str, tracks: Vec<Track>) {
     let radio_id = TracksId::new(format!("radio:{seed_uri}"), format!("{seed_name} Radio"));
+    state
+        .session
+        .lock()
+        .record_radio(radio_id.uri.clone(), radio_id.kind.clone(), tracks.clone());
     state.data.write().caches.context.insert(
         radio_id.uri.clone(),
         Context::Tracks {

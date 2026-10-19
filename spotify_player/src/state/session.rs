@@ -1,0 +1,132 @@
+//! The last playback session, saved to the cache folder so that restarting the app picks up
+//! where it left off: the same tracks (or context), the same track, the same position, and the
+//! radio page if the playback was a radio.
+
+use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
+
+use super::{Id as _, Playback, PlayerState, Track};
+use crate::config;
+
+const SESSION_FILE: &str = "last_session.json";
+/// How often the playing position is written to disk while playing.
+const SAVE_INTERVAL: Duration = Duration::from_secs(10);
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct SavedSession {
+    /// URI of the playlist, album, artist or show the playback started from, if any
+    pub context_uri: Option<String>,
+    /// URIs of the tracks the playback started from, when it was not started from a context
+    /// (a radio, liked songs, a single track, ...)
+    pub uris: Vec<String>,
+    /// The radio page shown for this playback, if it is a radio
+    pub radio: Option<SavedRadio>,
+    /// URI of the item playing when the session was last saved
+    pub current_uri: Option<String>,
+    /// Position in the current item, in milliseconds
+    pub progress_ms: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SavedRadio {
+    pub uri: String,
+    pub kind: String,
+    pub tracks: Vec<Track>,
+}
+
+/// The session being recorded, and when it was last written to disk
+#[derive(Debug, Default)]
+pub struct SessionState {
+    pub session: SavedSession,
+    last_saved: Option<Instant>,
+}
+
+impl SavedSession {
+    pub fn is_empty(&self) -> bool {
+        self.context_uri.is_none() && self.uris.is_empty()
+    }
+}
+
+fn session_path() -> std::path::PathBuf {
+    config::get_config().cache_folder.join(SESSION_FILE)
+}
+
+/// Load the session saved by the previous run, if any
+pub fn load() -> Option<SavedSession> {
+    let data = std::fs::read(session_path()).ok()?;
+    match serde_json::from_slice::<SavedSession>(&data) {
+        Ok(session) if !session.is_empty() => Some(session),
+        Ok(_) => None,
+        Err(err) => {
+            tracing::warn!("Failed to parse the saved session: {err:#}");
+            None
+        }
+    }
+}
+
+impl SessionState {
+    /// Record a newly started playback. A radio page recorded just before keeps its place in
+    /// the session when the playback is that radio's tracks.
+    pub fn record_start(&mut self, playback: &Playback) {
+        let (context_uri, uris) = match playback {
+            Playback::Context(id, _) => (Some(id.uri()), vec![]),
+            Playback::URIs(ids, _) => (None, ids.iter().map(|id| id.uri()).collect::<Vec<_>>()),
+        };
+        let radio =
+            self.session.radio.take().filter(|radio| {
+                radio.tracks.iter().map(|t| t.id.uri()).collect::<Vec<_>>() == uris
+            });
+        self.session = SavedSession {
+            context_uri,
+            uris,
+            radio,
+            current_uri: None,
+            progress_ms: 0,
+        };
+        self.save();
+    }
+
+    /// Record the radio page about to be played
+    pub fn record_radio(&mut self, uri: String, kind: String, tracks: Vec<Track>) {
+        self.session.radio = Some(SavedRadio { uri, kind, tracks });
+    }
+
+    /// Record the playing item and position. Written to disk when the item changes, at most
+    /// every `SAVE_INTERVAL` otherwise, or always when `force` is set.
+    pub fn record_progress(&mut self, player: &PlayerState, force: bool) {
+        if self.session.is_empty() {
+            return;
+        }
+        let current_uri = player.currently_playing().and_then(|item| match item {
+            rspotify::model::PlayableItem::Track(track) => track.id.as_ref().map(|id| id.uri()),
+            rspotify::model::PlayableItem::Episode(episode) => Some(episode.id.uri()),
+            rspotify::model::PlayableItem::Unknown(_) => None,
+        });
+        let Some(current_uri) = current_uri else {
+            return;
+        };
+        let progress_ms = player
+            .playback_progress()
+            .map_or(0, |p| p.num_milliseconds());
+
+        let item_changed = self.session.current_uri.as_deref() != Some(current_uri.as_str());
+        self.session.current_uri = Some(current_uri);
+        self.session.progress_ms = progress_ms;
+
+        let due = self.last_saved.is_none_or(|t| t.elapsed() >= SAVE_INTERVAL);
+        if force || item_changed || due {
+            self.save();
+        }
+    }
+
+    fn save(&mut self) {
+        self.last_saved = Some(Instant::now());
+        let result = serde_json::to_vec(&self.session)
+            .map_err(anyhow::Error::from)
+            .and_then(|data| std::fs::write(session_path(), data).map_err(anyhow::Error::from));
+        if let Err(err) = result {
+            tracing::warn!("Failed to save the session: {err:#}");
+        }
+    }
+}

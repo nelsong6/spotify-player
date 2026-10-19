@@ -3,6 +3,7 @@ mod data;
 mod model;
 mod player;
 mod queue;
+pub mod session;
 mod ui;
 
 use std::{collections::VecDeque, sync::Arc};
@@ -27,6 +28,8 @@ pub struct State {
     pub ui: Mutex<UIState>,
     pub player: RwLock<PlayerState>,
     pub data: RwLock<AppData>,
+    /// The playback session saved for the next run
+    pub session: Mutex<session::SessionState>,
 
     pub is_daemon: bool,
 
@@ -55,6 +58,7 @@ impl State {
             ui: Mutex::new(ui),
             player: RwLock::new(PlayerState::default()),
             data: RwLock::new(app_data),
+            session: Mutex::new(session::SessionState::default()),
             is_daemon,
             #[cfg(feature = "streaming")]
             vis_bands: if configs.app_config.enable_audio_visualization {
