@@ -16,8 +16,8 @@ use crate::{
     client::{AppClient, PlayerRequest},
     config::{self, get_cache_folder_path},
     state::{
-        AlbumId, ArtistId, Context, ContextId, Id, PlayableId, Playback, PlaybackMetadata,
-        PlaylistId, SharedState, TrackId,
+        AlbumId, ArtistId, Context, ContextId, ContextPageType, Id, PageState, PlayableId,
+        Playback, PlaybackMetadata, PlaylistId, SharedState, TrackId, TracksId, TTL_CACHE_DURATION,
     },
 };
 use rspotify::{
@@ -240,6 +240,21 @@ async fn handle_get_key_request(
 }
 
 /// Get a Spotify item's ID from its `IdOrName` representation
+/// Name of a radio's seed item, for the radio page's title. Falls back to the item's URI.
+async fn radio_seed_name(client: &AppClient, sid: &ItemId) -> String {
+    let name = match sid {
+        ItemId::Playlist(id) => client
+            .playlist(id.clone(), None, None)
+            .await
+            .map(|p| p.name)
+            .ok(),
+        ItemId::Album(id) => client.album(id.clone(), None).await.map(|a| a.name).ok(),
+        ItemId::Artist(id) => client.artist(id.clone()).await.map(|a| a.name).ok(),
+        ItemId::Track(id) => client.track(id.clone()).await.map(|t| t.name).ok(),
+    };
+    name.unwrap_or_else(|| sid.uri())
+}
+
 async fn get_spotify_id(client: &AppClient, typ: ItemType, id_or_name: IdOrName) -> Result<ItemId> {
     // For `IdOrName::Name`, we search for the first item matching the name and return its Spotify id.
     // The item's id is then used to retrieve the item's data.
@@ -360,6 +375,27 @@ async fn handle_playback_request(
         Command::StartRadio(item_type, id_or_name) => {
             let sid = get_spotify_id(client, item_type, id_or_name).await?;
             let tracks = client.radio_tracks(sid.uri()).await?;
+
+            // Open the radio's page in the running app, the same page the "go to radio" action
+            // shows, filled with the tracks that are about to play.
+            if let Some(state) = state {
+                let seed_name = radio_seed_name(client, &sid).await;
+                let radio_id =
+                    TracksId::new(format!("radio:{}", sid.uri()), format!("{seed_name} Radio"));
+                state.data.write().caches.context.insert(
+                    radio_id.uri.clone(),
+                    Context::Tracks {
+                        tracks: tracks.clone(),
+                        desc: radio_id.kind.clone(),
+                    },
+                    *TTL_CACHE_DURATION,
+                );
+                state.ui.lock().new_page(PageState::Context {
+                    id: None,
+                    context_page_type: ContextPageType::Browsing(ContextId::Tracks(radio_id)),
+                    state: None,
+                });
+            }
 
             PlayerRequest::StartPlayback(
                 Playback::URIs(tracks.into_iter().map(|t| t.id.into()).collect(), None),
