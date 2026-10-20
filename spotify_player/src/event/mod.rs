@@ -652,6 +652,9 @@ fn handle_global_command(
             // applied to the terminal by the UI loop, which owns the terminal's output
             ui.mouse_capture = !ui.mouse_capture;
         }
+        Command::CycleContinueMode => {
+            state.session.lock().cycle_continue_mode();
+        }
         Command::RefreshPlayback => {
             client_pub.send(ClientRequest::GetCurrentPlayback)?;
         }

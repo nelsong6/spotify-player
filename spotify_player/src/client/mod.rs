@@ -1109,9 +1109,27 @@ impl AppClient {
         state: &SharedState,
         playlist_id: PlaylistId<'static>,
     ) -> Result<()> {
+        let source_playlist = Some(playlist_id.uri());
         let seed = self.random_playlist_track(Some(state), playlist_id).await?;
+        self.start_track_radio(state, seed, source_playlist).await
+    }
+
+    /// Start a radio seeded by a track: open the radio's page in the app and play it.
+    /// `source_playlist` is the playlist the playback came from, kept for the continue mode.
+    pub async fn start_track_radio(
+        &self,
+        state: &SharedState,
+        seed: Track,
+        source_playlist: Option<String>,
+    ) -> Result<()> {
         let tracks = self.radio_tracks(seed.id.uri()).await?;
-        show_radio_page(state, &seed.id.uri(), &seed.name, tracks.clone());
+        show_radio_page(
+            state,
+            &seed.id.uri(),
+            &seed.name,
+            tracks.clone(),
+            source_playlist,
+        );
 
         let started = Playback::URIs(tracks.into_iter().map(|t| t.id.into()).collect(), None);
         let playback = state.player.read().buffered_playback.clone();
@@ -1124,6 +1142,45 @@ impl AppClient {
         state.player.write().buffered_playback = playback;
         state.session.lock().record_start(&started);
         Ok(())
+    }
+
+    /// Keep the music going after the playback runs out, as the session's continue mode says.
+    /// Called when a track ends; it does nothing if the player went on to another track.
+    pub async fn continue_after_end(&self, state: &SharedState, ended_uri: String) -> Result<()> {
+        if state.session.lock().session.continue_mode == session::ContinueMode::Stop {
+            return Ok(());
+        }
+        // the player starts the next track right away when there is one
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        if self
+            .current_playback2()
+            .await?
+            .is_some_and(|p| p.is_playing)
+        {
+            return Ok(());
+        }
+
+        let (mode, source_playlist) = {
+            let session = state.session.lock();
+            (
+                session.session.continue_mode,
+                session.session.source_playlist(),
+            )
+        };
+        tracing::info!(
+            "Playback ran out after {ended_uri}: continue mode {mode:?}, source playlist {source_playlist:?}"
+        );
+        match (mode, &source_playlist) {
+            (session::ContinueMode::Stop, _) => Ok(()),
+            (session::ContinueMode::PlaylistRadio, Some(uri)) => {
+                let playlist_id = PlaylistId::from_uri(uri)?.into_static();
+                self.start_random_track_radio(state, playlist_id).await
+            }
+            _ => {
+                let seed = self.track(TrackId::from_uri(&ended_uri)?).await?;
+                self.start_track_radio(state, seed, source_playlist).await
+            }
+        }
     }
 
     /// Load the playback saved by the previous run onto `device_id`, paused at the saved
@@ -1179,7 +1236,13 @@ impl AppClient {
         if let Some(radio) = &saved.radio {
             if let Some(seed_uri) = radio.uri.strip_prefix("radio:") {
                 let seed_name = radio.kind.strip_suffix(" Radio").unwrap_or(&radio.kind);
-                show_radio_page(state, seed_uri, seed_name, radio.tracks.clone());
+                show_radio_page(
+                    state,
+                    seed_uri,
+                    seed_name,
+                    radio.tracks.clone(),
+                    radio.source_playlist.clone(),
+                );
             }
         }
         state.session.lock().session = saved;
@@ -2187,12 +2250,20 @@ impl AppClient {
 
 /// Open a radio's page in the app, the same page the "go to radio" action shows, filled with
 /// `tracks` so the page lists what is about to play instead of fetching a new radio.
-pub fn show_radio_page(state: &SharedState, seed_uri: &str, seed_name: &str, tracks: Vec<Track>) {
+pub fn show_radio_page(
+    state: &SharedState,
+    seed_uri: &str,
+    seed_name: &str,
+    tracks: Vec<Track>,
+    source_playlist: Option<String>,
+) {
     let radio_id = TracksId::new(format!("radio:{seed_uri}"), format!("{seed_name} Radio"));
-    state
-        .session
-        .lock()
-        .record_radio(radio_id.uri.clone(), radio_id.kind.clone(), tracks.clone());
+    state.session.lock().record_radio(
+        radio_id.uri.clone(),
+        radio_id.kind.clone(),
+        tracks.clone(),
+        source_playlist,
+    );
     state.data.write().caches.context.insert(
         radio_id.uri.clone(),
         Context::Tracks {

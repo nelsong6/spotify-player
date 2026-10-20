@@ -26,6 +26,39 @@ pub struct SavedSession {
     pub current_uri: Option<String>,
     /// Position in the current item, in milliseconds
     pub progress_ms: i64,
+    /// What plays when the playback runs out
+    #[serde(default)]
+    pub continue_mode: ContinueMode,
+}
+
+/// What plays when the playback runs out
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ContinueMode {
+    /// A radio from a new random song of the playlist the playback came from, or from the last
+    /// song when it didn't come from a playlist
+    #[default]
+    PlaylistRadio,
+    /// A radio from the last song played
+    SongRadio,
+    Stop,
+}
+
+impl ContinueMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::PlaylistRadio => Self::SongRadio,
+            Self::SongRadio => Self::Stop,
+            Self::Stop => Self::PlaylistRadio,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::PlaylistRadio => "playlist radio",
+            Self::SongRadio => "song radio",
+            Self::Stop => "stop",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -33,6 +66,9 @@ pub struct SavedRadio {
     pub uri: String,
     pub kind: String,
     pub tracks: Vec<Track>,
+    /// URI of the playlist the radio was made from, directly or from one of its songs
+    #[serde(default)]
+    pub source_playlist: Option<String>,
 }
 
 /// The session being recorded, and when it was last written to disk
@@ -45,6 +81,17 @@ pub struct SessionState {
 impl SavedSession {
     pub fn is_empty(&self) -> bool {
         self.context_uri.is_none() && self.uris.is_empty()
+    }
+
+    /// URI of the playlist the playback came from: the radio's source, or the playlist played
+    pub fn source_playlist(&self) -> Option<String> {
+        match &self.radio {
+            Some(radio) => radio.source_playlist.clone(),
+            None => self
+                .context_uri
+                .clone()
+                .filter(|uri| uri.starts_with("spotify:playlist:")),
+        }
     }
 }
 
@@ -71,7 +118,12 @@ impl SessionState {
     pub fn record_start(&mut self, playback: &Playback) {
         let (context_uri, uris) = match playback {
             Playback::Context(id, _) => (Some(id.uri()), vec![]),
-            Playback::URIs(ids, _) => (None, ids.iter().map(|id| id.uri()).collect::<Vec<_>>()),
+            Playback::URIs(ids, _) => (
+                None,
+                ids.iter()
+                    .map(rspotify::prelude::Id::uri)
+                    .collect::<Vec<_>>(),
+            ),
         };
         let radio =
             self.session.radio.take().filter(|radio| {
@@ -83,13 +135,31 @@ impl SessionState {
             radio,
             current_uri: None,
             progress_ms: 0,
+            continue_mode: self.session.continue_mode,
         };
         self.save();
     }
 
     /// Record the radio page about to be played
-    pub fn record_radio(&mut self, uri: String, kind: String, tracks: Vec<Track>) {
-        self.session.radio = Some(SavedRadio { uri, kind, tracks });
+    pub fn record_radio(
+        &mut self,
+        uri: String,
+        kind: String,
+        tracks: Vec<Track>,
+        source_playlist: Option<String>,
+    ) {
+        self.session.radio = Some(SavedRadio {
+            uri,
+            kind,
+            tracks,
+            source_playlist,
+        });
+    }
+
+    /// Switch to the next continue mode
+    pub fn cycle_continue_mode(&mut self) {
+        self.session.continue_mode = self.session.continue_mode.next();
+        self.save();
     }
 
     /// Record the playing item and position. Written to disk when the item changes, at most
@@ -99,7 +169,9 @@ impl SessionState {
             return;
         }
         let current_uri = player.currently_playing().and_then(|item| match item {
-            rspotify::model::PlayableItem::Track(track) => track.id.as_ref().map(|id| id.uri()),
+            rspotify::model::PlayableItem::Track(track) => {
+                track.id.as_ref().map(rspotify::prelude::Id::uri)
+            }
             rspotify::model::PlayableItem::Episode(episode) => Some(episode.id.uri()),
             rspotify::model::PlayableItem::Unknown(_) => None,
         });

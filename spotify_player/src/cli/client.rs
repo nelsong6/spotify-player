@@ -400,7 +400,17 @@ async fn handle_playback_request(
                     Some(name) => name,
                     None => radio_seed_name(client, &sid).await,
                 };
-                show_radio_page(state, &seed_uri, &seed_name, tracks.clone());
+                let source_playlist = match &sid {
+                    ItemId::Playlist(id) => Some(id.uri()),
+                    _ => None,
+                };
+                show_radio_page(
+                    state,
+                    &seed_uri,
+                    &seed_name,
+                    tracks.clone(),
+                    source_playlist,
+                );
             }
 
             PlayerRequest::StartPlayback(

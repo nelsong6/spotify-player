@@ -287,7 +287,21 @@ pub async fn new_connection(
                                     bands.lock().is_active = false;
                                 }
                             }
-                            _ => {}
+                            PlayerEvent::EndOfTrack { ref playable_id } => {
+                                let client = client.clone();
+                                let state = state.clone();
+                                let ended_uri = playable_id.uri();
+                                tokio::task::spawn(async move {
+                                    if let Err(err) =
+                                        client.continue_after_end(&state, ended_uri).await
+                                    {
+                                        tracing::warn!(
+                                            "Failed to continue after the playback ran out: {err:#}"
+                                        );
+                                    }
+                                });
+                            }
+                            PlayerEvent::Changed { .. } => {}
                         }
                         client.update_playback_non_blocking(&state);
 

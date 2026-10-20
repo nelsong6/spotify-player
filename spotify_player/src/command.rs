@@ -91,6 +91,7 @@ pub enum Command {
     CreatePlaylist,
     OpenLogs,
     ToggleMouseCapture,
+    CycleContinueMode,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -383,6 +384,9 @@ impl Command {
             Self::OpenLogs => "go to the application logs page",
             Self::ToggleMouseCapture => {
                 "toggle mouse capture (off: the terminal can select text again)"
+            }
+            Self::CycleContinueMode => {
+                "cycle what plays when the playback runs out: playlist radio, song radio, stop"
             }
         }
         .to_string()

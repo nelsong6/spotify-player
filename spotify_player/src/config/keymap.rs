@@ -340,6 +340,10 @@ impl Default for KeymapConfig {
                     key_sequence: "M".into(),
                     command: Command::ToggleMouseCapture,
                 },
+                Keymap {
+                    key_sequence: "C".into(),
+                    command: Command::CycleContinueMode,
+                },
             ],
         }
     }

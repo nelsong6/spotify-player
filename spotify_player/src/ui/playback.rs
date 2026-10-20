@@ -375,6 +375,10 @@ fn construct_playback_text(
                         _ => {}
                     }
                 }
+                parts.push(format!(
+                    "after: {}",
+                    state.session.lock().session.continue_mode.label()
+                ));
                 if !ui.mouse_capture {
                     parts.push("mouse: off (select text)".to_string());
                 }
