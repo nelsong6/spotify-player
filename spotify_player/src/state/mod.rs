@@ -67,13 +67,9 @@ impl State {
             session: Mutex::new(session::SessionState::default()),
             is_daemon,
             #[cfg(feature = "streaming")]
-            vis_bands: if configs.app_config.enable_audio_visualization {
-                Some(Arc::new(Mutex::new(
-                    crate::ui::streaming::VisBands::default(),
-                )))
-            } else {
-                None
-            },
+            vis_bands: Some(Arc::new(Mutex::new(
+                crate::ui::streaming::VisBands::default(),
+            ))),
 
             logs: log_buffer,
             screen: Mutex::new(Vec::new()),
@@ -99,12 +95,12 @@ impl State {
         self.is_streaming_enabled() && config::get_config().app_config.custom_queue
     }
 
-    /// Returns `true` when the local librespot player is actively streaming
-    /// audio (i.e. a `Playing` event has been received and no `Paused` / `stop`
-    /// has occurred since).  Used by the UI to decide whether to allocate and
-    /// render the audio-visualization area.
+    /// Whether the audio visualization is switched on and has audio to show
     #[cfg(feature = "streaming")]
-    pub fn is_local_streaming_active(&self) -> bool {
-        self.vis_bands.as_ref().is_some_and(|b| b.lock().is_active)
+    pub fn is_visualization_shown(&self) -> bool {
+        self.vis_bands.as_ref().is_some_and(|bands| {
+            let bands = bands.lock();
+            bands.enabled && bands.is_active
+        })
     }
 }

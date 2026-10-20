@@ -344,6 +344,10 @@ impl Default for KeymapConfig {
                     key_sequence: "C".into(),
                     command: Command::CycleContinueMode,
                 },
+                Keymap {
+                    key_sequence: "V".into(),
+                    command: Command::ToggleVisualization,
+                },
             ],
         }
     }

@@ -92,6 +92,7 @@ pub enum Command {
     OpenLogs,
     ToggleMouseCapture,
     CycleContinueMode,
+    ToggleVisualization,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -385,6 +386,7 @@ impl Command {
             Self::ToggleMouseCapture => {
                 "toggle mouse capture (off: the terminal can select text again)"
             }
+            Self::ToggleVisualization => "show or hide the audio visualization",
             Self::CycleContinueMode => {
                 "cycle what plays when the playback runs out: playlist radio, song radio, stop"
             }

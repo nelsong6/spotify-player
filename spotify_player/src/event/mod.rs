@@ -655,6 +655,14 @@ fn handle_global_command(
         Command::CycleContinueMode => {
             state.session.lock().cycle_continue_mode();
         }
+        Command::ToggleVisualization =>
+        {
+            #[cfg(feature = "streaming")]
+            if let Some(bands) = &state.vis_bands {
+                let mut bands = bands.lock();
+                bands.enabled = !bands.enabled;
+            }
+        }
         Command::RefreshPlayback => {
             client_pub.send(ClientRequest::GetCurrentPlayback)?;
         }

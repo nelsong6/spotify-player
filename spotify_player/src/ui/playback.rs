@@ -32,10 +32,7 @@ pub fn render_playback_window(
             // branch, so the full rect is used when there is nothing playing.
             #[cfg(feature = "streaming")]
             let (rect, vis_rect) = {
-                let configs = config::get_config();
-                if configs.app_config.enable_audio_visualization
-                    && state.is_local_streaming_active()
-                {
+                if state.is_visualization_shown() {
                     let chunks = Layout::vertical([
                         Constraint::Fill(0),
                         Constraint::Length(super::streaming::VIS_HEIGHT),
@@ -464,7 +461,7 @@ fn split_rect_for_playback_window(state: &SharedState, rect: Rect) -> (Rect, Rec
     // reserved so the space is available to the rest of the layout.
     #[cfg(feature = "streaming")]
     let playback_width = playback_width
-        + if configs.app_config.enable_audio_visualization && state.is_local_streaming_active() {
+        + if state.is_visualization_shown() {
             super::streaming::VIS_HEIGHT as usize
         } else {
             0

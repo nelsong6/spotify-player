@@ -63,6 +63,9 @@ pub struct VisBands {
     /// `Paused` or `stop()`.  The UI uses this flag to skip rendering (and
     /// reclaim the screen space) when audio is not being streamed locally.
     pub is_active: bool,
+    /// Whether the visualization is shown, toggled while the app runs. When off, the sink
+    /// skips the FFT.
+    pub enabled: bool,
 }
 
 impl VisBands {
@@ -72,6 +75,9 @@ impl VisBands {
             updated_at: Instant::now(),
             peak_envelope: 1e-6,
             is_active: false,
+            enabled: crate::config::get_config()
+                .app_config
+                .enable_audio_visualization,
         }
     }
 }
@@ -189,6 +195,10 @@ impl Sink for VisualizationSink {
     }
 
     fn write(&mut self, packet: AudioPacket, converter: &mut Converter) -> SinkResult<()> {
+        if !self.bands.lock().enabled {
+            self.sample_buf.clear();
+            return self.inner.write(packet, converter);
+        }
         if let AudioPacket::Samples(ref samples) = packet {
             // Samples are interleaved stereo (L, R, L, R, …); mix down to mono f32.
             self.sample_buf.extend(samples.chunks(2).map(|c| {
@@ -378,7 +388,6 @@ pub fn render_audio_visualization(
     // We normalise against peak_envelope (NOT the per-frame peak), so display_decay
     // no longer cancels out and bars genuinely fade between audio packets.
     //
-    // vis_bands is only Some when enable_audio_visualization is true.
     let Some(vis_lock) = state.vis_bands.as_ref() else {
         return;
     };
