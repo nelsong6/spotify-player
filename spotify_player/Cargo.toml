@@ -19,6 +19,7 @@ librespot-connect = { version = "0.8.0", optional = true }
 librespot-core = { version = "0.8.0" }
 librespot-playback = {version = "0.8.0", optional = true, default-features = false, features = ["native-tls"]}
 librespot-metadata = { version = "0.8.0" }
+rodio = { version = "0.21", optional = true, default-features = false, features = ["playback"] }
 log = "0.4.34"
 chrono = "0.4.45"
 chrono-humanize = "0.2.3"
@@ -92,7 +93,7 @@ optional = true
 [features]
 alsa-backend = ["streaming", "librespot-playback/alsa-backend"]
 pulseaudio-backend = ["streaming", "librespot-playback/pulseaudio-backend"]
-rodio-backend = ["streaming", "librespot-playback/rodio-backend"]
+rodio-backend = ["streaming", "librespot-playback/rodio-backend", "dep:rodio"]
 portaudio-backend = ["streaming", "librespot-playback/portaudio-backend"]
 jackaudio-backend = ["streaming", "librespot-playback/jackaudio-backend"]
 rodiojack-backend = ["streaming", "librespot-playback/rodiojack-backend"]
