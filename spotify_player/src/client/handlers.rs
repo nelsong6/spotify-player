@@ -1,12 +1,15 @@
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
+use anyhow::Context as _;
 use rspotify::model::Id;
 use tracing::Instrument;
 
 use crate::{
     config,
-    state::{ContextId, ContextPageType, ContextPageUIState, PageState, PlayableId, SharedState},
+    state::{
+        Context, ContextId, ContextPageType, ContextPageUIState, PageState, PlayableId,
+        SharedState, TTL_CACHE_DURATION,
+    },
 };
 
 use crate::utils::map_join;
@@ -171,6 +174,9 @@ fn handle_page_change_event(
             // request new context's data if not found in memory
             // To avoid making too many requests, only request if context id is changed
             // or it's been a while since the last request.
+            if let Some(ContextId::Tracks(tracks_id)) = id {
+                restore_radio_page_tracks(state, &tracks_id.uri);
+            }
             if let Some(id) = id {
                 if !matches!(id, ContextId::Tracks(_))
                     && !state.data.read().caches.context.contains_key(&id.uri())
@@ -208,6 +214,25 @@ fn handle_page_change_event(
     }
 
     Ok(())
+}
+
+/// A radio page's tracks are the radio being played, which the session keeps; put them back
+/// when the cache has expired them, since a radio page is never fetched again.
+fn restore_radio_page_tracks(state: &SharedState, uri: &str) {
+    if state.data.read().caches.context.contains_key(uri) {
+        return;
+    }
+    let radio = state.session.lock().session.radio.clone();
+    if let Some(radio) = radio.filter(|radio| radio.uri == uri) {
+        state.data.write().caches.context.insert(
+            radio.uri,
+            Context::Tracks {
+                tracks: radio.tracks,
+                desc: radio.kind,
+            },
+            *TTL_CACHE_DURATION,
+        );
+    }
 }
 
 fn handle_player_event(
