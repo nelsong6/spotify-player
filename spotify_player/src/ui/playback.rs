@@ -170,16 +170,48 @@ pub fn render_playback_window(
         );
     } else {
         frame.render_widget(
-            Paragraph::new(
-                "No playback found. Please start a new playback.\n \
-                 Make sure there is a running Spotify device and try to connect to one using the `SwitchDevice` command."
-            )
-            .wrap(Wrap { trim: true }),
+            Paragraph::new(idle_playback_text(state)).wrap(Wrap { trim: true }),
             rect,
         );
     }
 
     other_rect
+}
+
+/// What the playback window shows when Spotify has no playback: the song the session left off
+/// on, which space resumes, or how to start something.
+fn idle_playback_text(state: &SharedState) -> String {
+    let session = state.session.lock();
+    let session = &session.session;
+    if session.is_empty() {
+        return "Nothing playing. Pick a song and press Enter to play it.".to_string();
+    }
+    let track = session.current_uri.as_deref().and_then(|uri| {
+        let radio_track = session
+            .radio
+            .as_ref()
+            .and_then(|radio| radio.tracks.iter().find(|t| t.id.uri() == uri).cloned());
+        radio_track.or_else(|| {
+            let data = state.data.read();
+            match data.caches.context.get(session.context_uri.as_deref()?) {
+                Some(
+                    crate::state::Context::Playlist { tracks, .. }
+                    | crate::state::Context::Album { tracks, .. }
+                    | crate::state::Context::Tracks { tracks, .. },
+                ) => tracks.iter().find(|t| t.id.uri() == uri).cloned(),
+                _ => None,
+            }
+        })
+    });
+    match track {
+        Some(track) => format!(
+            "{} {} • {}\nPaused. Press space to keep listening.",
+            config::get_config().app_config.pause_icon,
+            track.name,
+            crate::utils::map_join(&track.artists, |a| &a.name, ", ")
+        ),
+        None => "Paused. Press space to keep listening.".to_string(),
+    }
 }
 
 fn split_rect_for_progress_bar(rect: Rect) -> (Rect, Rect) {

@@ -518,6 +518,12 @@ impl AppClient {
                 let user = self.current_user().await?;
                 state.data.write().user_data.user = Some(user);
             }
+            ClientRequest::Player(PlayerRequest::Resume | PlayerRequest::ResumePause)
+                if state.player.read().buffered_playback.is_none() =>
+            {
+                self.resume_saved_session(state).await?;
+                self.update_playback_non_blocking(state);
+            }
             ClientRequest::Player(request) => {
                 let playback = state.player.read().buffered_playback.clone();
                 let started = match &request {
@@ -1201,7 +1207,38 @@ impl AppClient {
             saved.current_uri,
             saved.progress_ms
         );
+        self.start_saved_session(&saved, device_id).await?;
+        self.pause_playback(Some(device_id)).await?;
+        state.session.lock().session = saved;
+        Ok(())
+    }
 
+    /// Play the session again from where it left off, when Spotify no longer has a playback
+    /// (the device went inactive after a long pause, or another device took over)
+    async fn resume_saved_session(&self, state: &SharedState) -> Result<()> {
+        let saved = state.session.lock().session.clone();
+        anyhow::ensure!(!saved.is_empty(), "nothing to resume");
+        let device_id = self
+            .find_available_device(state)
+            .await?
+            .context("no Spotify device to play on")?;
+        tracing::info!(
+            "Resuming the session: context={:?}, {} tracks, at {:?} {}ms",
+            saved.context_uri,
+            saved.uris.len(),
+            saved.current_uri,
+            saved.progress_ms
+        );
+        self.start_saved_session(&saved, &device_id).await
+    }
+
+    /// Start playing a saved session's tracks (or context) on `device_id`, at its saved item and
+    /// position
+    async fn start_saved_session(
+        &self,
+        saved: &session::SavedSession,
+        device_id: &str,
+    ) -> Result<()> {
         let position = Some(chrono::Duration::milliseconds(saved.progress_ms));
         if let Some(uri) = &saved.context_uri {
             let context = match uri.split(':').nth(1) {
@@ -1231,8 +1268,6 @@ impl AppClient {
             self.start_uris_playback(ids, Some(device_id), offset, position)
                 .await?;
         }
-        self.pause_playback(Some(device_id)).await?;
-        state.session.lock().session = saved;
         Ok(())
     }
 
