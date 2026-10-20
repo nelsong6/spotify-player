@@ -1184,7 +1184,7 @@ impl AppClient {
     }
 
     /// Load the playback saved by the previous run onto `device_id`, paused at the saved
-    /// position, and reopen its radio page if it was a radio.
+    /// position. Its radio page is opened at startup by `show_saved_radio_page`.
     async fn restore_session(&self, state: &SharedState, device_id: &str) -> Result<()> {
         // only on the first connection after startup, not when the session reconnects
         static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -1232,19 +1232,6 @@ impl AppClient {
                 .await?;
         }
         self.pause_playback(Some(device_id)).await?;
-
-        if let Some(radio) = &saved.radio {
-            if let Some(seed_uri) = radio.uri.strip_prefix("radio:") {
-                let seed_name = radio.kind.strip_suffix(" Radio").unwrap_or(&radio.kind);
-                show_radio_page(
-                    state,
-                    seed_uri,
-                    seed_name,
-                    radio.tracks.clone(),
-                    radio.source_playlist.clone(),
-                );
-            }
-        }
         state.session.lock().session = saved;
         Ok(())
     }
@@ -2245,6 +2232,24 @@ impl AppClient {
         }
 
         albums
+    }
+}
+
+/// Open the radio page of the previous run's session, if it was a radio, so the app starts on
+/// it instead of switching to it once the playback is restored.
+pub fn show_saved_radio_page(state: &SharedState) {
+    let Some(radio) = session::load().and_then(|saved| saved.radio) else {
+        return;
+    };
+    if let Some(seed_uri) = radio.uri.strip_prefix("radio:") {
+        let seed_name = radio.kind.strip_suffix(" Radio").unwrap_or(&radio.kind);
+        show_radio_page(
+            state,
+            seed_uri,
+            seed_name,
+            radio.tracks.clone(),
+            radio.source_playlist.clone(),
+        );
     }
 }
 

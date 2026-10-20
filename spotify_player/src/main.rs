@@ -318,6 +318,7 @@ fn main() -> Result<()> {
             }
 
             let state = std::sync::Arc::new(state::State::new(is_daemon, log_buffer));
+            client::show_saved_radio_page(&state);
             start_app(&state)
         }
         Some((cmd, args)) => cli::handle_cli_subcommand(cmd, args),
