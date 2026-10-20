@@ -21,6 +21,9 @@ pub enum Key {
     UserFollowedArtists,
     UserTopTracks,
     Queue,
+    /// The running app's own state: its screen, current page, pending and failed requests,
+    /// and recent logs
+    App,
 }
 
 #[derive(Debug, Serialize, Deserialize, clap::ValueEnum, Clone)]

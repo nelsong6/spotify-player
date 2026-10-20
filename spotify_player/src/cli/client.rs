@@ -244,6 +244,25 @@ async fn handle_get_key_request(
             let queue = client.current_user_queue().await?;
             serde_json::to_vec(&queue)?
         }
+        Key::App => {
+            let state = state.context("no running app to read the state of")?;
+            let (page, popup) = {
+                let ui = state.ui.lock();
+                (
+                    format!("{:?}", ui.current_page()),
+                    format!("{:?}", ui.popup),
+                )
+            };
+            let requests = state.requests.lock();
+            serde_json::to_vec(&serde_json::json!({
+                "screen": *state.screen.lock(),
+                "page": page,
+                "popup": popup,
+                "requests_in_flight": requests.in_flight(),
+                "recent_request_failures": requests.failures(),
+                "recent_logs": state.logs.lock().iter().rev().take(40).rev().collect::<Vec<_>>(),
+            }))?
+        }
     })
 }
 

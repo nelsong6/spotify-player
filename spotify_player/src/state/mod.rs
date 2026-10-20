@@ -3,6 +3,7 @@ mod data;
 mod model;
 mod player;
 mod queue;
+pub mod requests;
 pub mod session;
 mod ui;
 
@@ -40,6 +41,11 @@ pub struct State {
     pub vis_bands: Option<Arc<Mutex<crate::ui::streaming::VisBands>>>,
 
     pub logs: Arc<Mutex<VecDeque<String>>>,
+
+    /// Text of the last frame drawn, for `get key app`
+    pub screen: Mutex<Vec<String>>,
+    /// Client requests being handled and recent failures, for `get key app`
+    pub requests: Mutex<requests::RequestTracker>,
 }
 
 impl State {
@@ -70,6 +76,8 @@ impl State {
             },
 
             logs: log_buffer,
+            screen: Mutex::new(Vec::new()),
+            requests: Mutex::new(requests::RequestTracker::default()),
         }
     }
 

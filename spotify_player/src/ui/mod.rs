@@ -85,7 +85,7 @@ pub fn run(state: &SharedState, mut terminal: Terminal) -> Result<()> {
                 }
             }
 
-            if let Err(err) = terminal.draw(|frame| {
+            match terminal.draw(|frame| {
                 // set the background and foreground colors for the application
                 let rect = frame.area();
                 let block = Block::default().style(ui.theme.app());
@@ -93,7 +93,8 @@ pub fn run(state: &SharedState, mut terminal: Terminal) -> Result<()> {
 
                 render_application(frame, state, &mut ui, rect);
             }) {
-                tracing::error!("Failed to render the application: {err:#}");
+                Ok(frame) => *state.screen.lock() = screen_text(frame.buffer),
+                Err(err) => tracing::error!("Failed to render the application: {err:#}"),
             }
         }
 
@@ -228,4 +229,18 @@ impl Orientation {
             Self::Horizontal => Layout::horizontal(constraints),
         }
     }
+}
+
+/// The drawn frame as lines of text, as the terminal shows it
+fn screen_text(buffer: &ratatui::buffer::Buffer) -> Vec<String> {
+    let area = buffer.area;
+    (area.top()..area.bottom())
+        .map(|y| {
+            (area.left()..area.right())
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+                .trim_end()
+                .to_string()
+        })
+        .collect()
 }
