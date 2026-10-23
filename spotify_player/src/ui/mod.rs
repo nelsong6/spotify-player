@@ -188,6 +188,12 @@ fn render_main_layout(
     ui: &mut UIStateGuard,
     rect: Rect,
 ) {
+    #[cfg(feature = "streaming")]
+    if state.is_visualization_shown() {
+        streaming::render_visualization_page(frame, state, ui, rect);
+        return;
+    }
+
     let page_type = ui.current_page().page_type();
     match page_type {
         PageType::Library => page::render_library_page(is_active, frame, state, ui, rect),

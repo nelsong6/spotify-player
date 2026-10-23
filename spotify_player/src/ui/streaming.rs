@@ -1,5 +1,7 @@
 use super::config;
+use super::utils::construct_and_render_block;
 use crate::state::SharedState;
+use crate::state::UIStateGuard;
 use librespot_playback::{
     audio_backend::{Sink, SinkResult},
     convert::Converter,
@@ -9,7 +11,7 @@ use parking_lot::Mutex;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
-    widgets::{Bar, BarChart, BarGroup},
+    widgets::{Bar, BarChart, BarGroup, Borders},
     Frame,
 };
 use rustfft::{num_complex::Complex, FftPlanner};
@@ -22,9 +24,6 @@ const FFT_SIZE: usize = 1024;
 /// At 44100 Hz: 128 samples ≈ 2.9 ms between updates.
 const HOP_SIZE: usize = 128;
 pub const NUM_BANDS: usize = 128;
-
-/// Height (in terminal rows) reserved for the audio visualization bar chart.
-pub const VIS_HEIGHT: u16 = 8;
 
 /// Per-FFT-frame decay multiplier for individual bands.
 /// At 44100 Hz / `HOP_SIZE` 128 ≈ 344 hops/s, 0.985^~151 ≈ 1% in ~0.44 s — snappy
@@ -395,6 +394,70 @@ pub fn band_levels(state: &SharedState) -> Option<[f32; NUM_BANDS]> {
             .powf(0.5);
     }
     Some(levels)
+}
+
+/// Render the visualization in place of the page: the ASCII cover (with the `ascii-cover`
+/// feature) at the left and the bars filling the rest.
+pub fn render_visualization_page(
+    frame: &mut Frame,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+    rect: Rect,
+) {
+    let rect = construct_and_render_block("Visualization", &ui.theme, Borders::ALL, frame, rect);
+    #[cfg(feature = "ascii-cover")]
+    let rect = render_ascii_cover(frame, state, ui, rect);
+    render_audio_visualization(frame, state, &ui.theme, rect);
+}
+
+/// Render the ASCII cover at the left of `rect`, as large as fits in up to half its width, and
+/// return the area left for the bars.
+#[cfg(feature = "ascii-cover")]
+fn render_ascii_cover(
+    frame: &mut Frame,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+    rect: Rect,
+) -> Rect {
+    use ratatui::layout::{Constraint, Flex, Layout};
+
+    if ui.ascii_cover.mode == config::AsciiCoverMode::Off {
+        return rect;
+    }
+    let player = state.player.read();
+    let Some(url) = player
+        .playback
+        .as_ref()
+        .and_then(|playback| playback.item.as_ref())
+        .and_then(super::playback::item_image_url)
+    else {
+        return rect;
+    };
+    let data = state.data.read();
+    let Some(img) = data.caches.images.get(&url) else {
+        return rect;
+    };
+    // A cell is about twice as tall as it is wide, so a square cover is twice as wide as tall.
+    let width = (rect.height * 2).min(rect.width / 2);
+    let height = width / 2;
+    let [cover_column, _, rest] = Layout::horizontal([
+        Constraint::Length(width),
+        Constraint::Length(1),
+        Constraint::Fill(0),
+    ])
+    .areas(rect);
+    let [cover_rect] = Layout::vertical([Constraint::Length(height)])
+        .flex(Flex::Center)
+        .areas(cover_column);
+    let levels = band_levels(state);
+    ui.ascii_cover.render(
+        frame,
+        &url,
+        img,
+        cover_rect,
+        levels.as_ref().map(|l| &l[..]),
+    );
+    rest
 }
 
 /// Render a frequency-band bar chart using live FFT data from the audio sink.

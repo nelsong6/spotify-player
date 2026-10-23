@@ -28,22 +28,6 @@ pub fn render_playback_window(
     let player = state.player.read();
     if let Some(ref playback) = player.playback {
         if let Some(item) = &playback.item {
-            // Carve off the visualization rows here, inside the active-playback
-            // branch, so the full rect is used when there is nothing playing.
-            #[cfg(feature = "streaming")]
-            let (rect, vis_rect) = {
-                if state.is_visualization_shown() {
-                    let chunks = Layout::vertical([
-                        Constraint::Fill(0),
-                        Constraint::Length(super::streaming::VIS_HEIGHT),
-                    ])
-                    .split(rect);
-                    (chunks[0], Some(chunks[1]))
-                } else {
-                    (rect, None)
-                }
-            };
-
             let (metadata_rect, progress_bar_rect) = {
                 // Render the track's cover image if `image` feature is enabled
                 #[cfg(feature = "image")]
@@ -123,12 +107,6 @@ pub fn render_playback_window(
                 duration,
             );
             render_playback_progress_bar(frame, ui, progress, duration, progress_bar_rect);
-            #[cfg(feature = "streaming")]
-            if let Some(vis_r) = vis_rect {
-                #[cfg(feature = "ascii-cover")]
-                let vis_r = render_ascii_cover(frame, state, ui, item, vis_r);
-                super::streaming::render_audio_visualization(frame, state, &ui.theme, vis_r);
-            }
             return other_rect;
         }
     }
@@ -213,7 +191,7 @@ fn split_rect_for_progress_bar(rect: Rect) -> (Rect, Rect) {
 }
 
 #[cfg(any(feature = "image", feature = "ascii-cover"))]
-fn item_image_url(item: &rspotify::model::PlayableItem) -> Option<String> {
+pub fn item_image_url(item: &rspotify::model::PlayableItem) -> Option<String> {
     match item {
         rspotify::model::PlayableItem::Track(track) => {
             crate::utils::get_track_album_image_url(track).map(String::from)
@@ -223,38 +201,6 @@ fn item_image_url(item: &rspotify::model::PlayableItem) -> Option<String> {
         }
         rspotify::model::PlayableItem::Unknown(_) => None,
     }
-}
-
-/// Render the ASCII cover at the left of the visualization area and return the area left
-/// for the bars.
-#[cfg(feature = "ascii-cover")]
-fn render_ascii_cover(
-    frame: &mut Frame,
-    state: &SharedState,
-    ui: &mut UIStateGuard,
-    item: &rspotify::model::PlayableItem,
-    rect: Rect,
-) -> Rect {
-    if ui.ascii_cover.mode == config::AsciiCoverMode::Off {
-        return rect;
-    }
-    let Some(url) = item_image_url(item) else {
-        return rect;
-    };
-    let data = state.data.read();
-    let Some(img) = data.caches.images.get(&url) else {
-        return rect;
-    };
-    let chunks = Layout::horizontal([
-        Constraint::Length(rect.height * 2),
-        Constraint::Length(1),
-        Constraint::Fill(0),
-    ])
-    .split(rect);
-    let levels = super::streaming::band_levels(state);
-    ui.ascii_cover
-        .render(frame, &url, img, chunks[0], levels.as_ref().map(|l| &l[..]));
-    chunks[2]
 }
 
 #[cfg(feature = "image")]
@@ -524,18 +470,6 @@ fn split_rect_for_playback_window(state: &SharedState, rect: Rect) -> (Rect, Rec
     // the playback window's width should not be smaller than the cover image's width + 1
     #[cfg(feature = "image")]
     let playback_width = std::cmp::max(configs.app_config.cover_img_width + 1, playback_width);
-
-    // When visualization is enabled *and* librespot is actively streaming,
-    // reserve extra rows for the bar chart. When the local player is idle
-    // (e.g. playback on an external Spotify Connect device) the rows are not
-    // reserved so the space is available to the rest of the layout.
-    #[cfg(feature = "streaming")]
-    let playback_width = playback_width
-        + if state.is_visualization_shown() {
-            super::streaming::VIS_HEIGHT as usize
-        } else {
-            0
-        };
 
     // add lines for top/bottom borders depending on the progress bar's position
     let num_lines = match configs.app_config.progress_bar_position {
