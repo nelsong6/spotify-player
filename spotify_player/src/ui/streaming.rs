@@ -8,12 +8,7 @@ use librespot_playback::{
     decoder::AudioPacket,
 };
 use parking_lot::Mutex;
-use ratatui::{
-    layout::Rect,
-    style::{Color, Style},
-    widgets::{Bar, BarChart, BarGroup, Borders},
-    Frame,
-};
+use ratatui::{layout::Rect, style::Color, widgets::Borders, Frame};
 use rustfft::{num_complex::Complex, FftPlanner};
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -39,6 +34,10 @@ const DECAY_FACTOR_PEAK: f32 = 0.9985;
 /// The audio sink uses its own `VisualizationSink::sample_rate` field so that
 /// decay timings stay precise if librespot streams at 48 000 Hz instead.
 const SAMPLE_RATE: f32 = 44_100.0;
+/// Bar body characters from the base up, thinning toward the top like the cover's ramp.
+const BAR_BODY: &[u8] = b"@%#*+=-:..";
+/// How fast a peak marker sinks, in full bar heights per second.
+const PEAK_FALL_PER_SEC: f32 = 0.6;
 
 /// Shared frequency-band state exposed between the audio sink and the UI.
 /// Storing `updated_at` lets the render function apply smooth time-based decay
@@ -65,6 +64,10 @@ pub struct VisBands {
     /// Whether the visualization is shown, toggled while the app runs. When off, the sink
     /// skips the FFT.
     pub enabled: bool,
+    /// Each band's recent peak level, kept by the render side for the peak markers.
+    pub peaks: [f32; NUM_BANDS],
+    /// When `peaks` last sank.
+    pub peaks_at: Instant,
 }
 
 impl VisBands {
@@ -77,6 +80,8 @@ impl VisBands {
             enabled: crate::config::get_config()
                 .app_config
                 .enable_audio_visualization,
+            peaks: [0.0f32; NUM_BANDS],
+            peaks_at: Instant::now(),
         }
     }
 }
@@ -188,6 +193,7 @@ impl Sink for VisualizationSink {
         g.peak_envelope = 1e-6;
         g.updated_at = Instant::now();
         g.is_active = false;
+        g.peaks.fill(0.0);
         drop(g);
         self.sample_buf.clear();
         self.inner.stop()
@@ -460,12 +466,44 @@ fn render_ascii_cover(
     rest
 }
 
-/// Render a frequency-band bar chart using live FFT data from the audio sink.
+/// Each band's recent peak: raised to `levels`, sinking at `PEAK_FALL_PER_SEC` since the last
+/// call.
+fn track_peaks(state: &SharedState, levels: &[f32; NUM_BANDS]) -> [f32; NUM_BANDS] {
+    let Some(bands) = state.vis_bands.as_ref() else {
+        return *levels;
+    };
+    let mut g = bands.lock();
+    let fall = g.peaks_at.elapsed().as_secs_f32() * PEAK_FALL_PER_SEC;
+    g.peaks_at = Instant::now();
+    for (peak, &level) in g.peaks.iter_mut().zip(levels) {
+        *peak = (*peak - fall).max(level);
+    }
+    g.peaks
+}
+
+/// The top cell of a bar `h` rows tall between neighbours `left` and `right` rows tall: a peak,
+/// a slope, or a flat top whose glyph sits as high in the cell as the bar reaches into it.
+fn cap_glyph(left: f32, h: f32, right: f32) -> char {
+    if left < h - 0.5 && right < h - 0.5 {
+        '^'
+    } else if right > h + 0.5 {
+        '/'
+    } else if left > h + 0.5 {
+        '\\'
+    } else {
+        match h.fract() {
+            f if f < 1.0 / 3.0 => '_',
+            f if f < 2.0 / 3.0 => '-',
+            _ => '~',
+        }
+    }
+}
+
+/// Render the frequency bands as ASCII bars filling `rect`, bass at the left.
 ///
-/// Bars are subsampled to the available rect width so they always fill the area
-/// cleanly. Heights use a sqrt (perceptual) curve so quiet signals stay visible.
-/// Each bar is coloured by its amplitude using the theme's visualization colors:
-/// `low` (quiet) → `mid` → `high` (loud).
+/// Each bar's body thins from `@` at the base toward `.`, its top is shaped by its neighbours,
+/// and a `'` marks its recent peak. Cells are colored by height using the theme's visualization
+/// colors: `low` at the base → `mid` → `high` at the top.
 pub fn render_audio_visualization(
     frame: &mut Frame,
     state: &SharedState,
@@ -475,35 +513,55 @@ pub fn render_audio_visualization(
     let Some(levels) = band_levels(state) else {
         return;
     };
+    if rect.is_empty() {
+        return;
+    }
+    let peaks = track_peaks(state, &levels);
     let vis_colors = theme.visualization();
-    let num_bars = (rect.width as usize).min(levels.len()).max(1);
-    // Multiply by 8 to use ratatui's eighth-block characters (▁▂▃▄▅▆▇█),
-    // giving 8× the resolution of whole terminal rows.
-    let max_val = u64::from(rect.height) * 8;
+    let color = |t: f32| bar_color(t, vis_colors.low, vis_colors.mid, vis_colors.high);
+    let rows = f32::from(rect.height);
+    let width = usize::from(rect.width);
+    // Columns share bands when the area is wider than `NUM_BANDS` and skip some when narrower.
+    let band = |col: usize| col * NUM_BANDS / width;
+    let heights: Vec<f32> = (0..width).map(|col| levels[band(col)] * rows).collect();
+    // The row `r` cells up from the bottom
+    let y = |r: u16| rect.bottom() - 1 - r;
 
-    let step = levels.len() as f64 / num_bars as f64;
-    let bars: Vec<Bar> = (0..num_bars)
-        .map(|i| {
-            let idx = ((i as f64 * step) as usize).min(levels.len() - 1);
-            let norm = levels[idx];
-            let val = (norm * max_val as f32) as u64;
-            Bar::default()
-                .value(val)
-                .text_value("")
-                .style(Style::default().fg(bar_color(
-                    norm,
-                    vis_colors.low,
-                    vis_colors.mid,
-                    vis_colors.high,
-                )))
-        })
-        .collect();
+    let buf = frame.buffer_mut();
+    for (col, &h) in heights.iter().enumerate() {
+        let x = rect.x + col as u16;
+        let top = h as u16;
+        for r in 0..top.min(rect.height) {
+            let t = f32::from(r) / rows;
+            let ch = BAR_BODY[(t * BAR_BODY.len() as f32) as usize];
+            buf[(x, y(r))].set_char(char::from(ch)).set_fg(color(t));
+        }
+        if top < rect.height {
+            let left = if col > 0 { heights[col - 1] } else { h };
+            let right = heights.get(col + 1).copied().unwrap_or(h);
+            buf[(x, y(top))]
+                .set_char(cap_glyph(left, h, right))
+                .set_fg(color(h / rows));
+        }
+        let peak = peaks[band(col)];
+        let peak_row = (peak * rows) as u16;
+        if peak_row > top + 1 && peak_row < rect.height {
+            buf[(x, y(peak_row))].set_char('\'').set_fg(color(peak));
+        }
+    }
+}
 
-    let chart = BarChart::default()
-        .data(BarGroup::default().bars(&bars))
-        .bar_width(1)
-        .bar_gap(0)
-        .max(max_val);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    frame.render_widget(chart, rect);
+    #[test]
+    fn cap_glyph_follows_the_neighbours() {
+        assert_eq!(cap_glyph(1.0, 3.0, 1.0), '^');
+        assert_eq!(cap_glyph(3.0, 3.0, 5.0), '/');
+        assert_eq!(cap_glyph(5.0, 3.0, 3.0), '\\');
+        assert_eq!(cap_glyph(3.1, 3.1, 3.1), '_');
+        assert_eq!(cap_glyph(3.5, 3.5, 3.5), '-');
+        assert_eq!(cap_glyph(3.9, 3.9, 3.9), '~');
+    }
 }
