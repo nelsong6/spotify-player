@@ -30,7 +30,8 @@ This file guides coding agents when working in this repository.
 | `event/{page,popup}.rs`       | Key event dispatch per page / popup overlay                                 |
 | `ui/mod.rs`                   | ratatui render loop; main layout dispatch                                   |
 | `ui/{page,playback,popup}.rs` | Render functions for pages, playback bar, popups                            |
-| `ui/streaming.rs`             | FFT audio visualizer: `VisualizationSink`, `VisBands`, bar chart            |
+| `ui/streaming.rs`             | FFT audio visualizer: `VisualizationSink`, `VisBands`, visualization page   |
+| `ui/ascii_cover.rs`           | ASCII album cover beside the bars, pulsing with the bass (feature-gated)    |
 | `streaming.rs`                | librespot connection + audio backend setup (feature-gated)                  |
 | `cli/`                        | Unix socket server and client for inter-process CLI commands                |
 | `auth.rs`                     | OAuth scopes and librespot credential/session building                      |
@@ -57,13 +58,14 @@ Event/UI threads never call async functions directly. They send a `ClientRequest
 | `alsa-backend`, `pulseaudio-backend`, `portaudio-backend`, `jackaudio-backend`, `rodiojack-backend`, `sdl-backend`, `gstreamer-backend` | Alternative audio sinks                                  |
 | `media-control`                                                                                                                         | OS media key integration                                 |
 | `image`                                                                                                                                 | Album art rendering                                      |
+| `ascii-cover`                                                                                                                           | ASCII album cover in the visualization (default)         |
 | `sixel`                                                                                                                                 | Sixel terminal image protocol (extends `image`)          |
 | `pixelate`                                                                                                                              | Pixelated image rendering fallback (extends `image`)     |
 | `notify`                                                                                                                                | Desktop notifications                                    |
 | `daemon`                                                                                                                                | Daemonize mode (implies `streaming`)                     |
 | `fzf`                                                                                                                                   | Fuzzy search                                             |
 
-Default: `rodio-backend` + `media-control`. Gate feature-specific code with `#[cfg(feature = "...")]`.
+Default: `rodio-backend` + `media-control` + `ascii-cover`. Gate feature-specific code with `#[cfg(feature = "...")]`.
 
 ## Verifying changes
 
