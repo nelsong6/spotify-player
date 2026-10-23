@@ -2045,7 +2045,7 @@ impl AppClient {
             self.retrieve_image(url, &path, true).await?;
         }
 
-        #[cfg(feature = "image")]
+        #[cfg(any(feature = "image", feature = "ascii-cover"))]
         if !state.data.read().caches.images.contains_key(url) {
             let bytes = self.retrieve_image(url, &path, false).await?;
 

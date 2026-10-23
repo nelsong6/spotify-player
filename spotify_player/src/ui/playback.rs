@@ -64,16 +64,7 @@ pub fn render_playback_window(
                             }
                         };
 
-                    let url = match item {
-                        rspotify::model::PlayableItem::Track(track) => {
-                            crate::utils::get_track_album_image_url(track).map(String::from)
-                        }
-                        rspotify::model::PlayableItem::Episode(episode) => {
-                            crate::utils::get_episode_show_image_url(episode).map(String::from)
-                        }
-                        rspotify::model::PlayableItem::Unknown(_) => None,
-                    };
-                    if let Some(url) = url {
+                    if let Some(url) = item_image_url(item) {
                         let data = state.data.read();
                         if let Some(img) = data.caches.images.get(&url) {
                             if ui.last_cover_image_render_info.url != url
@@ -134,6 +125,8 @@ pub fn render_playback_window(
             render_playback_progress_bar(frame, ui, progress, duration, progress_bar_rect);
             #[cfg(feature = "streaming")]
             if let Some(vis_r) = vis_rect {
+                #[cfg(feature = "ascii-cover")]
+                let vis_r = render_ascii_cover(frame, state, ui, item, vis_r);
                 super::streaming::render_audio_visualization(frame, state, &ui.theme, vis_r);
             }
             return other_rect;
@@ -217,6 +210,51 @@ fn idle_playback_text(state: &SharedState) -> String {
 fn split_rect_for_progress_bar(rect: Rect) -> (Rect, Rect) {
     let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(1)]).split(rect);
     (chunks[0], chunks[1])
+}
+
+#[cfg(any(feature = "image", feature = "ascii-cover"))]
+fn item_image_url(item: &rspotify::model::PlayableItem) -> Option<String> {
+    match item {
+        rspotify::model::PlayableItem::Track(track) => {
+            crate::utils::get_track_album_image_url(track).map(String::from)
+        }
+        rspotify::model::PlayableItem::Episode(episode) => {
+            crate::utils::get_episode_show_image_url(episode).map(String::from)
+        }
+        rspotify::model::PlayableItem::Unknown(_) => None,
+    }
+}
+
+/// Render the ASCII cover at the left of the visualization area and return the area left
+/// for the bars.
+#[cfg(feature = "ascii-cover")]
+fn render_ascii_cover(
+    frame: &mut Frame,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+    item: &rspotify::model::PlayableItem,
+    rect: Rect,
+) -> Rect {
+    if ui.ascii_cover.mode == config::AsciiCoverMode::Off {
+        return rect;
+    }
+    let Some(url) = item_image_url(item) else {
+        return rect;
+    };
+    let data = state.data.read();
+    let Some(img) = data.caches.images.get(&url) else {
+        return rect;
+    };
+    let chunks = Layout::horizontal([
+        Constraint::Length(rect.height * 2),
+        Constraint::Length(1),
+        Constraint::Fill(0),
+    ])
+    .split(rect);
+    let levels = super::streaming::band_levels(state);
+    ui.ascii_cover
+        .render(frame, &url, img, chunks[0], levels.as_ref().map(|l| &l[..]));
+    chunks[2]
 }
 
 #[cfg(feature = "image")]

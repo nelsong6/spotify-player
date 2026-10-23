@@ -119,6 +119,8 @@ pub struct AppConfig {
 
     #[cfg(feature = "streaming")]
     pub enable_audio_visualization: bool,
+    #[cfg(feature = "ascii-cover")]
+    pub ascii_cover: AsciiCoverMode,
 
     #[cfg(feature = "notify")]
     pub enable_notify: bool,
@@ -182,6 +184,30 @@ pub enum ProgressBarPosition {
     Right,
 }
 config_parser_impl!(ProgressBarPosition);
+
+/// How the ASCII rendering of the cover beside the audio visualization behaves.
+#[cfg(feature = "ascii-cover")]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+pub enum AsciiCoverMode {
+    /// Brightens and thickens with the bass
+    Pulse,
+    Still,
+    Off,
+}
+#[cfg(feature = "ascii-cover")]
+config_parser_impl!(AsciiCoverMode);
+
+#[cfg(feature = "ascii-cover")]
+impl AsciiCoverMode {
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Pulse => Self::Still,
+            Self::Still => Self::Off,
+            Self::Off => Self::Pulse,
+        }
+    }
+}
 
 #[derive(Debug, Deserialize, Serialize, ConfigParse, Clone)]
 pub struct Command {
@@ -387,6 +413,8 @@ impl Default for AppConfig {
 
             #[cfg(feature = "streaming")]
             enable_audio_visualization: false,
+            #[cfg(feature = "ascii-cover")]
+            ascii_cover: AsciiCoverMode::Pulse,
 
             #[cfg(feature = "notify")]
             enable_notify: true,

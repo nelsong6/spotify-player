@@ -372,6 +372,31 @@ fn bar_color(t: f32, low: Color, mid: Color, high: Color) -> Color {
     }
 }
 
+/// The current per-band levels in [0, 1] on a perceptual scale, or `None` when nothing is
+/// streaming locally.
+pub fn band_levels(state: &SharedState) -> Option<[f32; NUM_BANDS]> {
+    // display_decay interpolates levels smoothly between write() calls.
+    // We normalise against peak_envelope (NOT the per-frame peak), so display_decay
+    // no longer cancels out and levels genuinely fade between audio packets.
+    let guard = state.vis_bands.as_ref()?.lock();
+    if !guard.is_active {
+        return None;
+    }
+    let elapsed = guard.updated_at.elapsed();
+    let display_decay = decay_for_elapsed(elapsed);
+    let peak_norm = (guard.peak_envelope * peak_decay_for_elapsed(elapsed)).max(1e-6);
+    // Copy the fixed-size array by value — no heap allocation.
+    let mut levels = guard.values;
+    drop(guard);
+    for level in &mut levels {
+        // Sqrt (gamma 0.5) scaling boosts quiet signals without clipping louds.
+        *level = ((*level * display_decay) / peak_norm)
+            .clamp(0.0, 1.0)
+            .powf(0.5);
+    }
+    Some(levels)
+}
+
 /// Render a frequency-band bar chart using live FFT data from the audio sink.
 ///
 /// Bars are subsampled to the available rect width so they always fill the area
@@ -384,38 +409,20 @@ pub fn render_audio_visualization(
     theme: &config::Theme,
     rect: Rect,
 ) {
-    // display_decay interpolates bar heights smoothly between write() calls.
-    // We normalise against peak_envelope (NOT the per-frame peak), so display_decay
-    // no longer cancels out and bars genuinely fade between audio packets.
-    //
-    let Some(vis_lock) = state.vis_bands.as_ref() else {
+    let Some(levels) = band_levels(state) else {
         return;
     };
-    let guard = vis_lock.lock();
-    if !guard.is_active {
-        return;
-    }
-    let display_decay = decay_for_elapsed(guard.updated_at.elapsed());
-    let peak_norm =
-        (guard.peak_envelope * peak_decay_for_elapsed(guard.updated_at.elapsed())).max(1e-6);
-    // Copy the fixed-size array by value — no heap allocation.
-    let values = guard.values;
-    drop(guard);
     let vis_colors = theme.visualization();
-    let num_bars = (rect.width as usize).min(values.len()).max(1);
+    let num_bars = (rect.width as usize).min(levels.len()).max(1);
     // Multiply by 8 to use ratatui's eighth-block characters (▁▂▃▄▅▆▇█),
     // giving 8× the resolution of whole terminal rows.
     let max_val = u64::from(rect.height) * 8;
 
-    let step = values.len() as f64 / num_bars as f64;
+    let step = levels.len() as f64 / num_bars as f64;
     let bars: Vec<Bar> = (0..num_bars)
         .map(|i| {
-            let idx = ((i as f64 * step) as usize).min(values.len() - 1);
-            // Normalise against the slow peak envelope, then apply inter-frame decay.
-            // Sqrt (gamma 0.5) scaling boosts quiet signals without clipping louds.
-            let norm = ((values[idx] * display_decay) / peak_norm)
-                .clamp(0.0, 1.0)
-                .powf(0.5);
+            let idx = ((i as f64 * step) as usize).min(levels.len() - 1);
+            let norm = levels[idx];
             let val = (norm * max_val as f32) as u64;
             Bar::default()
                 .value(val)

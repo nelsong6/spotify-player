@@ -307,6 +307,8 @@ Set `enable_audio_visualization` to `true` in your config to enable this feature
 
 ![Audio Visualization](https://github.com/user-attachments/assets/8c21c1b0-5276-4a9e-b719-e0c2bd555537)
 
+With the `ascii-cover` feature (on by default), an ASCII rendering of the album cover, colored from the cover, sits at the left of the bars. In `Pulse` mode it brightens and thickens with the bass; in `Still` mode it is a plain picture. Pick the starting mode with `ascii_cover` (`Pulse`, `Still` or `Off`) and cycle it while the app runs with `CycleAsciiCover` (`I`).
+
 ### Media Control
 
 Media control is enabled by default. Set `enable_media_control` to `true` in your config to use it. See [config docs](https://github.com/aome510/spotify-player/blob/master/docs/config.md#media-control).
@@ -490,6 +492,7 @@ List of supported commands:
 | `PreviousPage`                  | go to the previous page                                                                            | `backspace`, `C-q` |
 | `OpenLogs`                      | go the the application logs page                                                                   | `g o`              |
 | `ToggleMouseCapture`            | toggle mouse capture (off: the terminal can select text again)                                     | `M`                |
+| `CycleAsciiCover`               | cycle the ASCII cover beside the audio visualization (pulse, still, off)                           | `I`                |
 | `OpenSpotifyLinkFromClipboard`  | open a Spotify link from clipboard                                                                 | `O`                |
 | `SortTrackByTitle`              | sort the track table (if any) by track's title                                                     | `s t`              |
 | `SortTrackByArtists`            | sort the track table (if any) by track's artists                                                   | `s a`              |

@@ -348,6 +348,10 @@ impl Default for KeymapConfig {
                     key_sequence: "V".into(),
                     command: Command::ToggleVisualization,
                 },
+                Keymap {
+                    key_sequence: "I".into(),
+                    command: Command::CycleAsciiCover,
+                },
             ],
         }
     }

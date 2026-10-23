@@ -93,6 +93,7 @@ pub enum Command {
     ToggleMouseCapture,
     CycleContinueMode,
     ToggleVisualization,
+    CycleAsciiCover,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -387,6 +388,9 @@ impl Command {
                 "toggle mouse capture (off: the terminal can select text again)"
             }
             Self::ToggleVisualization => "show or hide the audio visualization",
+            Self::CycleAsciiCover => {
+                "cycle the ASCII cover beside the audio visualization (pulse, still, off)"
+            }
             Self::CycleContinueMode => {
                 "cycle what plays when the playback runs out: playlist radio, song radio, stop"
             }

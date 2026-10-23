@@ -63,6 +63,9 @@ pub struct UIState {
 
     #[cfg(feature = "image")]
     pub picker: Picker,
+
+    #[cfg(feature = "ascii-cover")]
+    pub ascii_cover: ui::ascii_cover::AsciiCover,
 }
 
 impl UIState {
@@ -142,6 +145,9 @@ impl Default for UIState {
             // Will be reinitialize later in ui/mod.rs after init_ui()
             #[cfg(feature = "image")]
             picker: Picker::halfblocks(),
+
+            #[cfg(feature = "ascii-cover")]
+            ascii_cover: ui::ascii_cover::AsciiCover::new(),
         }
     }
 }

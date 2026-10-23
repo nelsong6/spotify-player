@@ -24,6 +24,8 @@ use crate::state::ImageRenderInfo;
 
 type Terminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>;
 
+#[cfg(feature = "ascii-cover")]
+pub mod ascii_cover;
 #[cfg(feature = "image")]
 pub mod cover_image;
 mod page;

@@ -102,6 +102,7 @@ gstreamer-backend = ["streaming", "librespot-playback/gstreamer-backend"]
 streaming = ["librespot-playback", "librespot-connect", "rustfft"]
 media-control = ["souvlaki", "winit", "windows"]
 image = ["ratatui-image", "dep:image"]
+ascii-cover = ["streaming", "dep:image"]
 sixel = ["image"]
 pixelate = ["image"]
 notify = ["notify-rust"]
@@ -116,7 +117,7 @@ fzf = ["fuzzy-matcher"]
 rustls-tls = ["reqwest/default-tls"]
 native-tls = ["reqwest/native-tls"]
 
-default = ["rodio-backend", "media-control", "rustls-tls"]
+default = ["rodio-backend", "media-control", "rustls-tls", "ascii-cover"]
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"

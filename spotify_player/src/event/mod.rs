@@ -663,6 +663,12 @@ fn handle_global_command(
                 bands.enabled = !bands.enabled;
             }
         }
+        Command::CycleAsciiCover => {
+            #[cfg(feature = "ascii-cover")]
+            {
+                ui.ascii_cover.mode = ui.ascii_cover.mode.next();
+            }
+        }
         Command::RefreshPlayback => {
             client_pub.send(ClientRequest::GetCurrentPlayback)?;
         }
