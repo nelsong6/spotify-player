@@ -90,6 +90,7 @@ impl SavedSession {
     }
 
     /// URI of the playlist the playback came from: the radio's source, or the playlist played
+    #[cfg(feature = "streaming")]
     pub fn source_playlist(&self) -> Option<String> {
         match &self.radio {
             Some(radio) => radio.source_playlist.clone(),

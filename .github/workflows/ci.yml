@@ -79,3 +79,25 @@ jobs:
 
       - name: Check spelling of entire workspace
         uses: crate-ci/typos@master
+
+  windows-build:
+    # the build publish.ps1 publishes, made only from commits on master that pass the checks
+    if: github.event_name == 'push'
+    needs: [rust-ci, cargo-machete, typos]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --locked --release
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotify_player-windows
+          path: target/release/spotify_player.exe
+          if-no-files-found: error

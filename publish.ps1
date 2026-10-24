@@ -1,4 +1,4 @@
-# Build this fork and publish it as `spt` to \\NelsonNAS\tools (Nelson's home
+# Publish this fork's CI build as `spt` to \\NelsonNAS\tools (Nelson's home
 # setup; see shell-config-profile-home claude\topics\home-tools.md).
 # The version is `git describe` (e.g. v0.25.1-13-g9daae90: 13 commits past
 # upstream v0.25.1), so only committed, pushed code is published.
@@ -11,10 +11,23 @@ if (git log --oneline '@{u}..HEAD') { throw 'push first: the published commit ha
 
 $version = git describe --tags --always
 $commit = git rev-parse HEAD
-$target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $PSScriptRoot 'target' }
+$repo = 'nelsong6/spotify-player'
 
-cargo build --release
-if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+# CI's windows-build job makes the published build; wait for this commit's run
+$run = $null
+foreach ($attempt in 1..30) {
+    $run = gh run list -R $repo -w CI -c $commit -e push --json databaseId --jq '.[0].databaseId'
+    if ($run) { break }
+    Start-Sleep -Seconds 10
+}
+if (-not $run) { throw "no CI run for $commit on $repo" }
+gh run watch $run -R $repo --exit-status --interval 30
+if ($LASTEXITCODE -ne 0) { throw "CI failed: https://github.com/$repo/actions/runs/$run" }
 
-publish-tool -Name spt -Version $version -Path (Join-Path $target 'release\spotify_player.exe') `
+$dir = Join-Path ([IO.Path]::GetTempPath()) "spt-$version"
+Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+gh run download $run -R $repo -n spotify_player-windows -D $dir
+if ($LASTEXITCODE -ne 0) { throw 'downloading the build failed' }
+
+publish-tool -Name spt -Version $version -Path (Join-Path $dir 'spotify_player.exe') `
     -Entry spotify_player.exe -Repo https://github.com/nelsong6/spotify-player -Commit $commit
