@@ -1158,6 +1158,7 @@ impl AppClient {
 
     /// Keep the music going after the playback runs out, as the session's continue mode says.
     /// Called when a track ends; it does nothing if the player went on to another track.
+    #[cfg(feature = "streaming")]
     pub async fn continue_after_end(&self, state: &SharedState, ended_uri: String) -> Result<()> {
         if state.session.lock().session.continue_mode == session::ContinueMode::Stop {
             return Ok(());
