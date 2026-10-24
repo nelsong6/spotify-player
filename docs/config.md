@@ -36,6 +36,7 @@ spotify_player -o device.volume=80 -o theme=dracula
 | `login_redirect_uri`              | Redirect URI for authentication.                                                                    | `http://127.0.0.1:8989/login`                                          |
 | `client_port`                     | Port for the application's client to handle CLI commands.                                           | `8080`                                                                 |
 | `log_folder`                      | Path to store log files.                                                                            | `None`                                                                 |
+| `session_file`                    | Saved playback session file; instances pointing at the same file share their session.               | `<cache folder>/last_session.json`                                     |
 | `tracks_playback_limit`           | Maximum number of tracks in a playback session.                                                     | `50`                                                                   |
 | `top_tracks_limit`                | Maximum number of tracks returned on the user's top tracks page.                                    | `100`                                                                  |
 | `playback_format`                 | Format string for the playback window.                                                              | `{status} {track} • {artists} {liked}\n{album} • {genres}\n{metadata}` |
@@ -53,7 +54,7 @@ spotify_player -o device.volume=80 -o theme=dracula
 | `page_size_in_rows`               | Number of rows per page for navigation.                                                             | `20`                                                                   |
 | `enable_media_control`            | Enable media control support (requires `media-control` feature).                                    | `true` (Linux), `false` (macOS/Windows)                                |
 | `enable_streaming`                | Enable streaming (`Always`, `Never`, or `DaemonOnly`).                                              | `Always`                                                               |
-| `enable_audio_visualization`      | Show a real-time frequency bar chart in place of the page (requires `streaming` feature).           | `false`                                                                |
+| `enable_audio_visualization`      | Show ASCII frequency bars in place of the page (requires `streaming` feature).                      | `false`                                                                |
 | `ascii_cover`                     | ASCII album cover beside the visualization: `Pulse`, `Still` or `Off` (`ascii-cover` feature).      | `Pulse`                                                                |
 | `enable_notify`                   | Enable notifications (requires `notify` feature).                                                   | `true`                                                                 |
 | `enable_cover_image_cache`        | Cache album cover images.                                                                           | `true`                                                                 |
@@ -142,15 +143,15 @@ client_id_command = { command = "cat", args = ["/full/path/to/file"] }
 
 Device options are configured in the `[device]` section:
 
-| Option          | Description                              | Default          |
-| --------------- | ---------------------------------------- | ---------------- |
-| `name`          | Device name.                             | `spotify-player` |
-| `device_type`   | Device type.                             | `speaker`        |
-| `volume`        | Initial volume (percent).                | `70`             |
-| `bitrate`       | Bitrate in kbps (`96`, `160`, or `320`). | `320`            |
-| `audio_cache`   | Enable audio file caching.               | `false`          |
-| `normalization` | Enable audio normalization.              | `false`          |
-| `autoplay`      | Enable autoplay of similar songs.        | `false`          |
+| Option          | Description                                                    | Default          |
+| --------------- | -------------------------------------------------------------- | ---------------- |
+| `name`          | Device name; `{hostname}` is replaced with the machine's name. | `spotify-player` |
+| `device_type`   | Device type.                                                   | `speaker`        |
+| `volume`        | Initial volume (percent).                                      | `70`             |
+| `bitrate`       | Bitrate in kbps (`96`, `160`, or `320`).                       | `320`            |
+| `audio_cache`   | Enable audio file caching.                                     | `false`          |
+| `normalization` | Enable audio normalization.                                    | `false`          |
+| `autoplay`      | Enable autoplay of similar songs.                              | `false`          |
 
 See the [Librespot wiki](https://github.com/librespot-org/librespot/wiki/Options) for more details on these options.
 

@@ -1,8 +1,10 @@
-//! The last playback session, saved to the cache folder so that restarting the app picks up
-//! where it left off: the same tracks (or context), the same track, the same position, and the
-//! radio page if the playback was a radio.
+//! The last playback session, saved to the cache folder (or `session_file`) so that restarting
+//! the app picks up where it left off: the same tracks (or context), the same track, the same
+//! position, and the radio page if the playback was a radio. Several instances can share one
+//! session file: only the one whose integrated player is playing records progress, and each takes
+//! in what another wrote.
 
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -76,6 +78,10 @@ pub struct SavedRadio {
 pub struct SessionState {
     pub session: SavedSession,
     last_saved: Option<Instant>,
+    /// This instance's integrated player, the only device whose playback it records
+    pub own_device: Option<String>,
+    /// The session file's modified time when this instance last wrote or read it
+    seen: Option<SystemTime>,
 }
 
 impl SavedSession {
@@ -96,7 +102,33 @@ impl SavedSession {
 }
 
 fn session_path() -> std::path::PathBuf {
-    config::get_config().cache_folder.join(SESSION_FILE)
+    let configs = config::get_config();
+    configs
+        .app_config
+        .session_file
+        .clone()
+        .unwrap_or_else(|| configs.cache_folder.join(SESSION_FILE))
+}
+
+fn modified() -> Option<SystemTime> {
+    std::fs::metadata(session_path())
+        .and_then(|m| m.modified())
+        .ok()
+}
+
+/// The playing item's URI and position
+pub fn playing_item(player: &PlayerState) -> Option<(String, i64)> {
+    let uri = player.currently_playing().and_then(|item| match item {
+        rspotify::model::PlayableItem::Track(track) => {
+            track.id.as_ref().map(rspotify::prelude::Id::uri)
+        }
+        rspotify::model::PlayableItem::Episode(episode) => Some(episode.id.uri()),
+        rspotify::model::PlayableItem::Unknown(_) => None,
+    })?;
+    let progress_ms = player
+        .playback_progress()
+        .map_or(0, |p| p.num_milliseconds());
+    Some((uri, progress_ms))
 }
 
 /// Load the session saved by the previous run, if any
@@ -116,6 +148,9 @@ impl SessionState {
     /// Record a newly started playback. A radio page recorded just before keeps its place in
     /// the session when the playback is that radio's tracks.
     pub fn record_start(&mut self, playback: &Playback) {
+        // picks up another instance's continue mode
+        let radio = self.session.radio.take();
+        self.sync();
         let (context_uri, uris) = match playback {
             Playback::Context(id, _) => (Some(id.uri()), vec![]),
             Playback::URIs(ids, _) => (
@@ -125,10 +160,8 @@ impl SessionState {
                     .collect::<Vec<_>>(),
             ),
         };
-        let radio =
-            self.session.radio.take().filter(|radio| {
-                radio.tracks.iter().map(|t| t.id.uri()).collect::<Vec<_>>() == uris
-            });
+        let radio = radio
+            .filter(|radio| radio.tracks.iter().map(|t| t.id.uri()).collect::<Vec<_>>() == uris);
         self.session = SavedSession {
             context_uri,
             uris,
@@ -158,36 +191,47 @@ impl SessionState {
 
     /// Switch to the next continue mode
     pub fn cycle_continue_mode(&mut self) {
+        self.sync();
         self.session.continue_mode = self.session.continue_mode.next();
         self.save();
     }
 
-    /// Record the playing item and position. Written to disk when the item changes, at most
-    /// every `SAVE_INTERVAL` otherwise, or always when `force` is set.
+    /// Take in the session file when another instance wrote it since this one last did
+    pub fn sync(&mut self) {
+        let modified = modified();
+        if modified.is_some() && modified != self.seen {
+            if let Some(session) = load() {
+                self.session = session;
+            }
+            self.seen = modified;
+        }
+    }
+
+    /// Record the playing item and position, when it plays on this instance's integrated
+    /// player. Written to disk when the item changes, at most every `SAVE_INTERVAL` otherwise, or
+    /// always when `force` is set.
     pub fn record_progress(&mut self, player: &PlayerState, force: bool) {
-        if self.session.is_empty() {
+        let device = player
+            .playback
+            .as_ref()
+            .and_then(|p| p.device.id.as_deref());
+        if self.own_device.is_none() || device != self.own_device.as_deref() {
             return;
         }
-        let current_uri = player.currently_playing().and_then(|item| match item {
-            rspotify::model::PlayableItem::Track(track) => {
-                track.id.as_ref().map(rspotify::prelude::Id::uri)
-            }
-            rspotify::model::PlayableItem::Episode(episode) => Some(episode.id.uri()),
-            rspotify::model::PlayableItem::Unknown(_) => None,
-        });
-        let Some(current_uri) = current_uri else {
+        let Some((current_uri, progress_ms)) = playing_item(player) else {
             return;
         };
-        let progress_ms = player
-            .playback_progress()
-            .map_or(0, |p| p.num_milliseconds());
-
         let item_changed = self.session.current_uri.as_deref() != Some(current_uri.as_str());
+        let due = self.last_saved.is_none_or(|t| t.elapsed() >= SAVE_INTERVAL);
+        if !(force || item_changed || due) {
+            return;
+        }
+        self.sync();
         self.session.current_uri = Some(current_uri);
         self.session.progress_ms = progress_ms;
-
-        let due = self.last_saved.is_none_or(|t| t.elapsed() >= SAVE_INTERVAL);
-        if force || item_changed || due {
+        if self.session.is_empty() {
+            self.last_saved = Some(Instant::now());
+        } else {
             self.save();
         }
     }
@@ -200,5 +244,6 @@ impl SessionState {
         if let Err(err) = result {
             tracing::warn!("Failed to save the session: {err:#}");
         }
+        self.seen = modified();
     }
 }

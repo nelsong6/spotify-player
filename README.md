@@ -263,6 +263,8 @@ After changing the client ID, re-run `spotify_player authenticate` to refresh th
 
 Control Spotify remotely with [Spotify Connect](https://support.spotify.com/us/article/spotify-connect/). Press **D** to list devices, then **enter** to connect.
 
+A radio, liked songs or other track list played by `spotify_player` can't be transferred the usual way, because Spotify's own apps drop it. Moving one starts the same list on the chosen device at the same song and position instead, which works when that device is another `spotify_player`. To run `spotify_player` on several machines, give each its own device name (`name = "spotify-player {hostname}"` under `[device]`) and point them at one `session_file` on shared storage: the instance that is playing records the session there, and the instance that takes over picks up its tracks, radio and continue mode.
+
 ### Streaming
 
 Stream music directly from the terminal. The streaming feature is enabled by default and uses the `rodio-backend` audio backend unless otherwise specified.

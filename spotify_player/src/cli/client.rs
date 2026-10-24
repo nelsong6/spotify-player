@@ -161,7 +161,21 @@ async fn handle_socket_request(
                 }
             };
 
-            client.transfer_playback(&id, None).await?;
+            let handed_off = match state {
+                Some(state) => {
+                    let play = state
+                        .player
+                        .read()
+                        .playback
+                        .as_ref()
+                        .is_some_and(|p| p.is_playing);
+                    client.hand_off_track_list(state, &id, play).await?
+                }
+                None => false,
+            };
+            if !handed_off {
+                client.transfer_playback(&id, None).await?;
+            }
             Ok(Vec::new())
         }
         Request::Like { unlike } => {

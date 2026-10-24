@@ -62,6 +62,9 @@ pub struct AppConfig {
 
     pub log_folder: Option<PathBuf>,
 
+    /// The saved playback session, shared by the instances that point at the same file
+    pub session_file: Option<PathBuf>,
+
     pub player_event_hook_command: Option<Command>,
 
     pub playback_format: String,
@@ -343,6 +346,7 @@ impl Default for AppConfig {
             login_redirect_uri: "http://127.0.0.1:8989/login".to_string(),
 
             log_folder: None,
+            session_file: None,
 
             tracks_playback_limit: 50,
             top_tracks_limit: 100,

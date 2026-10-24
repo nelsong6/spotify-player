@@ -5730,6 +5730,7 @@ dependencies = [
  "flume",
  "futures",
  "fuzzy-matcher",
+ "gethostname",
  "html-escape",
  "http",
  "image",

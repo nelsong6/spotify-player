@@ -274,6 +274,12 @@ fn main() -> Result<()> {
                 apply_config_override(&mut configs.app_config, key, value)?;
             }
         }
+        // lets one shared config name each machine's device differently
+        configs.app_config.device.name = configs
+            .app_config
+            .device
+            .name
+            .replace("{hostname}", &gethostname::gethostname().to_string_lossy());
         config::set_config(configs);
     }
 

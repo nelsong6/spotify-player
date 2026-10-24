@@ -525,6 +525,12 @@ impl AppClient {
                 self.update_playback_non_blocking(state);
             }
             ClientRequest::Player(request) => {
+                if let PlayerRequest::TransferPlayback(device_id, play) = &request {
+                    if self.hand_off_track_list(state, device_id, *play).await? {
+                        self.update_playback_non_blocking(state);
+                        return Ok(());
+                    }
+                }
                 let playback = state.player.read().buffered_playback.clone();
                 let started = match &request {
                     PlayerRequest::StartPlayback(p, _) => Some(p.clone()),
@@ -1209,14 +1215,18 @@ impl AppClient {
         );
         self.start_saved_session(&saved, device_id).await?;
         self.pause_playback(Some(device_id)).await?;
-        state.session.lock().session = saved;
+        state.session.lock().sync();
         Ok(())
     }
 
     /// Play the session again from where it left off, when Spotify no longer has a playback
     /// (the device went inactive after a long pause, or another device took over)
     async fn resume_saved_session(&self, state: &SharedState) -> Result<()> {
-        let saved = state.session.lock().session.clone();
+        let saved = {
+            let mut session = state.session.lock();
+            session.sync();
+            session.session.clone()
+        };
         anyhow::ensure!(!saved.is_empty(), "nothing to resume");
         let device_id = self
             .find_available_device(state)
@@ -1230,6 +1240,41 @@ impl AppClient {
             saved.progress_ms
         );
         self.start_saved_session(&saved, &device_id).await
+    }
+
+    /// Move a track-list playback (a radio, liked songs, ...) to `device_id` by starting the list
+    /// there at the playing item and position: Spotify's apps drop a transferred track list, while
+    /// another `spotify_player` plays one. Returns false, for a plain transfer, when the playback
+    /// isn't the session's track list.
+    pub async fn hand_off_track_list(
+        &self,
+        state: &SharedState,
+        device_id: &str,
+        play: bool,
+    ) -> Result<bool> {
+        // another device may have taken over since the playback was last read
+        self.retrieve_current_playback(state, false).await?;
+        let saved = {
+            let mut session = state.session.lock();
+            session.sync();
+            let Some((current_uri, progress_ms)) = session::playing_item(&state.player.read())
+            else {
+                return Ok(false);
+            };
+            let mut saved = session.session.clone();
+            if saved.context_uri.is_some() || !saved.uris.contains(&current_uri) {
+                return Ok(false);
+            }
+            saved.current_uri = Some(current_uri);
+            saved.progress_ms = progress_ms;
+            saved
+        };
+        tracing::info!("Handing the track list off to device_id={device_id}");
+        self.start_saved_session(&saved, device_id).await?;
+        if !play {
+            self.pause_playback(Some(device_id)).await?;
+        }
+        Ok(true)
     }
 
     /// Start playing a saved session's tracks (or context) on `device_id`, at its saved item and
