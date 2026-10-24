@@ -11,6 +11,7 @@
   - [Client ID and rate limits](#client-id-and-rate-limits)
   - [Using a custom client ID](#using-a-custom-client-id)
 - [Features](#features)
+  - [Command palette](#command-palette)
   - [Spotify Connect](#spotify-connect)
   - [Streaming](#streaming)
   - [Audio Visualization](#audio-visualization)
@@ -259,6 +260,12 @@ After changing the client ID, re-run `spotify_player authenticate` to refresh th
 
 ## Features
 
+### Command palette
+
+Press `/` to open the command palette: type to search a menu of what you can do, and press Enter to run it. The menu is a tree in [fzt](https://github.com/romaine-life/fzt)'s format, read from `menu.yaml` in the config folder each time the palette opens; until that file exists, the palette uses [`examples/menu.yaml`](examples/menu.yaml), and "edit menu" under `:` writes it there and opens it. Each entry runs a command, an action on the playing track, a radio from a random song of a playlist, or takes a search term for Spotify or for the list on screen; see [config docs](docs/config.md#command-palette-menu).
+
+The palette is fzt itself, loaded from `fzt.dll` (from [fzt-terminal](https://github.com/romaine-life/fzt-terminal)'s releases) beside the executable. Without it, the palette says it couldn't load the library.
+
 ### Spotify Connect
 
 Control Spotify remotely with [Spotify Connect](https://support.spotify.com/us/article/spotify-connect/). Press **D** to list devices, then **enter** to connect.
@@ -439,7 +446,7 @@ Press `?` or `C-h` to open the shortcut help page (default for `OpenCommandHelp`
 
 **Tips**:
 
-- Use the `Search` command to search in the shortcut help page and other pages.
+- Use the command palette's "filter" (the `Search` command) to search in the shortcut help page and other pages.
 - `RefreshPlayback` manually updates playback status.
 - `RestartIntegratedClient` is useful for switching audio devices without restarting the app.
 
@@ -477,7 +484,8 @@ List of supported commands:
 | `FocusPreviousWindow`           | focus the previous focusable window (if any)                                                       | `backtab`          |
 | `SwitchTheme`                   | open a popup for switching theme                                                                   | `T`                |
 | `SwitchDevice`                  | open a popup for switching device                                                                  | `D`                |
-| `Search`                        | open a popup for searching in the current page                                                     | `/`                |
+| `OpenCommandPalette`            | open the command palette: search and run what's in the menu                                        | `/`                |
+| `Search`                        | open a popup for searching in the current page                                                     |                    |
 | `BrowseUserPlaylists`           | open a popup for browsing user's playlists                                                         | `u p`              |
 | `BrowseUserFollowedArtists`     | open a popup for browsing user's followed artists                                                  | `u a`              |
 | `BrowseUserSavedAlbums`         | open a popup for browsing user's saved albums                                                      | `u A`              |

@@ -33,6 +33,7 @@ pub struct Configs {
     pub app_config: AppConfig,
     pub keymap_config: KeymapConfig,
     pub theme_config: ThemeConfig,
+    pub config_folder: std::path::PathBuf,
     pub cache_folder: std::path::PathBuf,
 }
 
@@ -42,6 +43,7 @@ impl Configs {
             app_config: AppConfig::new(config_folder)?,
             keymap_config: KeymapConfig::new(config_folder)?,
             theme_config: ThemeConfig::new(config_folder)?,
+            config_folder: config_folder.to_path_buf(),
             cache_folder: cache_folder.to_path_buf(),
         })
     }

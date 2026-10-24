@@ -29,6 +29,7 @@ pub mod ascii_cover;
 #[cfg(feature = "image")]
 pub mod cover_image;
 mod page;
+mod palette;
 mod playback;
 mod popup;
 pub mod single_line_input;
@@ -172,12 +173,16 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
     // of the playback window, which is to avoid "duplicated images" issue
     // See: https://github.com/aome510/spotify-player/issues/498
     let rect = playback::render_playback_window(frame, state, ui, rect);
+    let page_rect = rect;
 
     let rect = popup::render_shortcut_help_popup(frame, ui, rect);
 
     let (rect, is_active) = popup::render_popup(frame, state, ui, rect);
 
     render_main_layout(is_active, frame, state, ui, rect);
+
+    // drawn over the page, so after it
+    palette::render(frame, ui, page_rect);
 }
 
 /// Render the application's main layout

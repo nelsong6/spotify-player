@@ -6,6 +6,8 @@ mod client;
 mod command;
 mod config;
 mod event;
+#[allow(unsafe_code)] // loads fzt's C library
+mod fzt;
 mod key;
 mod log_layer;
 #[cfg(feature = "media-control")]

@@ -14,6 +14,7 @@
   - [Palette](#palette)
   - [Component Styles](#component-styles)
 - [Keymaps](#keymaps)
+- [Command palette menu](#command-palette-menu)
 
 Configuration files are located in the application's configuration directory, which defaults to `$HOME/.config/spotify-player`.
 
@@ -324,6 +325,27 @@ A theme's `palette` table can include:
 - `bright_yellow`
 
 Omitted fields use terminal defaults. Values can be color names or hex codes. See [ANSI color reference](https://en.wikipedia.org/wiki/ANSI_escape_code#3-bit_and_4-bit).
+
+## Command palette menu
+
+`menu.yaml` in the config folder is the command palette's menu (`/` opens it), a tree in [fzt](https://github.com/romaine-life/fzt)'s format; [`examples/menu.yaml`](../examples/menu.yaml) is the default. Each entry has a `name`, a `description`, and either `children` or an `action`:
+
+| Action                  | Runs                                                                                    |
+| ----------------------- | --------------------------------------------------------------------------------------- |
+| a command, `NextTrack`  | the [command](../README.md#commands), as if its key was pressed                         |
+| `action:<Action>`       | an [action](#actions) on the playing track, e.g. `action:GoToRadio`                     |
+| `radio:<playlist id>`   | a radio from a random song of that playlist                                             |
+| `prompt:search`         | takes a search term and searches Spotify                                                |
+| `prompt:filter`         | takes a search term and filters the list on screen                                      |
+
+```yaml
+- name: "radio"
+  description: "Radios"
+  children:
+    - name: "ambient electronic"
+      description: "Radio from a random song in ambient electronic"
+      action: "radio:0vg39Xm6TsRJNoie3g1JtP"
+```
 
 ## Keymaps
 

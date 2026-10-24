@@ -1,0 +1,67 @@
+# The command palette's menu (`/` opens it), in fzt's tree format. Put your own copy in the
+# config folder as menu.yaml; the palette reads it each time it opens.
+#
+# Each entry has a name, a description and either children or an action:
+# - a command, as named in the keymap config: NextTrack
+# - action:<Action>, an action on the playing track: action:GoToRadio
+# - radio:<playlist id>, a radio from a random song of that playlist
+# - prompt:search or prompt:filter, which take a search term for Spotify or for the list on screen
+- name: "playback"
+  description: "Play, pause, skip, volume"
+  children:
+    - {name: "pause", description: "Resume or pause", action: "ResumePause"}
+    - {name: "next", description: "Next track", action: "NextTrack"}
+    - {name: "previous", description: "Previous track", action: "PreviousTrack"}
+    - {name: "restart song", description: "Back to the start of the track", action: "SeekStart"}
+    - {name: "shuffle", description: "Toggle shuffle", action: "Shuffle"}
+    - {name: "repeat", description: "Cycle the repeat mode", action: "Repeat"}
+    - {name: "mute", description: "Toggle the volume between 0% and the previous level", action: "Mute"}
+- name: "radio"
+  description: "Radios, and what plays when a list runs out"
+  children:
+    - {name: "from this song", description: "Radio from the song playing now", action: "action:GoToRadio"}
+    - {name: "continue mode", description: "Cycle what plays when the list runs out", action: "CycleContinueMode"}
+- name: "search"
+  description: "Search Spotify"
+  action: "prompt:search"
+- name: "filter"
+  description: "Filter the list on screen"
+  action: "prompt:filter"
+- name: "song"
+  description: "The song playing now"
+  children:
+    - {name: "like", description: "Like or unlike it", action: "action:ToggleLiked"}
+    - {name: "add to playlist", description: "Add it to one of your playlists", action: "action:AddToPlaylist"}
+    - {name: "go to artist", description: "Its artist's page", action: "action:GoToArtist"}
+    - {name: "go to album", description: "Its album's page", action: "action:GoToAlbum"}
+    - {name: "copy link", description: "Copy its Spotify link", action: "action:CopyLink"}
+- name: "devices"
+  description: "Where the music plays"
+  children:
+    - {name: "send", description: "Move playback to another device", action: "SwitchDevice"}
+    - {name: "restart player", description: "Restart this computer's built-in player", action: "RestartIntegratedClient"}
+- name: "library"
+  description: "Your playlists, artists, albums and liked songs"
+  children:
+    - {name: "playlists", description: "Browse your playlists", action: "BrowseUserPlaylists"}
+    - {name: "artists", description: "Browse the artists you follow", action: "BrowseUserFollowedArtists"}
+    - {name: "albums", description: "Browse your saved albums", action: "BrowseUserSavedAlbums"}
+    - {name: "liked songs", description: "Go to your liked songs", action: "LikedTrackPage"}
+    - {name: "top tracks", description: "Go to your top tracks", action: "TopTrackPage"}
+    - {name: "recently played", description: "Go to what you played recently", action: "RecentlyPlayedTrackPage"}
+- name: "go to"
+  description: "Pages"
+  children:
+    - {name: "now playing", description: "The playlist or album playing now", action: "CurrentlyPlayingContextPage"}
+    - {name: "queue", description: "What plays next", action: "Queue"}
+    - {name: "lyrics", description: "The lyrics of the song playing now", action: "LyricsPage"}
+    - {name: "browse", description: "Spotify's categories", action: "BrowsePage"}
+    - {name: "key list", description: "Every key and what it does", action: "OpenCommandHelp"}
+    - {name: "back", description: "The previous page", action: "PreviousPage"}
+- name: "view"
+  description: "What the screen shows"
+  children:
+    - {name: "visualization", description: "Show or hide the audio bars", action: "ToggleVisualization"}
+    - {name: "ascii cover", description: "Cycle the ASCII cover: pulse, still, off", action: "CycleAsciiCover"}
+    - {name: "theme", description: "Switch the theme", action: "SwitchTheme"}
+    - {name: "logs", description: "The application's logs", action: "OpenLogs"}

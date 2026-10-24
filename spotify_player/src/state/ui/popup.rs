@@ -36,6 +36,17 @@ pub enum PopupState {
         message: String,
         action: ConfirmableAction,
     },
+    CommandPalette(Box<CommandPalette>),
+}
+
+/// The command palette: an fzt session over the menu, or why it couldn't open
+#[derive(Debug)]
+pub enum CommandPalette {
+    Open {
+        session: crate::fzt::Session,
+        frame: crate::fzt::Frame,
+    },
+    Failed(String),
 }
 
 #[derive(Debug, Clone)]
@@ -94,7 +105,10 @@ impl PopupState {
             | Self::ArtistList(.., list_state)
             | Self::ThemeList(.., list_state)
             | Self::ActionList(.., list_state) => Some(list_state),
-            Self::Search { .. } | Self::PlaylistCreate { .. } | Self::ConfirmAction { .. } => None,
+            Self::Search { .. }
+            | Self::PlaylistCreate { .. }
+            | Self::ConfirmAction { .. }
+            | Self::CommandPalette(..) => None,
         }
     }
 
@@ -108,7 +122,10 @@ impl PopupState {
             | Self::ArtistList(.., list_state)
             | Self::ThemeList(.., list_state)
             | Self::ActionList(.., list_state) => Some(list_state),
-            Self::Search { .. } | Self::PlaylistCreate { .. } | Self::ConfirmAction { .. } => None,
+            Self::Search { .. }
+            | Self::PlaylistCreate { .. }
+            | Self::ConfirmAction { .. }
+            | Self::CommandPalette(..) => None,
         }
     }
 

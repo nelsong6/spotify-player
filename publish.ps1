@@ -29,5 +29,5 @@ Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
 gh run download $run -R $repo -n spotify_player-windows -D $dir
 if ($LASTEXITCODE -ne 0) { throw 'downloading the build failed' }
 
-publish-tool -Name spt -Version $version -Path (Join-Path $dir 'spotify_player.exe') `
+publish-tool -Name spt -Version $version -Path $dir `
     -Entry spotify_player.exe -Repo https://github.com/nelsong6/spotify-player -Commit $commit

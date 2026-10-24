@@ -97,7 +97,7 @@ impl Default for KeymapConfig {
                 },
                 Keymap {
                     key_sequence: "/".into(),
-                    command: Command::Search,
+                    command: Command::OpenCommandPalette,
                 },
                 Keymap {
                     key_sequence: "z".into(),
