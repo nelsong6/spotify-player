@@ -101,7 +101,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          read -r tag sha256 < fzt.lock
+          # a Windows checkout gives fzt.lock CRLF line endings
+          read -r tag sha256 < <(tr -d '' < fzt.lock)
           gh release download "$tag" -R romaine-life/fzt-terminal -p fzt-windows-amd64.dll -O target/release/fzt.dll
           echo "$sha256  target/release/fzt.dll" | sha256sum -c -
 
