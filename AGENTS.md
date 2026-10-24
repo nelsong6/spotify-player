@@ -28,8 +28,11 @@ This file guides coding agents when working in this repository.
 | `key.rs`                      | `Key` / `KeySequence` types; vim-style key parsing (`C-x`, `M-x`)           |
 | `event/mod.rs`                | crossterm input loop; routes events to page or popup handler                |
 | `event/{page,popup}.rs`       | Key event dispatch per page / popup overlay                                 |
+| `event/palette.rs`            | Command palette: opens fzt over `menu.yaml`, runs the picked entry          |
 | `ui/mod.rs`                   | ratatui render loop; main layout dispatch                                   |
 | `ui/{page,playback,popup}.rs` | Render functions for pages, playback bar, popups                            |
+| `ui/palette.rs`               | Draws the command palette over the page from fzt's rows                     |
+| `fzt.rs`                      | Loads fzt (`fzt.dll`, fzt-terminal's `cmd/fztlib`) and wraps its JSON calls |
 | `ui/streaming.rs`             | FFT audio visualizer: `VisualizationSink`, `VisBands`, visualization page   |
 | `ui/ascii_cover.rs`           | ASCII album cover beside the bars, pulsing with the bass (feature-gated)    |
 | `streaming.rs`                | librespot connection + audio backend setup (feature-gated)                  |

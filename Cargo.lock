@@ -5734,6 +5734,7 @@ dependencies = [
  "html-escape",
  "http",
  "image",
+ "libloading 0.8.9",
  "librespot-connect",
  "librespot-core",
  "librespot-metadata",

@@ -30,6 +30,7 @@ use ratatui::widgets::ListState;
 
 mod clipboard;
 mod page;
+mod palette;
 mod popup;
 mod window;
 
@@ -655,6 +656,7 @@ fn handle_global_command(
         Command::CycleContinueMode => {
             state.session.lock().cycle_continue_mode();
         }
+        Command::OpenCommandPalette => palette::open(ui),
         Command::ToggleVisualization =>
         {
             #[cfg(feature = "streaming")]

@@ -95,9 +95,21 @@ jobs:
       - name: Build
         run: cargo build --locked --release
 
+      - name: Fetch fzt
+        # the command palette loads fzt.dll from beside the executable; fzt.lock pins its release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          read -r tag sha256 < fzt.lock
+          gh release download "$tag" -R romaine-life/fzt-terminal -p fzt-windows-amd64.dll -O target/release/fzt.dll
+          echo "$sha256  target/release/fzt.dll" | sha256sum -c -
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: spotify_player-windows
-          path: target/release/spotify_player.exe
+          path: |
+            target/release/spotify_player.exe
+            target/release/fzt.dll
           if-no-files-found: error

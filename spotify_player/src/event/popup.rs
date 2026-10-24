@@ -15,6 +15,9 @@ pub fn handle_key_sequence_for_popup(
         PopupState::Search { .. } => {
             return handle_key_sequence_for_search_popup(key_sequence, client_pub, state, ui);
         }
+        PopupState::CommandPalette(..) => {
+            return super::palette::handle_key_sequence(key_sequence, client_pub, state, ui);
+        }
         PopupState::PlaylistCreate { .. } => {
             return handle_key_sequence_for_create_playlist_popup(key_sequence, client_pub, ui);
         }
@@ -57,6 +60,9 @@ pub fn handle_key_sequence_for_popup(
             anyhow::bail!("confirm action should be handled before")
         }
         PopupState::Search { .. } => anyhow::bail!("search popup should be handled before"),
+        PopupState::CommandPalette(..) => {
+            anyhow::bail!("command palette should be handled before")
+        }
         PopupState::PlaylistCreate { .. } => {
             anyhow::bail!("create playlist popup should be handled before")
         }
