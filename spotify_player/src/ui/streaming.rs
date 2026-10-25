@@ -1,5 +1,5 @@
 use super::config;
-use super::utils::construct_and_render_block;
+use super::utils::construct_and_render_styled_block;
 use crate::state::SharedState;
 use crate::state::UIStateGuard;
 use librespot_playback::{
@@ -583,7 +583,15 @@ impl BarColors {
             Self::Blend(palette) => palette.at(t, turn),
         }
     }
+
+    /// The color that marks the track around the bars: its title, play state and progress.
+    fn accent(&self) -> Color {
+        self.at(0.85, NO_TURN)
+    }
 }
+
+/// A hue turn of zero, as its sine and cosine.
+const NO_TURN: (f32, f32) = (0.0, 1.0);
 
 /// The current per-band levels in [0, 1] on a perceptual scale, or `None` when nothing is
 /// streaming locally.
@@ -610,41 +618,180 @@ pub fn band_levels(state: &SharedState) -> Option<[f32; NUM_BANDS]> {
     Some(levels)
 }
 
-/// Render the visualization in place of the page: the ASCII cover (with the `ascii-cover`
-/// feature) at the left and the bars filling the rest.
+/// Render the visualization in place of the page and the playback window: the ASCII cover (with
+/// the `ascii-cover` feature) at the left, the bars filling the rest, and a transport line
+/// beneath them.
 pub fn render_visualization_page(
     frame: &mut Frame,
     state: &SharedState,
     ui: &mut UIStateGuard,
     rect: Rect,
 ) {
-    let rect = construct_and_render_block("Visualization", &ui.theme, Borders::ALL, frame, rect);
+    use ratatui::layout::{Constraint, Layout};
+
+    // A blank line separates the transport line from the panel.
+    let [panel, _, transport] = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .areas(rect);
+    let quiet = ratatui::style::Style::default().fg(Color::DarkGray);
+    let rect = construct_and_render_styled_block(
+        " Visualization ",
+        quiet,
+        quiet,
+        Borders::ALL,
+        frame,
+        panel,
+    );
     #[cfg(feature = "ascii-cover")]
-    let (rect, cover_palette) = render_ascii_cover(frame, state, ui, rect);
+    let (rect, colors) = render_ascii_cover(frame, state, ui, rect);
     #[cfg(not(feature = "ascii-cover"))]
-    let cover_palette = None;
-    let colors = BarColors::new(&ui.theme, cover_palette);
+    let colors = BarColors::new(&ui.theme, None);
     render_audio_visualization(frame, state, &colors, rect);
+    render_transport(frame, state, ui, &colors, transport);
+}
+
+/// Render the play state, elapsed time, a progress line colored like the bars, the duration,
+/// and then the volume, device and what plays next, across `rect`.
+fn render_transport(
+    frame: &mut Frame,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+    colors: &BarColors,
+    rect: Rect,
+) {
+    use crate::utils::format_duration;
+    use ratatui::{
+        layout::{Constraint, Layout},
+        style::{Modifier, Style},
+        text::{Line, Span},
+    };
+    use rspotify::model::{PlayableItem, RepeatState};
+
+    let player = state.player.read();
+    let Some(playback) = player.buffered_playback.as_ref() else {
+        return;
+    };
+    let duration = match player.currently_playing() {
+        Some(PlayableItem::Track(track)) => track.duration,
+        Some(PlayableItem::Episode(episode)) => episode.duration,
+        Some(PlayableItem::Unknown(_)) | None => return,
+    };
+    let progress = player
+        .playback_progress()
+        .unwrap_or_default()
+        .clamp(chrono::Duration::zero(), duration);
+    let configs = config::get_config();
+    let accent = colors.accent();
+    let quiet = Style::default().fg(Color::DarkGray);
+
+    let icon = if playback.is_playing {
+        &configs.app_config.play_icon
+    } else {
+        &configs.app_config.pause_icon
+    };
+    let left = Line::from(vec![
+        Span::raw(" "),
+        Span::styled(
+            icon.clone(),
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!("  {} ", format_duration(&progress))),
+    ]);
+
+    // Repeat and shuffle only show while they're on.
+    let mut fields = Vec::new();
+    for field in &configs.app_config.playback_metadata_fields {
+        match field.as_str() {
+            "volume" => fields.push((
+                "vol",
+                match playback.mute_state {
+                    Some(volume) => format!("{volume}% muted"),
+                    None => format!("{}%", playback.volume.unwrap_or_default()),
+                },
+            )),
+            "device" => fields.push(("on", playback.device_name.clone())),
+            "repeat" if playback.repeat_state != RepeatState::Off => fields.push((
+                "repeat",
+                <&'static str>::from(playback.repeat_state).to_string(),
+            )),
+            "shuffle" if playback.shuffle_state => fields.push(("shuffle", "on".to_string())),
+            _ => {}
+        }
+    }
+    fields.push((
+        "next",
+        state
+            .session
+            .lock()
+            .session
+            .continue_mode
+            .label()
+            .to_string(),
+    ));
+    if !ui.mouse_capture {
+        fields.push(("mouse", "off (select text)".to_string()));
+    }
+    let mut right = vec![Span::styled(
+        format!(" {}", format_duration(&duration)),
+        quiet,
+    )];
+    for (label, value) in fields {
+        right.push(Span::styled(format!("   {label} "), quiet));
+        right.push(Span::raw(value));
+    }
+    let right = Line::from(right);
+
+    let [left_rect, bar, right_rect] = Layout::horizontal([
+        Constraint::Length(left.width() as u16),
+        Constraint::Fill(1),
+        Constraint::Length(right.width() as u16),
+    ])
+    .areas(rect);
+    frame.render_widget(left, left_rect);
+    frame.render_widget(right, right_rect);
+
+    let width = usize::from(bar.width);
+    let filled = (progress.num_milliseconds() as f32 / duration.num_milliseconds().max(1) as f32
+        * width as f32) as usize;
+    let buf = frame.buffer_mut();
+    for i in 0..width {
+        let (ch, fg) = match i.cmp(&filled) {
+            std::cmp::Ordering::Less => (
+                '━',
+                colors.at(0.35 + 0.6 * i as f32 / width as f32, NO_TURN),
+            ),
+            std::cmp::Ordering::Equal => ('●', accent),
+            std::cmp::Ordering::Greater => ('─', Color::DarkGray),
+        };
+        buf[(bar.x + i as u16, bar.y)].set_char(ch).set_fg(fg);
+    }
+    // clicking the line seeks, as on the playback window's progress bar
+    ui.playback_progress_bar_rect = bar;
 }
 
 /// Render the ASCII cover at the left of `rect`, as large as fits in up to half its width with
 /// the track, artists and album captioned beneath it, and return the area left for the bars
-/// with a bar palette drawn from the cover's colors.
+/// with the bars' colors, drawn from the cover's unless the theme sets them.
 #[cfg(feature = "ascii-cover")]
 fn render_ascii_cover(
     frame: &mut Frame,
     state: &SharedState,
     ui: &mut UIStateGuard,
     rect: Rect,
-) -> (Rect, Option<BarPalette>) {
+) -> (Rect, BarColors) {
     use ratatui::{
         layout::{Alignment, Constraint, Flex, Layout},
+        style::{Modifier, Style},
         text::Line,
         widgets::Paragraph,
     };
 
+    let no_cover = |ui: &UIStateGuard| (rect, BarColors::new(&ui.theme, None));
     if ui.ascii_cover.mode == config::AsciiCoverMode::Off {
-        return (rect, None);
+        return no_cover(ui);
     }
     let player = state.player.read();
     let Some(item) = player
@@ -652,20 +799,20 @@ fn render_ascii_cover(
         .as_ref()
         .and_then(|playback| playback.item.as_ref())
     else {
-        return (rect, None);
+        return no_cover(ui);
     };
     let Some(url) = super::playback::item_image_url(item) else {
-        return (rect, None);
+        return no_cover(ui);
     };
     let data = state.data.read();
     let Some(img) = data.caches.images.get(&url) else {
-        return (rect, None);
+        return no_cover(ui);
+    };
+    let Some([name, artists, album]) = cover_caption(item) else {
+        return no_cover(ui);
     };
     // A blank line separates the caption from the cover.
-    let caption: Vec<_> = std::iter::once(Line::default())
-        .chain(cover_caption(item, &ui.theme))
-        .collect();
-    let caption_height = caption.len() as u16;
+    let caption_height = 4;
     // A cell is about twice as tall as it is wide, so a square cover is twice as wide as tall.
     let width = (rect.height.saturating_sub(caption_height) * 2).min(rect.width / 2);
     let height = width / 2;
@@ -681,11 +828,8 @@ fn render_ascii_cover(
     ])
     .flex(Flex::Center)
     .areas(cover_column);
-    frame.render_widget(
-        Paragraph::new(caption).alignment(Alignment::Center),
-        caption_rect,
-    );
     let levels = band_levels(state);
+    // The cover is rendered first, since that draws the palette the caption is colored from.
     ui.ascii_cover.render(
         frame,
         &url,
@@ -693,17 +837,34 @@ fn render_ascii_cover(
         cover_rect,
         levels.as_ref().map(|l| &l[..]),
     );
-    (rest, ui.ascii_cover.palette())
+    let colors = BarColors::new(&ui.theme, ui.ascii_cover.palette());
+    let caption = vec![
+        Line::default(),
+        Line::styled(
+            name,
+            Style::default()
+                .fg(colors.accent())
+                .add_modifier(Modifier::BOLD),
+        ),
+        Line::raw(artists),
+        Line::styled(
+            album,
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ),
+    ];
+    frame.render_widget(
+        Paragraph::new(caption).alignment(Alignment::Center),
+        caption_rect,
+    );
+    (rest, colors)
 }
 
-/// The track (or episode), its artists (or publisher) and its album (or show), one per line.
+/// The track (or episode), its artists (or publisher) and its album (or show).
 #[cfg(feature = "ascii-cover")]
-fn cover_caption(
-    item: &rspotify::model::PlayableItem,
-    theme: &config::Theme,
-) -> Vec<ratatui::text::Line<'static>> {
+fn cover_caption(item: &rspotify::model::PlayableItem) -> Option<[String; 3]> {
     use super::utils::to_bidi_string;
-    use ratatui::text::Line;
     use rspotify::model::PlayableItem;
 
     #[allow(deprecated)]
@@ -718,13 +879,13 @@ fn cover_caption(
             episode.show.publisher.clone(),
             &episode.show.name,
         ),
-        PlayableItem::Unknown(_) => return Vec::new(),
+        PlayableItem::Unknown(_) => return None,
     };
-    vec![
-        Line::styled(to_bidi_string(name), theme.playback_track()),
-        Line::styled(to_bidi_string(&artists), theme.playback_artists()),
-        Line::styled(to_bidi_string(album), theme.playback_album()),
-    ]
+    Some([
+        to_bidi_string(name),
+        to_bidi_string(&artists),
+        to_bidi_string(album),
+    ])
 }
 
 /// Each band's recent peak: raised to `levels`, sinking at `PEAK_FALL_PER_SEC` since the last
