@@ -2158,7 +2158,9 @@ impl AppClient {
             }
             rspotify::model::PlayableItem::Unknown(_) => return Ok(()),
         })
-        .replace('/', ""); // remove invalid characters from the file's name
+        // Remove characters that aren't valid in a file name on every platform; on Windows a
+        // `:` would otherwise save the cover into an NTFS alternate data stream.
+        .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "");
         let path = configs.cache_folder.join("image").join(filename);
 
         if configs.app_config.enable_cover_image_cache {
