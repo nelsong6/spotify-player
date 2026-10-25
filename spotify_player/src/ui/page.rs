@@ -440,8 +440,18 @@ pub fn render_context_page(
             }
         }
         None => {
-            frame.render_widget(Paragraph::new("Loading..."), rect);
+            frame.render_widget(Paragraph::new(loading_text(id)), rect);
         }
+    }
+}
+
+/// What a context page says while its data loads
+fn loading_text(id: &crate::state::ContextId) -> String {
+    match id {
+        crate::state::ContextId::Tracks(tracks) if tracks.uri.starts_with("radio:") => {
+            format!("Building the {}…", tracks.kind)
+        }
+        _ => "Loading...".to_string(),
     }
 }
 

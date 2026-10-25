@@ -15,6 +15,7 @@
   - [Component Styles](#component-styles)
 - [Keymaps](#keymaps)
 - [Command palette menu](#command-palette-menu)
+- [Kept playlists](#kept-playlists)
 
 Configuration files are located in the application's configuration directory, which defaults to `$HOME/.config/spotify-player`.
 
@@ -38,6 +39,7 @@ spotify_player -o device.volume=80 -o theme=dracula
 | `client_port`                     | Port for the application's client to handle CLI commands.                                           | `8080`                                                                 |
 | `log_folder`                      | Path to store log files.                                                                            | `None`                                                                 |
 | `session_file`                    | Saved playback session file; instances pointing at the same file share their session.               | `<cache folder>/last_session.json`                                     |
+| `kept_playlists`                  | Playlists `spotify_player keep` keeps; see [Kept playlists](#kept-playlists).                       | `[]`                                                                   |
 | `tracks_playback_limit`           | Maximum number of tracks in a playback session.                                                     | `50`                                                                   |
 | `top_tracks_limit`                | Maximum number of tracks returned on the user's top tracks page.                                    | `100`                                                                  |
 | `playback_format`                 | Format string for the playback window.                                                              | `{status} {track} • {artists} {liked}\n{album} • {genres}\n{metadata}` |
@@ -334,6 +336,7 @@ Omitted fields use terminal defaults. Values can be color names or hex codes. Se
 | ----------------------- | --------------------------------------------------------------------------------------- |
 | a command, `NextTrack`  | the [command](../README.md#commands), as if its key was pressed                         |
 | `action:<Action>`       | an [action](#actions) on the playing track, e.g. `action:GoToRadio`                     |
+| `play:<URI>`            | plays a playlist or album, e.g. a [kept playlist](#kept-playlists)                      |
 | `radio:<playlist id>`   | a radio from a random song of that playlist                                             |
 | `prompt:search`         | takes a search term and searches Spotify                                                |
 | `prompt:filter`         | takes a search term and filters the list on screen                                      |
@@ -346,6 +349,27 @@ Omitted fields use terminal defaults. Values can be color names or hex codes. Se
       description: "Radio from a random song in ambient electronic"
       action: "radio:0vg39Xm6TsRJNoie3g1JtP"
 ```
+
+## Kept playlists
+
+`spotify_player keep` keeps each `[[kept_playlists]]` entry: it removes the songs played from the playlist, so it always starts where you left off, and refills a radio playlist. Each entry has:
+
+| Option       | Description                                                                          | Default |
+| ------------ | ------------------------------------------------------------------------------------ | ------- |
+| `id`         | The playlist's ID.                                                                   |         |
+| `radio_from` | Refill it with radios seeded by random songs of this playlist (an ID), as a radio.   | none    |
+| `buffer`     | For a radio, how many songs to keep ahead.                                           | `200`   |
+
+```toml
+[[kept_playlists]]
+id = "4vJLmbeNzu98tBduR9i4Q0" # a bike playlist: played songs are removed
+
+[[kept_playlists]]
+id = "1a2b3c4d5e6f7g8h9i0jKL" # a rolling radio from ambient electronic
+radio_from = "0vg39Xm6TsRJNoie3g1JtP"
+```
+
+Played songs come from Spotify's listening history, which keeps the last 50 plays; while the playlist plays, the songs before the playing one are removed too, which covers more plays than that between passes. The keeper's progress is in `keeper.json` in the cache folder.
 
 ## Keymaps
 

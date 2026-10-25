@@ -33,6 +33,8 @@ This file guides coding agents when working in this repository.
 | `ui/{page,playback,popup}.rs` | Render functions for pages, playback bar, popups                            |
 | `ui/palette.rs`               | Draws the command palette over the page from fzt's rows                     |
 | `fzt.rs`                      | Loads fzt (`fzt.dll`, fzt-terminal's `cmd/fztlib`) and wraps its JSON calls |
+| `keeper.rs`                   | `spotify_player keep`: trims played songs, refills radio playlists          |
+| `play_report.rs`              | Reports integrated-player plays to Spotify (feature-gated)                  |
 | `ui/streaming.rs`             | FFT audio visualizer: `VisualizationSink`, `VisBands`, visualization page   |
 | `ui/ascii_cover.rs`           | ASCII album cover beside the bars, pulsing with the bass (feature-gated)    |
 | `streaming.rs`                | librespot connection + audio backend setup (feature-gated)                  |

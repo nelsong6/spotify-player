@@ -12,6 +12,7 @@
   - [Using a custom client ID](#using-a-custom-client-id)
 - [Features](#features)
   - [Command palette](#command-palette)
+  - [Kept playlists](#kept-playlists)
   - [Spotify Connect](#spotify-connect)
   - [Streaming](#streaming)
   - [Audio Visualization](#audio-visualization)
@@ -266,6 +267,10 @@ Press `/` to open the command palette: type to search a menu of what you can do,
 
 The palette is fzt itself, loaded from `fzt.dll` (from [fzt-terminal](https://github.com/romaine-life/fzt-terminal)'s releases) beside the executable. Without it, the palette says it couldn't load the library.
 
+### Kept playlists
+
+`spotify_player keep` runs until stopped and keeps the playlists listed as `kept_playlists` in the config, so playing one from its top always picks up where you left off, on any device. Every 10 minutes for the playlist that's playing and every hour for the others, it removes the songs Spotify's listening history shows were played from the playlist, and, while it plays, the songs before the playing one. A playlist with `radio_from` is a rolling radio: it's also refilled with radios seeded by random songs of that playlist, so `buffer` songs (default 200) stay ahead. It needs no running app, so it can run on an always-on machine; see [config docs](docs/config.md#kept-playlists).
+
 ### Spotify Connect
 
 Control Spotify remotely with [Spotify Connect](https://support.spotify.com/us/article/spotify-connect/). Press **D** to list devices, then **enter** to connect.
@@ -276,7 +281,7 @@ A radio, liked songs or other track list played by `spotify_player` can't be tra
 
 Stream music directly from the terminal. The streaming feature is enabled by default and uses the `rodio-backend` audio backend unless otherwise specified.
 
-The app uses [librespot](https://github.com/librespot-org/librespot) to create an integrated Spotify client, registering a `spotify-player` device accessible via Spotify Connect.
+The app uses [librespot](https://github.com/librespot-org/librespot) to create an integrated Spotify client, registering a `spotify-player` device accessible via Spotify Connect. It reports what it plays to Spotify, as Spotify's own apps do, so its plays show in your listening history.
 
 #### Audio backend
 
@@ -421,6 +426,7 @@ To enable [fuzzy search](https://en.wikipedia.org/wiki/Approximate_string_matchi
 - `like`: Like currently playing track
 - `authenticate`: Authenticate the application
 - `playlist`: Playlist editing (new, delete, import, fork, etc)
+- `keep`: Keep the config's [kept playlists](#kept-playlists), until stopped
 
 For more details, run `spotify_player -h` or `spotify_player {command} -h`.
 

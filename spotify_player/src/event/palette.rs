@@ -3,6 +3,7 @@
 //! An entry's `action` is one of
 //! - a command, as named in the keymap config (`NextTrack`), run as if its key was pressed
 //! - `action:<Action>`, an action on the playing track (`action:GoToRadio`)
+//! - `play:<playlist or album URI>`, which plays it
 //! - `radio:<playlist id>`, a radio from a random song of that playlist
 //! - `prompt:search` / `prompt:filter`, which take a search term for Spotify or for the list on
 //!   screen
@@ -151,6 +152,22 @@ fn run_action(
     ui: &mut UIStateGuard,
 ) -> Result<()> {
     if action.is_empty() {
+        return Ok(());
+    }
+    if let Some(uri) = action.strip_prefix("play:") {
+        let context = if uri.starts_with("spotify:album:") {
+            ContextId::Album(AlbumId::from_uri(uri)?.into_static())
+        } else {
+            ContextId::Playlist(
+                PlaylistId::from_uri(uri)
+                    .with_context(|| format!("`{action}` needs a playlist or album URI"))?
+                    .into_static(),
+            )
+        };
+        client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
+            Playback::Context(context, None),
+            None,
+        )))?;
         return Ok(());
     }
     if let Some(id) = action.strip_prefix("radio:") {

@@ -114,3 +114,25 @@ jobs:
             target/release/spotify_player.exe
             target/release/fzt.dll
           if-no-files-found: error
+
+  linux-build:
+    # `spotify_player keep` for the NAS: no audio, so no audio libraries to build against
+    if: github.event_name == 'push'
+    needs: [rust-ci, cargo-machete, typos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --locked --release --no-default-features --features rustls-tls
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotify_player-linux
+          path: target/release/spotify_player
+          if-no-files-found: error

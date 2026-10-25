@@ -317,6 +317,17 @@ impl AppClient {
         Ok(())
     }
 
+    /// Create a new session if the current one is no longer valid, outside the app
+    pub async fn renew_session_if_invalid(&self) -> Result<()> {
+        if self.spotify.session().await.is_invalid() {
+            tracing::info!("Client's current session is invalid, creating a new session...");
+            self.new_session(None, false)
+                .await
+                .context("create new client session")?;
+        }
+        Ok(())
+    }
+
     /// Check if the current session is valid and if invalid, create a new session
     pub async fn check_valid_session(&self, state: &SharedState) -> Result<()> {
         if self.spotify.session().await.is_invalid() {
@@ -1101,17 +1112,54 @@ impl AppClient {
             Some(Context::Playlist { tracks, .. }) => Some(tracks.clone()),
             _ => None,
         });
-        let tracks = match cached {
-            Some(tracks) => tracks,
-            None => match self.playlist_context(playlist_id).await? {
-                Context::Playlist { tracks, .. } => tracks,
-                _ => unreachable!("playlist_context returns a playlist context"),
-            },
-        };
-        tracks
-            .choose(&mut rand::rng())
-            .cloned()
-            .context(format!("playlist {uri} has no tracks"))
+        if let Some(tracks) = cached {
+            return tracks
+                .choose(&mut rand::rng())
+                .cloned()
+                .context(format!("playlist {uri} has no tracks"));
+        }
+        // two requests for one item, instead of fetching a long playlist whole
+        let path = format!("playlists/{}/items", playlist_id.id());
+        let first: rspotify::model::Page<rspotify::model::PlaylistItem> = self
+            .http_get(&path, &Query::from([("limit", "1"), ("offset", "0")]))
+            .await?;
+        anyhow::ensure!(first.total > 0, "playlist {uri} has no tracks");
+        // an item that is no track (an episode or a local file) gets another try
+        for _ in 0..5 {
+            let offset = rand::RngExt::random_range(&mut rand::rng(), 0..first.total).to_string();
+            let page: rspotify::model::Page<rspotify::model::PlaylistItem> = self
+                .http_get(
+                    &path,
+                    &Query::from([("limit", "1"), ("offset", offset.as_str())]),
+                )
+                .await?;
+            if let Some(track) = page
+                .items
+                .into_iter()
+                .find_map(Track::try_from_playlist_item)
+            {
+                return Ok(track);
+            }
+        }
+        anyhow::bail!("found no track in playlist {uri}")
+    }
+
+    /// The URIs of a playlist's items, in order
+    pub async fn playlist_item_uris(&self, playlist_id: PlaylistId<'_>) -> Result<Vec<String>> {
+        let items = self
+            .all_paging_items::<rspotify::model::PlaylistItem>(
+                &format!("playlists/{}/items", playlist_id.id()),
+                0,
+            )
+            .await?;
+        Ok(items
+            .into_iter()
+            .filter_map(|item| match item.item? {
+                rspotify::model::PlayableItem::Track(track) => track.id.map(|id| id.uri()),
+                rspotify::model::PlayableItem::Episode(episode) => Some(episode.id.uri()),
+                rspotify::model::PlayableItem::Unknown(_) => None,
+            })
+            .collect())
     }
 
     /// Start a radio seeded by a random track from a playlist: open the radio's page in the app
@@ -1122,8 +1170,25 @@ impl AppClient {
         playlist_id: PlaylistId<'static>,
     ) -> Result<()> {
         let source_playlist = Some(playlist_id.uri());
-        let seed = self.random_playlist_track(Some(state), playlist_id).await?;
-        self.start_track_radio(state, seed, source_playlist).await
+        // a page right away, saying the radio is being built, while a song is picked
+        let pending = ContextPageType::Browsing(ContextId::Tracks(TracksId::new(
+            format!("radio:pending:{}", playlist_id.uri()),
+            "radio".to_string(),
+        )));
+        state.ui.lock().new_page(PageState::Context {
+            id: None,
+            context_page_type: pending.clone(),
+            state: None,
+        });
+        let seed = self.random_playlist_track(Some(state), playlist_id).await;
+        {
+            let mut ui = state.ui.lock();
+            if matches!(ui.history.last(), Some(PageState::Context { context_page_type, .. }) if *context_page_type == pending)
+            {
+                ui.history.pop();
+            }
+        }
+        self.start_track_radio(state, seed?, source_playlist).await
     }
 
     /// Start a radio seeded by a track: open the radio's page in the app and play it.
@@ -1134,6 +1199,8 @@ impl AppClient {
         seed: Track,
         source_playlist: Option<String>,
     ) -> Result<()> {
+        // the radio's page shows right away, saying it's being built
+        open_radio_page(state, &seed.id.uri(), &seed.name);
         let tracks = self.radio_tracks(seed.id.uri()).await?;
         show_radio_page(
             state,
@@ -1319,6 +1386,41 @@ impl AppClient {
 
     /// Get recommendation (radio) tracks based on a seed
     pub async fn radio_tracks(&self, seed_uri: String) -> Result<Vec<Track>> {
+        let track_ids = self.radio_track_ids(&seed_uri).await?;
+
+        // Retrieve tracks based on IDs, one request per track. Development-mode apps get
+        // 403 from the batch `GET /tracks?ids=` endpoint, while `GET /tracks/{id}` still works.
+        // Results keep the radio's order; tracks that fail to load are skipped.
+        let mut tracks = Vec::with_capacity(track_ids.len());
+        for chunk in track_ids.chunks(5) {
+            let results =
+                futures::future::join_all(chunk.iter().map(|id| self.track(id.clone()))).await;
+            for (id, result) in chunk.iter().zip(results) {
+                match result {
+                    Ok(track) => tracks.push(track),
+                    Err(err) => {
+                        tracing::warn!("Failed to fetch radio track {}: {err:#}", id.uri());
+                    }
+                }
+            }
+        }
+
+        // Track-seeded radios in the official Spotify clients include the seed track itself
+        // as the first item in the generated session.
+        if let Ok(track_id) = TrackId::from_uri(&seed_uri) {
+            match self.track(track_id).await {
+                Ok(track) => move_seed_track_to_front(&mut tracks, track),
+                Err(err) => {
+                    tracing::warn!("Failed to fetch track radio seed {seed_uri}: {err:#}");
+                }
+            }
+        }
+
+        Ok(tracks)
+    }
+
+    /// The IDs of a radio's tracks, from Spotify's radio service
+    pub async fn radio_track_ids(&self, seed_uri: &str) -> Result<Vec<TrackId<'static>>> {
         #[derive(Debug, Deserialize)]
         struct TrackData {
             original_gid: String,
@@ -1371,41 +1473,13 @@ impl AppClient {
         }
 
         // Parse a list consisting of IDs of tracks inside the radio station
-        let track_ids = serde_json::from_slice::<RadioStationResponse>(&response.payload[0])?
-            .tracks
-            .into_iter()
-            .filter_map(|t| TrackId::from_id(t.original_gid).ok());
-
-        // Retrieve tracks based on IDs, one request per track. Development-mode apps get
-        // 403 from the batch `GET /tracks?ids=` endpoint, while `GET /tracks/{id}` still works.
-        // Results keep the radio's order; tracks that fail to load are skipped.
-        let track_ids: Vec<_> = track_ids.collect();
-        let mut tracks = Vec::with_capacity(track_ids.len());
-        for chunk in track_ids.chunks(5) {
-            let results =
-                futures::future::join_all(chunk.iter().map(|id| self.track(id.clone()))).await;
-            for (id, result) in chunk.iter().zip(results) {
-                match result {
-                    Ok(track) => tracks.push(track),
-                    Err(err) => {
-                        tracing::warn!("Failed to fetch radio track {}: {err:#}", id.uri());
-                    }
-                }
-            }
-        }
-
-        // Track-seeded radios in the official Spotify clients include the seed track itself
-        // as the first item in the generated session.
-        if let Ok(track_id) = TrackId::from_uri(&seed_uri) {
-            match self.track(track_id).await {
-                Ok(track) => move_seed_track_to_front(&mut tracks, track),
-                Err(err) => {
-                    tracing::warn!("Failed to fetch track radio seed {seed_uri}: {err:#}");
-                }
-            }
-        }
-
-        Ok(tracks)
+        Ok(
+            serde_json::from_slice::<RadioStationResponse>(&response.payload[0])?
+                .tracks
+                .into_iter()
+                .filter_map(|t| TrackId::from_id(t.original_gid).ok())
+                .collect(),
+        )
     }
 
     /// Search for items (tracks, artists, albums, playlists) matching a given query
@@ -2343,7 +2417,7 @@ pub fn show_radio_page(
     tracks: Vec<Track>,
     source_playlist: Option<String>,
 ) {
-    let radio_id = TracksId::new(format!("radio:{seed_uri}"), format!("{seed_name} Radio"));
+    let radio_id = radio_id(seed_uri, seed_name);
     state.session.lock().record_radio(
         radio_id.uri.clone(),
         radio_id.kind.clone(),
@@ -2358,9 +2432,20 @@ pub fn show_radio_page(
         },
         *TTL_CACHE_DURATION,
     );
+    open_radio_page(state, seed_uri, seed_name);
+}
+
+fn radio_id(seed_uri: &str, seed_name: &str) -> TracksId {
+    TracksId::new(format!("radio:{seed_uri}"), format!("{seed_name} Radio"))
+}
+
+/// Open a radio's page, which shows its tracks once they are in the cache
+fn open_radio_page(state: &SharedState, seed_uri: &str, seed_name: &str) {
     state.ui.lock().new_page(PageState::Context {
         id: None,
-        context_page_type: ContextPageType::Browsing(ContextId::Tracks(radio_id)),
+        context_page_type: ContextPageType::Browsing(ContextId::Tracks(radio_id(
+            seed_uri, seed_name,
+        ))),
         state: None,
     });
 }
