@@ -4,6 +4,9 @@ services:
     image: spt-keep:local
     container_name: spt-keep
     user: "1026:100"
+    # the tools share grants access through the administrators group only
+    group_add:
+      - "101"
     volumes:
       - /volume1/tools/spt:/tools/spt:ro
       - /volume1/docker/spt-keep/cache:/cache
