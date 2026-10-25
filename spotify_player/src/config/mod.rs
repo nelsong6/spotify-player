@@ -67,6 +67,9 @@ pub struct AppConfig {
     /// The saved playback session, shared by the instances that point at the same file
     pub session_file: Option<PathBuf>,
 
+    /// Playlists `spotify_player keep` keeps: played songs removed, radios refilled
+    pub kept_playlists: Vec<KeptPlaylist>,
+
     pub player_event_hook_command: Option<Command>,
 
     pub playback_format: String,
@@ -253,6 +256,23 @@ pub struct DeviceConfig {
     pub autoplay: bool,
 }
 
+/// A playlist `spotify_player keep` keeps
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct KeptPlaylist {
+    /// The playlist's ID
+    pub id: String,
+    /// For a radio: the playlist whose random songs seed the radios that refill it
+    #[serde(default)]
+    pub radio_from: Option<String>,
+    /// For a radio: how many songs to keep ahead
+    #[serde(default = "default_radio_buffer")]
+    pub buffer: usize,
+}
+
+fn default_radio_buffer() -> usize {
+    200
+}
+
 #[derive(Debug, Deserialize, Serialize, ConfigParse, Clone)]
 #[cfg(feature = "notify")]
 pub struct NotifyFormat {
@@ -349,6 +369,7 @@ impl Default for AppConfig {
 
             log_folder: None,
             session_file: None,
+            kept_playlists: Vec::new(),
 
             tracks_playback_limit: 50,
             top_tracks_limit: 100,

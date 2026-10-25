@@ -1,0 +1,12 @@
+services:
+  spt-keep:
+    build: .
+    image: spt-keep:local
+    container_name: spt-keep
+    user: "1026:100"
+    volumes:
+      - /volume1/tools/spt:/tools/spt:ro
+      - /volume1/docker/spt-keep/cache:/cache
+    environment:
+      - TZ=America/Los_Angeles
+    restart: unless-stopped

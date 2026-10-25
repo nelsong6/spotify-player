@@ -139,6 +139,16 @@ pub fn render_playback_window(
                 .alignment(Alignment::Center),
             vertical_chunks[1],
         );
+    } else if let Some(playback) = &player.playback {
+        // a device is active but Spotify names no song: what it was told to play didn't start
+        frame.render_widget(
+            Paragraph::new(format!(
+                "Spotify reports nothing playing on {}.",
+                playback.device.name
+            ))
+            .wrap(Wrap { trim: true }),
+            rect,
+        );
     } else {
         frame.render_widget(
             Paragraph::new(idle_playback_text(state)).wrap(Wrap { trim: true }),

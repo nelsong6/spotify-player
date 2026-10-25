@@ -1,0 +1,2 @@
+# runs on the NAS: keep LF line endings on every checkout
+* text eol=lf

@@ -186,6 +186,7 @@ pub fn init_cli() -> anyhow::Result<clap::Command> {
         .subcommand(commands::init_print_features_command())
         .subcommand(commands::init_lyrics_command())
         .subcommand(commands::init_quit_command())
+        .subcommand(commands::init_keep_command())
         .arg(
             clap::Arg::new("theme")
                 .short('t')

@@ -236,8 +236,10 @@ pub async fn new_connection(
 
     let player_event_task = tokio::task::spawn({
         let mut channel = player.get_player_event_channel();
+        let session = session.clone();
         async move {
             let mut pause_armed = pause_on_startup;
+            let mut play_reporter = crate::play_report::PlayReporter::default();
             while let Some(event) = channel.recv().await {
                 // Suppress Spotify's auto-resume of the previous session on
                 // startup. The `librespot` connect transfer finalizes the
@@ -268,6 +270,15 @@ pub async fn new_connection(
                     }
                 }
 
+                let context_uri = state
+                    .player
+                    .read()
+                    .playback
+                    .as_ref()
+                    .and_then(|p| p.context.as_ref())
+                    .map(|c| c.uri.clone())
+                    .unwrap_or_default();
+                play_reporter.handle(&event, &session, &context_uri);
                 match PlayerEvent::from_librespot_player_event(event) {
                     Err(err) => {
                         tracing::warn!("Failed to convert a `librespot` player event into `spotify_player` player event: {err:#}");

@@ -91,6 +91,12 @@ pub fn init_quit_command() -> Command {
     Command::new("quit").about("Quit the running application")
 }
 
+pub fn init_keep_command() -> Command {
+    Command::new("keep").about(
+        "Keep the config's kept_playlists: remove played songs and refill radios, until stopped",
+    )
+}
+
 fn add_id_or_name_group(cmd: Command) -> Command {
     add_id_or_name_group_optional(cmd, true)
 }

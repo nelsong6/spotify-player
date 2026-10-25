@@ -8,10 +8,13 @@ mod config;
 mod event;
 #[allow(unsafe_code)] // loads fzt's C library
 mod fzt;
+mod keeper;
 mod key;
 mod log_layer;
 #[cfg(feature = "media-control")]
 mod media_control;
+#[cfg(feature = "streaming")]
+mod play_report;
 mod playlist_folders;
 mod state;
 #[cfg(feature = "streaming")]
@@ -27,6 +30,14 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::config::apply_config_override;
+
+fn log_folder() -> &'static std::path::Path {
+    config::get_config()
+        .app_config
+        .log_folder
+        .as_deref()
+        .expect("log_folder is set")
+}
 
 fn init_logging(
     log_folder: &std::path::Path,
@@ -286,18 +297,16 @@ fn main() -> Result<()> {
     }
 
     match args.subcommand() {
+        Some(("keep", _)) => {
+            init_logging(log_folder(), Arc::default())
+                .context("failed to initialize application's logging")?;
+            keeper::run()
+        }
         None => {
-            // initialize the application's log
-            let log_folder = config::get_config()
-                .app_config
-                .log_folder
-                .as_deref()
-                .expect("log_folder is set");
-
             let log_buffer: Arc<Mutex<VecDeque<String>>> =
                 Arc::new(Mutex::new(VecDeque::with_capacity(1000)));
 
-            init_logging(log_folder, log_buffer.clone())
+            init_logging(log_folder(), log_buffer.clone())
                 .context("failed to initialize application's logging")?;
 
             // log the application's configurations
