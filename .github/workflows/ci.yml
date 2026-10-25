@@ -74,9 +74,9 @@ jobs:
         uses: crate-ci/typos@master
 
   windows-build:
-    # the build publish.ps1 publishes, made from commits on master alongside the checks;
-    # publish.ps1 takes it only from a run whose checks all passed
-    if: github.event_name == 'push'
+    # the build publish.ps1 publishes, made alongside the checks; publish.ps1 takes it only
+    # from a run whose checks all passed
+    if: github.event.pull_request.draft != true
     runs-on: windows-latest
     steps:
       - name: Checkout source
@@ -113,7 +113,7 @@ jobs:
 
   linux-build:
     # `spotify_player keep` for the NAS: no audio, so no audio libraries to build against
-    if: github.event_name == 'push'
+    if: github.event.pull_request.draft != true
     # its glibc must not outrun the NAS container's Debian stable
     runs-on: ubuntu-24.04
     steps:
