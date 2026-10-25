@@ -222,7 +222,7 @@ The `component_style` table customizes UI component appearance. All fields are o
 | `lyrics_playing`                 | Style for the currently playing lyrics line               |
 | `visualization`                  | Colors for the audio visualization bars (see below)       |
 
-The `visualization` style uses three optional colors (`low`, `mid`, `high`), interpolated by height: the base of the bars uses `low`, the middle `mid`, and the top `high`, so quiet bars stay in `low` and loud bars reach `high`. When omitted, a blue → green → red gradient is used.
+The `visualization` style uses three optional colors (`low`, `mid`, `high`), interpolated by height: the base of the bars uses `low`, the middle `mid`, and the top `high`, so quiet bars stay in `low` and loud bars reach `high`. Hex colors blend smoothly; palette names such as `Blue` switch from one to the next. When `visualization` is omitted, the gradient is drawn from the album cover's colors while the ASCII cover is shown, and is violet → rose → gold otherwise.
 
 Each style accepts optional fields:
 

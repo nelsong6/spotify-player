@@ -348,32 +348,240 @@ fn smooth_bands(bands: &mut [f32], scratch: &mut [f32]) {
     }
 }
 
-/// Linearly interpolates between two RGB colors; selects the nearest endpoint
-/// when either color is not an RGB color (e.g. an ANSI palette color).
-fn lerp_color(a: Color, b: Color, t: f32) -> Color {
-    match (a, b) {
-        (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => Color::Rgb(
-            (f32::from(r1) + (f32::from(r2) - f32::from(r1)) * t) as u8,
-            (f32::from(g1) + (f32::from(g2) - f32::from(g1)) * t) as u8,
-            (f32::from(b1) + (f32::from(b2) - f32::from(b1)) * t) as u8,
-        ),
-        (a, b) => {
-            if t < 0.5 {
-                a
+/// A color in `OKLab`, where straight-line blends change evenly to the eye instead of muddying
+/// through gray the way RGB blends do.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Oklab {
+    l: f32,
+    a: f32,
+    b: f32,
+}
+
+impl Oklab {
+    pub fn from_rgb(rgb: [u8; 3]) -> Self {
+        let [red, green, blue] = rgb.map(|c| {
+            let c = f32::from(c) / 255.0;
+            if c <= 0.04045 {
+                c / 12.92
             } else {
-                b
+                ((c + 0.055) / 1.055).powf(2.4)
             }
+        });
+        let cone = |x: f32, y: f32, z: f32| (x * red + y * green + z * blue).cbrt();
+        let lms = [
+            cone(0.412_221_46, 0.536_332_55, 0.051_445_995),
+            cone(0.211_903_5, 0.680_699_5, 0.107_396_96),
+            cone(0.088_302_46, 0.281_718_85, 0.629_978_7),
+        ];
+        let mix = |x: f32, y: f32, z: f32| x * lms[0] + y * lms[1] + z * lms[2];
+        Self {
+            l: mix(0.210_454_26, 0.793_617_8, -0.004_072_047),
+            a: mix(1.977_998_5, -2.428_592_2, 0.450_593_7),
+            b: mix(0.025_904_037, 0.782_771_77, -0.808_675_77),
         }
+    }
+
+    /// From lightness, chroma and hue in degrees, with the chroma reduced until the color fits
+    /// in sRGB so its hue survives the conversion.
+    fn from_lch(l: f32, c: f32, hue: f32) -> Self {
+        let (sin, cos) = hue.to_radians().sin_cos();
+        let mut c = c;
+        loop {
+            let color = Self {
+                l,
+                a: c * cos,
+                b: c * sin,
+            };
+            if c <= 0.0 || color.linear_rgb().iter().all(|v| (0.0..=1.0).contains(v)) {
+                return color;
+            }
+            c -= 0.005;
+        }
+    }
+
+    #[cfg(feature = "ascii-cover")]
+    fn chroma(self) -> f32 {
+        self.a.hypot(self.b)
+    }
+
+    #[cfg(feature = "ascii-cover")]
+    fn hue(self) -> f32 {
+        self.b.atan2(self.a).to_degrees().rem_euclid(360.0)
+    }
+
+    fn lerp(self, other: Self, t: f32) -> Self {
+        Self {
+            l: self.l + (other.l - self.l) * t,
+            a: self.a + (other.a - self.a) * t,
+            b: self.b + (other.b - self.b) * t,
+        }
+    }
+
+    /// The same color with its hue turned by an angle given as its sine and cosine.
+    fn rotate(self, (sin, cos): (f32, f32)) -> Self {
+        Self {
+            l: self.l,
+            a: self.a * cos - self.b * sin,
+            b: self.a * sin + self.b * cos,
+        }
+    }
+
+    fn linear_rgb(self) -> [f32; 3] {
+        let l = (self.l + 0.396_337_78 * self.a + 0.215_803_76 * self.b).powi(3);
+        let m = (self.l - 0.105_561_346 * self.a - 0.063_854_17 * self.b).powi(3);
+        let s = (self.l - 0.089_484_18 * self.a - 1.291_485_5 * self.b).powi(3);
+        [
+            4.076_741_7 * l - 3.307_711_6 * m + 0.230_969_94 * s,
+            -1.268_438 * l + 2.609_757_4 * m - 0.341_319_38 * s,
+            -0.004_196_086_3 * l - 0.703_418_6 * m + 1.707_614_7 * s,
+        ]
+    }
+
+    fn color(self) -> Color {
+        let [r, g, b] = self.linear_rgb().map(|c| {
+            let c = c.clamp(0.0, 1.0);
+            let c = if c <= 0.003_130_8 {
+                c * 12.92
+            } else {
+                1.055 * c.powf(1.0 / 2.4) - 0.055
+            };
+            (c * 255.0).round() as u8
+        });
+        Color::Rgb(r, g, b)
     }
 }
 
-/// Maps a normalised amplitude `t` in [0, 1] to a color between the theme's
-/// `low` (quiet), `mid` (medium) and `high` (loud) visualization stops.
-fn bar_color(t: f32, low: Color, mid: Color, high: Color) -> Color {
-    if t < 0.5 {
-        lerp_color(low, mid, t * 2.0)
-    } else {
-        lerp_color(mid, high, (t - 0.5) * 2.0)
+/// How far a blended palette's hue turns from the bass at the left to the treble at the right,
+/// in degrees.
+const HUE_SWEEP: f32 = 40.0;
+
+/// The bars' gradient from `low` at the base through `mid` to `high` at the top.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BarPalette {
+    low: Oklab,
+    mid: Oklab,
+    high: Oklab,
+}
+
+impl Default for BarPalette {
+    /// Dusk: violet at the base, rose through the middle, a warm gold at the top.
+    fn default() -> Self {
+        Self::from_hues(290.0, 70.0)
+    }
+}
+
+impl BarPalette {
+    /// A gradient rising from a deep shade of `base` to a pale glow of `accent`, through a
+    /// vivid hue halfway between them.
+    fn from_hues(base: f32, accent: f32) -> Self {
+        let mid = base + ((accent - base + 540.0).rem_euclid(360.0) - 180.0) / 2.0;
+        Self {
+            low: Oklab::from_lch(0.45, 0.13, base),
+            mid: Oklab::from_lch(0.68, 0.16, mid),
+            high: Oklab::from_lch(0.88, 0.11, accent),
+        }
+    }
+
+    /// A gradient from a cover's colors: its most prominent hue at the base and its strongest
+    /// contrasting hue at the top, or `None` for a cover with too little color to build one.
+    #[cfg(feature = "ascii-cover")]
+    pub fn from_cover(pixels: impl Iterator<Item = [u8; 3]>) -> Option<Self> {
+        const BINS: usize = 24;
+        const BIN_DEGREES: f32 = 360.0 / BINS as f32;
+        // Per hue bin: the summed weight, and the weighted hue direction
+        let mut bins = [(0.0_f32, 0.0_f32, 0.0_f32); BINS];
+        let mut count = 0;
+        for rgb in pixels {
+            count += 1;
+            let lab = Oklab::from_rgb(rgb);
+            let c = lab.chroma();
+            if c < 0.03 {
+                continue;
+            }
+            // Very dark and very light pixels carry little of a cover's character.
+            let w = c * (4.0 * lab.l * (1.0 - lab.l)).max(0.0);
+            let bin = ((lab.hue() / BIN_DEGREES) as usize).min(BINS - 1);
+            bins[bin].0 += w;
+            bins[bin].1 += lab.a / c * w;
+            bins[bin].2 += lab.b / c * w;
+        }
+        // Each bin is taken with its neighbours, so a hue split over a bin edge isn't undercounted.
+        let around = |i: usize| (0..3).map(move |d| bins[(i + BINS - 1 + d) % BINS]);
+        let score = |i: usize| around(i).map(|bin| bin.0).sum::<f32>();
+        let hue = |i: usize| {
+            let (a, b) = around(i).fold((0.0, 0.0), |(a, b), bin| (a + bin.1, b + bin.2));
+            f32::atan2(b, a).to_degrees().rem_euclid(360.0)
+        };
+        let best = |skip: &dyn Fn(usize) -> bool| {
+            (0..BINS)
+                .filter(|&i| !skip(i))
+                .max_by(|&x, &y| score(x).total_cmp(&score(y)))
+        };
+
+        let primary = best(&|_| false)?;
+        if score(primary) < 0.01 * count as f32 {
+            return None;
+        }
+        // The accent sits at least 60 degrees round the wheel from the primary hue, and is only
+        // taken when it holds a fair share of the cover's color.
+        let near = |i: usize| {
+            let d = i.abs_diff(primary);
+            d.min(BINS - d) < 4
+        };
+        let base = hue(primary);
+        let accent = best(&near)
+            .filter(|&i| score(i) >= 0.2 * score(primary))
+            .map_or(base + HUE_SWEEP, hue);
+        Some(Self::from_hues(base, accent))
+    }
+
+    /// The color at height `t` in [0, 1], its hue turned by `turn` (sine, cosine).
+    fn at(&self, t: f32, turn: (f32, f32)) -> Color {
+        let lab = if t < 0.5 {
+            self.low.lerp(self.mid, t * 2.0)
+        } else {
+            self.mid.lerp(self.high, (t - 0.5) * 2.0)
+        };
+        lab.rotate(turn).color()
+    }
+}
+
+/// The bars' colors: the theme's, or a cover-drawn or default gradient when the theme leaves
+/// them unset.
+enum BarColors {
+    /// Theme colors that include ANSI palette entries, whose actual values aren't known, so each
+    /// cell takes the nearest stop instead of a blend.
+    Stops(config::VisualizationColors),
+    Blend(BarPalette),
+}
+
+impl BarColors {
+    fn new(theme: &config::Theme, cover: Option<BarPalette>) -> Self {
+        let Some(colors) = theme.visualization() else {
+            return Self::Blend(cover.unwrap_or_default());
+        };
+        match (colors.low, colors.mid, colors.high) {
+            (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2), Color::Rgb(r3, g3, b3)) => {
+                Self::Blend(BarPalette {
+                    low: Oklab::from_rgb([r1, g1, b1]),
+                    mid: Oklab::from_rgb([r2, g2, b2]),
+                    high: Oklab::from_rgb([r3, g3, b3]),
+                })
+            }
+            _ => Self::Stops(colors),
+        }
+    }
+
+    /// The color at height `t` in [0, 1]; a blend's hue is turned by `turn` (sine, cosine).
+    fn at(&self, t: f32, turn: (f32, f32)) -> Color {
+        match self {
+            Self::Stops(c) => match t {
+                t if t < 0.25 => c.low,
+                t if t < 0.75 => c.mid,
+                _ => c.high,
+            },
+            Self::Blend(palette) => palette.at(t, turn),
+        }
     }
 }
 
@@ -412,23 +620,26 @@ pub fn render_visualization_page(
 ) {
     let rect = construct_and_render_block("Visualization", &ui.theme, Borders::ALL, frame, rect);
     #[cfg(feature = "ascii-cover")]
-    let rect = render_ascii_cover(frame, state, ui, rect);
-    render_audio_visualization(frame, state, &ui.theme, rect);
+    let (rect, cover_palette) = render_ascii_cover(frame, state, ui, rect);
+    #[cfg(not(feature = "ascii-cover"))]
+    let cover_palette = None;
+    let colors = BarColors::new(&ui.theme, cover_palette);
+    render_audio_visualization(frame, state, &colors, rect);
 }
 
 /// Render the ASCII cover at the left of `rect`, as large as fits in up to half its width, and
-/// return the area left for the bars.
+/// return the area left for the bars with a bar palette drawn from the cover's colors.
 #[cfg(feature = "ascii-cover")]
 fn render_ascii_cover(
     frame: &mut Frame,
     state: &SharedState,
     ui: &mut UIStateGuard,
     rect: Rect,
-) -> Rect {
+) -> (Rect, Option<BarPalette>) {
     use ratatui::layout::{Constraint, Flex, Layout};
 
     if ui.ascii_cover.mode == config::AsciiCoverMode::Off {
-        return rect;
+        return (rect, None);
     }
     let player = state.player.read();
     let Some(url) = player
@@ -437,11 +648,11 @@ fn render_ascii_cover(
         .and_then(|playback| playback.item.as_ref())
         .and_then(super::playback::item_image_url)
     else {
-        return rect;
+        return (rect, None);
     };
     let data = state.data.read();
     let Some(img) = data.caches.images.get(&url) else {
-        return rect;
+        return (rect, None);
     };
     // A cell is about twice as tall as it is wide, so a square cover is twice as wide as tall.
     let width = (rect.height * 2).min(rect.width / 2);
@@ -463,7 +674,7 @@ fn render_ascii_cover(
         cover_rect,
         levels.as_ref().map(|l| &l[..]),
     );
-    rest
+    (rest, ui.ascii_cover.palette())
 }
 
 /// Each band's recent peak: raised to `levels`, sinking at `PEAK_FALL_PER_SEC` since the last
@@ -502,12 +713,12 @@ fn cap_glyph(left: f32, h: f32, right: f32) -> char {
 /// Render the frequency bands as ASCII bars filling `rect`, bass at the left.
 ///
 /// Each bar's body thins from `@` at the base toward `.`, its top is shaped by its neighbours,
-/// and a `'` marks its recent peak. Cells are colored by height using the theme's visualization
-/// colors: `low` at the base → `mid` → `high` at the top.
-pub fn render_audio_visualization(
+/// and a `'` marks its recent peak. Cells are colored by height, `low` at the base → `mid` →
+/// `high` at the top, and a blended palette's hue turns gradually from bass to treble.
+fn render_audio_visualization(
     frame: &mut Frame,
     state: &SharedState,
-    theme: &config::Theme,
+    colors: &BarColors,
     rect: Rect,
 ) {
     let Some(levels) = band_levels(state) else {
@@ -517,8 +728,6 @@ pub fn render_audio_visualization(
         return;
     }
     let peaks = track_peaks(state, &levels);
-    let vis_colors = theme.visualization();
-    let color = |t: f32| bar_color(t, vis_colors.low, vis_colors.mid, vis_colors.high);
     let rows = f32::from(rect.height);
     let width = usize::from(rect.width);
     // Columns share bands when the area is wider than `NUM_BANDS` and skip some when narrower.
@@ -530,6 +739,10 @@ pub fn render_audio_visualization(
     let buf = frame.buffer_mut();
     for (col, &h) in heights.iter().enumerate() {
         let x = rect.x + col as u16;
+        let turn = (HUE_SWEEP * (col as f32 / width as f32 - 0.5))
+            .to_radians()
+            .sin_cos();
+        let color = |t: f32| colors.at(t, turn);
         let top = h as u16;
         for r in 0..top.min(rect.height) {
             let t = f32::from(r) / rows;
@@ -554,6 +767,37 @@ pub fn render_audio_visualization(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oklab_round_trips_rgb() {
+        for rgb in [[0, 0, 0], [255, 255, 255], [200, 30, 90], [12, 140, 250]] {
+            assert_eq!(
+                Oklab::from_rgb(rgb).color(),
+                Color::Rgb(rgb[0], rgb[1], rgb[2])
+            );
+        }
+    }
+
+    #[cfg(feature = "ascii-cover")]
+    #[test]
+    fn cover_palette_follows_the_cover_hues() {
+        let hue_of = |rgb: [u8; 3]| Oklab::from_rgb(rgb).hue();
+        let angle = |a: f32, b: f32| {
+            let d = (a - b).rem_euclid(360.0);
+            d.min(360.0 - d)
+        };
+        // mostly red with a blue accent: red at the base, blue at the top
+        let cover =
+            std::iter::repeat_n([200, 40, 40], 70).chain(std::iter::repeat_n([40, 60, 200], 30));
+        let palette = BarPalette::from_cover(cover).unwrap();
+        assert!(angle(palette.low.hue(), hue_of([200, 40, 40])) < 15.0);
+        assert!(angle(palette.high.hue(), hue_of([40, 60, 200])) < 15.0);
+        // a gray cover has no colors to draw from
+        assert_eq!(
+            BarPalette::from_cover(std::iter::repeat_n([128; 3], 100)),
+            None
+        );
+    }
 
     #[test]
     fn cap_glyph_follows_the_neighbours() {

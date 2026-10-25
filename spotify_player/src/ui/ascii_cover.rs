@@ -1,3 +1,4 @@
+use super::streaming::BarPalette;
 use crate::config::{self, AsciiCoverMode};
 use image::{imageops::FilterType, DynamicImage};
 use ratatui::{
@@ -22,6 +23,7 @@ pub struct AsciiCover {
     area: Rect,
     /// Per cell, row by row: luminance in [0, 1] and color
     cells: Vec<(f32, [u8; 3])>,
+    palette: Option<BarPalette>,
 }
 
 impl AsciiCover {
@@ -31,7 +33,13 @@ impl AsciiCover {
             url: String::new(),
             area: Rect::default(),
             cells: Vec::new(),
+            palette: None,
         }
+    }
+
+    /// A bar palette drawn from the last rendered cover's colors.
+    pub fn palette(&self) -> Option<BarPalette> {
+        self.palette
     }
 
     /// Render the cover `img` (from `url`) into `area`. `levels` are the visualization's band
@@ -49,6 +57,7 @@ impl AsciiCover {
         }
         if self.url != url || self.area != area {
             self.cells = sample(img, area);
+            self.palette = BarPalette::from_cover(self.cells.iter().map(|&(_, rgb)| rgb));
             url.clone_into(&mut self.url);
             self.area = area;
         }

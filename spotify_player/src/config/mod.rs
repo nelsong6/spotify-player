@@ -23,6 +23,8 @@ use keymap::KeymapConfig;
 use theme::ThemeConfig;
 
 pub use theme::Theme;
+#[cfg(feature = "streaming")]
+pub use theme::VisualizationColors;
 
 use crate::auth::{NCSPOT_CLIENT_ID, SPOTIFY_CLIENT_ID};
 

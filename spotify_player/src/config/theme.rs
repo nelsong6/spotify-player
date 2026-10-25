@@ -393,16 +393,15 @@ impl Theme {
             .style(&self.palette)
     }
 
-    /// Colors used by the audio visualization bars, keyed by amplitude.
-    /// Quiet bars use `low`, medium bars use `mid`, loud bars use `high`,
-    /// with a gradient between adjacent stops.
+    /// Colors used by the audio visualization bars, keyed by amplitude, or `None` when the
+    /// theme doesn't set them. Quiet bars use `low`, medium bars use `mid`, loud bars use
+    /// `high`, with a gradient between adjacent stops.
     #[cfg(feature = "streaming")]
-    pub fn visualization(&self) -> VisualizationColors {
+    pub fn visualization(&self) -> Option<VisualizationColors> {
         self.component_style
             .visualization
             .as_ref()
-            .unwrap_or(&VisualizationStyle::default())
-            .resolve(&self.palette)
+            .map(|style| style.resolve(&self.palette))
     }
 }
 
