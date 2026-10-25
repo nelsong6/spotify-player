@@ -37,15 +37,8 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           components: clippy, rustfmt
 
-      - name: Cache cargo deps
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: ${{ runner.os }}-rustc-${{ steps.install_toolchain.outputs.cachekey }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-rustc-${{ steps.install_toolchain.outputs.cachekey }}
+      - name: Cache cargo deps and build
+        uses: Swatinem/rust-cache@v2
 
       - name: Cargo format
         run: cargo fmt --all -- --check
@@ -81,9 +74,9 @@ jobs:
         uses: crate-ci/typos@master
 
   windows-build:
-    # the build publish.ps1 publishes, made only from commits on master that pass the checks
+    # the build publish.ps1 publishes, made from commits on master alongside the checks;
+    # publish.ps1 takes it only from a run whose checks all passed
     if: github.event_name == 'push'
-    needs: [rust-ci, cargo-machete, typos]
     runs-on: windows-latest
     steps:
       - name: Checkout source
@@ -91,6 +84,9 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo deps and build
+        uses: Swatinem/rust-cache@v2
 
       - name: Build
         run: cargo build --locked --release
@@ -118,7 +114,6 @@ jobs:
   linux-build:
     # `spotify_player keep` for the NAS: no audio, so no audio libraries to build against
     if: github.event_name == 'push'
-    needs: [rust-ci, cargo-machete, typos]
     # its glibc must not outrun the NAS container's Debian stable
     runs-on: ubuntu-24.04
     steps:
@@ -127,6 +122,9 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo deps and build
+        uses: Swatinem/rust-cache@v2
 
       - name: Build
         run: cargo build --locked --release --no-default-features --features rustls-tls
