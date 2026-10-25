@@ -627,8 +627,9 @@ pub fn render_visualization_page(
     render_audio_visualization(frame, state, &colors, rect);
 }
 
-/// Render the ASCII cover at the left of `rect`, as large as fits in up to half its width, and
-/// return the area left for the bars with a bar palette drawn from the cover's colors.
+/// Render the ASCII cover at the left of `rect`, as large as fits in up to half its width with
+/// the track, artists and album captioned beneath it, and return the area left for the bars
+/// with a bar palette drawn from the cover's colors.
 #[cfg(feature = "ascii-cover")]
 fn render_ascii_cover(
     frame: &mut Frame,
@@ -636,26 +637,37 @@ fn render_ascii_cover(
     ui: &mut UIStateGuard,
     rect: Rect,
 ) -> (Rect, Option<BarPalette>) {
-    use ratatui::layout::{Constraint, Flex, Layout};
+    use ratatui::{
+        layout::{Alignment, Constraint, Flex, Layout},
+        text::Line,
+        widgets::Paragraph,
+    };
 
     if ui.ascii_cover.mode == config::AsciiCoverMode::Off {
         return (rect, None);
     }
     let player = state.player.read();
-    let Some(url) = player
+    let Some(item) = player
         .playback
         .as_ref()
         .and_then(|playback| playback.item.as_ref())
-        .and_then(super::playback::item_image_url)
     else {
+        return (rect, None);
+    };
+    let Some(url) = super::playback::item_image_url(item) else {
         return (rect, None);
     };
     let data = state.data.read();
     let Some(img) = data.caches.images.get(&url) else {
         return (rect, None);
     };
+    // A blank line separates the caption from the cover.
+    let caption: Vec<_> = std::iter::once(Line::default())
+        .chain(cover_caption(item, &ui.theme))
+        .collect();
+    let caption_height = caption.len() as u16;
     // A cell is about twice as tall as it is wide, so a square cover is twice as wide as tall.
-    let width = (rect.height * 2).min(rect.width / 2);
+    let width = (rect.height.saturating_sub(caption_height) * 2).min(rect.width / 2);
     let height = width / 2;
     let [cover_column, _, rest] = Layout::horizontal([
         Constraint::Length(width),
@@ -663,9 +675,16 @@ fn render_ascii_cover(
         Constraint::Fill(0),
     ])
     .areas(rect);
-    let [cover_rect] = Layout::vertical([Constraint::Length(height)])
-        .flex(Flex::Center)
-        .areas(cover_column);
+    let [cover_rect, caption_rect] = Layout::vertical([
+        Constraint::Length(height),
+        Constraint::Length(caption_height),
+    ])
+    .flex(Flex::Center)
+    .areas(cover_column);
+    frame.render_widget(
+        Paragraph::new(caption).alignment(Alignment::Center),
+        caption_rect,
+    );
     let levels = band_levels(state);
     ui.ascii_cover.render(
         frame,
@@ -675,6 +694,37 @@ fn render_ascii_cover(
         levels.as_ref().map(|l| &l[..]),
     );
     (rest, ui.ascii_cover.palette())
+}
+
+/// The track (or episode), its artists (or publisher) and its album (or show), one per line.
+#[cfg(feature = "ascii-cover")]
+fn cover_caption(
+    item: &rspotify::model::PlayableItem,
+    theme: &config::Theme,
+) -> Vec<ratatui::text::Line<'static>> {
+    use super::utils::to_bidi_string;
+    use ratatui::text::Line;
+    use rspotify::model::PlayableItem;
+
+    #[allow(deprecated)]
+    let (name, artists, album) = match item {
+        PlayableItem::Track(track) => (
+            &track.name,
+            crate::utils::map_join(&track.artists, |a| &a.name, ", "),
+            &track.album.name,
+        ),
+        PlayableItem::Episode(episode) => (
+            &episode.name,
+            episode.show.publisher.clone(),
+            &episode.show.name,
+        ),
+        PlayableItem::Unknown(_) => return Vec::new(),
+    };
+    vec![
+        Line::styled(to_bidi_string(name), theme.playback_track()),
+        Line::styled(to_bidi_string(&artists), theme.playback_artists()),
+        Line::styled(to_bidi_string(album), theme.playback_album()),
+    ]
 }
 
 /// Each band's recent peak: raised to `levels`, sinking at `PEAK_FALL_PER_SEC` since the last
