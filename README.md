@@ -454,7 +454,7 @@ Press `?` or `C-h` to open the shortcut help page (default for `OpenCommandHelp`
 
 - Use the command palette's "filter" (the `Search` command) to search in the shortcut help page and other pages.
 - `RefreshPlayback` manually updates playback status.
-- `RestartIntegratedClient` is useful for switching audio devices without restarting the app.
+- On Windows the integrated player follows the system's default output device. Elsewhere, `RestartIntegratedClient` moves it to a new default without restarting the app.
 
 List of supported commands:
 
