@@ -1,7 +1,8 @@
 //! Audio output that survives its device going away. librespot's rodio sink keeps the stream it
 //! opened at startup: when that device is unplugged or drops off USB, the stream's error is
 //! printed over the terminal and the sink waits forever for its dead queue to drain. This sink
-//! logs the error instead and reopens on the current default device.
+//! logs the error instead and reopens on the current default device. On Windows it also moves to
+//! the new default device when the system's default output changes.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -29,6 +30,8 @@ pub struct RecoveringSink {
     /// Set by the stream's error callback when its device is no longer available
     device_lost: Arc<AtomicBool>,
     last_open_attempt: Option<Instant>,
+    #[cfg(windows)]
+    default_watch: Option<default_device::Watch>,
 }
 
 impl RecoveringSink {
@@ -37,6 +40,12 @@ impl RecoveringSink {
             output: None,
             device_lost: Arc::new(AtomicBool::new(false)),
             last_open_attempt: None,
+            #[cfg(windows)]
+            default_watch: default_device::Watch::register()
+                .inspect_err(|err| {
+                    tracing::warn!("Failed to watch for default audio device changes: {err:#}");
+                })
+                .ok(),
         };
         sink.ensure_output();
         sink
@@ -51,6 +60,16 @@ impl RecoveringSink {
     fn ensure_output(&mut self) {
         if self.output.is_some() && self.is_device_lost() {
             tracing::warn!("The audio output device went away; reopening on the default device");
+            self.output = None;
+        }
+        #[cfg(windows)]
+        if self
+            .default_watch
+            .as_ref()
+            .is_some_and(default_device::Watch::take_changed)
+            && self.output.is_some()
+        {
+            tracing::info!("The default audio output device changed; reopening on it");
             self.output = None;
         }
         if self.output.is_some()
@@ -144,5 +163,99 @@ impl Sink for RecoveringSink {
         ));
         self.wait_for_queue(MAX_QUEUED_CHUNKS);
         Ok(())
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)] // used to interact with the Windows API
+mod default_device {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    use windows::core::{implement, Result, PCWSTR};
+    use windows::Win32::Media::Audio::{
+        eConsole, eRender, EDataFlow, ERole, IMMDeviceEnumerator, IMMNotificationClient,
+        IMMNotificationClient_Impl, MMDeviceEnumerator, DEVICE_STATE,
+    };
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
+
+    /// A registration for Windows' notice that the default output device changed. It stays
+    /// registered until dropped.
+    pub struct Watch {
+        changed: Arc<AtomicBool>,
+        enumerator: IMMDeviceEnumerator,
+        client: IMMNotificationClient,
+    }
+
+    impl Watch {
+        pub fn register() -> anyhow::Result<Self> {
+            // cpal initializes COM the same way on this thread; an already initialized thread
+            // returns S_FALSE, and the matching uninitialize is left to thread exit.
+            unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.ok()?;
+            let enumerator: IMMDeviceEnumerator =
+                unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }?;
+            let changed = Arc::new(AtomicBool::new(false));
+            let client: IMMNotificationClient = Client {
+                changed: Arc::clone(&changed),
+            }
+            .into();
+            unsafe { enumerator.RegisterEndpointNotificationCallback(&client) }?;
+            Ok(Self {
+                changed,
+                enumerator,
+                client,
+            })
+        }
+
+        /// Whether the default output changed since the last call
+        pub fn take_changed(&self) -> bool {
+            self.changed.swap(false, Ordering::SeqCst)
+        }
+    }
+
+    impl Drop for Watch {
+        fn drop(&mut self) {
+            if let Err(err) = unsafe {
+                self.enumerator
+                    .UnregisterEndpointNotificationCallback(&self.client)
+            } {
+                tracing::warn!("Failed to stop watching the default audio device: {err:#}");
+            }
+        }
+    }
+
+    /// Called by Windows on its own thread, so it only sets a flag for the sink to act on
+    #[implement(IMMNotificationClient)]
+    struct Client {
+        changed: Arc<AtomicBool>,
+    }
+
+    impl IMMNotificationClient_Impl for Client_Impl {
+        fn OnDefaultDeviceChanged(&self, flow: EDataFlow, role: ERole, _: &PCWSTR) -> Result<()> {
+            // cpal's default output is the console role's render device
+            if flow == eRender && role == eConsole {
+                self.changed.store(true, Ordering::SeqCst);
+            }
+            Ok(())
+        }
+
+        fn OnDeviceStateChanged(&self, _: &PCWSTR, _: DEVICE_STATE) -> Result<()> {
+            Ok(())
+        }
+
+        fn OnDeviceAdded(&self, _: &PCWSTR) -> Result<()> {
+            Ok(())
+        }
+
+        fn OnDeviceRemoved(&self, _: &PCWSTR) -> Result<()> {
+            Ok(())
+        }
+
+        fn OnPropertyValueChanged(&self, _: &PCWSTR, _: &PROPERTYKEY) -> Result<()> {
+            Ok(())
+        }
     }
 }
