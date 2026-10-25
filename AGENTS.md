@@ -141,3 +141,33 @@ Base the description on the actual branch diff (`git diff master...<branch>`), n
 - Prefer plain prose over filler; omit empty sections. Add a short **Notes** section only for non-obvious trade-offs or follow-ups.
 
 Output the description as raw markdown in a fenced code block so it can be copied and pasted directly into the PR.
+## Fork notes (nelsong6/spotify-player)
+
+Spotify behaviors this fork depends on, each verified live (2026-10-23 to 10-25):
+
+- **Spotify's own apps drop a bare track list.** `PUT /me/player/play` with `uris` on an
+  official app returns 204 and plays nothing; `/me/player` then shows
+  `currently_playing_type: unknown` and no item. Only the integrated player (librespot)
+  plays one. A real playlist plays everywhere, which is why kept playlists exist.
+- **librespot doesn't report plays** (librespot#913), so the integrated player's plays never
+  reach the listening history. `play_report.rs` sends librespot-java's three events to
+  `hm://event-service/v1/events` with method `POST`; `SEND`, librespot's public method,
+  gets 404.
+- **librespot keeps its old copy of a context it's told to play again**, so refilling a
+  playlist and replaying its URI plays stale tracks. Adding songs ahead of the playing one
+  and removing songs behind it are both picked up, by librespot and the official apps.
+- **Playlists created through the API are public** whatever `public` says, on create and on
+  update.
+- **One broken playlist empties `/me/playlists`**: a page containing a playlist Spotify
+  answers 502 for comes back with no items, so the library shows no playlists.
+- **Recently played** keeps the last 50 plays, each with its context; skipped songs count.
+
+Working on the fork:
+
+- `publish.ps1` publishes CI's build of the pushed commit to `\NelsonNAS\tools\spt`:
+  the Windows exe plus `fzt.dll` (pinned in `fzt.lock`, from fzt-terminal releases) and the
+  Linux binary `nas/` runs for `spotify_player keep`. CI's `windows-build` and `linux-build`
+  jobs run only on pushes to master.
+- To see the UI without touching the desktop, run a test instance (its own `-c`/`-C`
+  folders, its own `client_port`, streaming off unless needed) in a background `tabs`
+  session and read it with `tabs action dump-screen`; send keys with `write-chars`.
