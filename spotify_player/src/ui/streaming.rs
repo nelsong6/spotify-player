@@ -8,7 +8,7 @@ use librespot_playback::{
     decoder::AudioPacket,
 };
 use parking_lot::Mutex;
-use ratatui::{layout::Rect, style::Color, text::Line, widgets::Borders, Frame};
+use ratatui::{layout::Rect, style::Color, widgets::Borders, Frame};
 use rustfft::{num_complex::Complex, FftPlanner};
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -639,6 +639,7 @@ fn render_ascii_cover(
 ) -> (Rect, Option<BarPalette>) {
     use ratatui::{
         layout::{Alignment, Constraint, Flex, Layout},
+        text::Line,
         widgets::Paragraph,
     };
 
@@ -700,8 +701,9 @@ fn render_ascii_cover(
 fn cover_caption(
     item: &rspotify::model::PlayableItem,
     theme: &config::Theme,
-) -> Vec<Line<'static>> {
+) -> Vec<ratatui::text::Line<'static>> {
     use super::utils::to_bidi_string;
+    use ratatui::text::Line;
     use rspotify::model::PlayableItem;
 
     #[allow(deprecated)]
