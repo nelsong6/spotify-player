@@ -13,9 +13,16 @@ $version = git describe --tags --always
 $commit = git rev-parse HEAD
 $repo = 'nelsong6/spotify-player'
 
-# CI's windows-build job makes the published build; wait for this commit's run
+# CI's windows-build and linux-build jobs make the published binaries. A squash merge of a PR
+# whose branch was up to date has the PR's last commit's tree, so that PR run already built
+# this commit and there's no need to wait for the run on master.
 $run = $null
+$head = gh api "repos/$repo/commits/$commit/pulls" --jq '.[0].head.sha'
+if ($head -and (gh api "repos/$repo/git/commits/$head" --jq .tree.sha) -eq (git rev-parse "$commit^{tree}")) {
+    $run = gh run list -R $repo -w CI -c $head -e pull_request --json databaseId --jq '.[0].databaseId'
+}
 foreach ($attempt in 1..30) {
+    if ($run) { break }
     $run = gh run list -R $repo -w CI -c $commit -e push --json databaseId --jq '.[0].databaseId'
     if ($run) { break }
     Start-Sleep -Seconds 10
