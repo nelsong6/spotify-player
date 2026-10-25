@@ -15,6 +15,26 @@ pub fn construct_and_render_block(
     frame: &mut Frame,
     rect: Rect,
 ) -> Rect {
+    construct_and_render_styled_block(
+        title,
+        theme.border(),
+        theme.block_title(),
+        borders,
+        frame,
+        rect,
+    )
+}
+
+/// [`construct_and_render_block`] with the border and title in the given styles instead of the
+/// theme's.
+pub fn construct_and_render_styled_block(
+    title: &str,
+    border_style: Style,
+    title_style: Style,
+    borders: Borders,
+    frame: &mut Frame,
+    rect: Rect,
+) -> Rect {
     let mut title = title.to_string();
 
     let configs = config::get_config();
@@ -28,7 +48,7 @@ pub fn construct_and_render_block(
 
     let mut block = Block::default()
         .borders(borders)
-        .border_style(theme.border())
+        .border_style(border_style)
         .border_type(border_type);
 
     let inner_rect = block.inner(rect);
@@ -44,7 +64,7 @@ pub fn construct_and_render_block(
     }
 
     // Set `title` for the block
-    block = block.title(Span::styled(title, theme.block_title()));
+    block = block.title(Span::styled(title, title_style));
 
     frame.render_widget(block, rect);
     inner_rect

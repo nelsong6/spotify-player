@@ -172,7 +172,16 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
     // render playback window before other popups and windows to ensure nothing is rendered on top
     // of the playback window, which is to avoid "duplicated images" issue
     // See: https://github.com/aome510/spotify-player/issues/498
-    let rect = playback::render_playback_window(frame, state, ui, rect);
+    let rect = if visualization_shown(state) {
+        // the visualization carries the playback itself, in its caption and transport line
+        #[cfg(feature = "image")]
+        {
+            ui.last_cover_image_render_info = ImageRenderInfo::default();
+        }
+        rect
+    } else {
+        playback::render_playback_window(frame, state, ui, rect)
+    };
     let page_rect = rect;
 
     let rect = popup::render_shortcut_help_popup(frame, ui, rect);
@@ -185,6 +194,16 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
     palette::render(frame, ui, page_rect);
 }
 
+fn visualization_shown(state: &SharedState) -> bool {
+    #[cfg(feature = "streaming")]
+    return state.is_visualization_shown();
+    #[cfg(not(feature = "streaming"))]
+    {
+        let _ = state;
+        false
+    }
+}
+
 /// Render the application's main layout
 fn render_main_layout(
     is_active: bool,
@@ -194,7 +213,7 @@ fn render_main_layout(
     rect: Rect,
 ) {
     #[cfg(feature = "streaming")]
-    if state.is_visualization_shown() {
+    if visualization_shown(state) {
         streaming::render_visualization_page(frame, state, ui, rect);
         return;
     }

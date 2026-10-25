@@ -315,13 +315,13 @@ cargo install spotify_player --no-default-features
 
 ### Audio Visualization
 
-Real-time audio visualization replaces the page under the playback window with ASCII frequency bars (64 log-scale bands from bass (left) to treble (right)) while music is streamed locally via the integrated [librespot](https://github.com/librespot-org/librespot) player. The page comes back when playback is on an external Spotify Connect device or when the playback is not playing.
+Real-time audio visualization replaces the page and the playback window with ASCII frequency bars (64 log-scale bands from bass (left) to treble (right)) while music is streamed locally via the integrated [librespot](https://github.com/librespot-org/librespot) player. A transport line beneath the bars shows the play state, the elapsed time on a progress line you can click to seek, the duration, then the volume, device and what plays next. The page and the playback window come back when playback is on an external Spotify Connect device or when the playback is not playing.
 
 Set `enable_audio_visualization` to `true` in your config to enable this feature, or toggle it while the app runs with `V`. Each bar thins from `@` at its base toward `.`, its top follows its neighbours as `^ / \ _ - ~`, and a `'` marks its recent peak. The bars are colored by height in a gradient drawn from the album cover's colors (or a violet → rose → gold one when there's no cover), unless the active theme sets the `visualization` component style (`low`/`mid`/`high` colors); see [config docs](https://github.com/aome510/spotify-player/blob/master/docs/config.md).
 
 ![Audio Visualization](https://github.com/user-attachments/assets/8c21c1b0-5276-4a9e-b719-e0c2bd555537)
 
-With the `ascii-cover` feature (on by default), an ASCII rendering of the album cover, colored from the cover, fills up to half of the visualization, left of the bars. In `Pulse` mode it brightens and thickens with the bass; in `Still` mode it is a plain picture. Pick the starting mode with `ascii_cover` (`Pulse`, `Still` or `Off`) and cycle it while the app runs with `CycleAsciiCover` (`I`).
+With the `ascii-cover` feature (on by default), an ASCII rendering of the album cover, colored from the cover, fills up to half of the visualization, left of the bars, with the track, artists and album beneath it; the track title and the progress line take the bars' colors. In `Pulse` mode it brightens and thickens with the bass; in `Still` mode it is a plain picture. Pick the starting mode with `ascii_cover` (`Pulse`, `Still` or `Off`) and cycle it while the app runs with `CycleAsciiCover` (`I`).
 
 ### Media Control
 
