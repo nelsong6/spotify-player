@@ -119,7 +119,8 @@ jobs:
     # `spotify_player keep` for the NAS: no audio, so no audio libraries to build against
     if: github.event_name == 'push'
     needs: [rust-ci, cargo-machete, typos]
-    runs-on: ubuntu-latest
+    # its glibc must not outrun the NAS container's Debian stable
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
