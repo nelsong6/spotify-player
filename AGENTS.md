@@ -167,8 +167,10 @@ Working on the fork:
 - `publish.ps1` publishes CI's build of the pushed commit to `\NelsonNAS\tools\spt`:
   the Windows exe plus `fzt.dll` (pinned in `fzt.lock`, from fzt-terminal releases) and the
   Linux binary `nas/` runs for `spotify_player keep`. CI's `windows-build` and `linux-build`
-  jobs run only on pushes to master, alongside the checks rather than after them;
-  `publish.ps1` takes them only from a run that passed in full. With `Swatinem/rust-cache`
+  jobs run on PRs and on master, alongside the checks rather than after them;
+  `publish.ps1` takes them only from a run that passed in full. For a squash merge whose
+  tree matches its PR's last commit it takes the PR run's build instead of waiting for the
+  run on master. With `Swatinem/rust-cache`
   warm, push to publishable binary measured 3m11s (19 min uncached and chained; 12.5 min on
   a cold cache).
 - On Windows the integrated player follows the system's default output through Windows'
@@ -176,5 +178,6 @@ Working on the fork:
   opens a fixed device, never a stream that follows the default. Polling the default was
   rejected by Nelson; so was replacing cpal/rodio with a hand-written WASAPI sink.
 - To see the UI without touching the desktop, run a test instance (its own `-c`/`-C`
-  folders, its own `client_port`, streaming off unless needed) in a background `tabs`
-  session and read it with `tabs action dump-screen`; send keys with `write-chars`.
+  folders, its own `client_port`, streaming off unless needed) in a detached tmux session on
+  its own server (`tmux -L <name> new-session -d -x <cols> -y <rows> <command>`), read it
+  with `capture-pane -p` (`-e` keeps the colors) and send keys with `send-keys`.
