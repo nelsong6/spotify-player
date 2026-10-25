@@ -269,7 +269,7 @@ The palette is fzt itself, loaded from `fzt.dll` (from [fzt-terminal](https://gi
 
 ### Kept playlists
 
-`spotify_player keep` runs until stopped and keeps the playlists listed as `kept_playlists` in the config, so playing one from its top always picks up where you left off, on any device. Every 10 minutes for the playlist that's playing and every hour for the others, it removes the songs Spotify's listening history shows were played from the playlist, and, while it plays, the songs before the playing one. A playlist with `radio_from` is a rolling radio: it's also refilled with radios seeded by random songs of that playlist, so `buffer` songs (default 200) stay ahead. It needs no running app, so it can run on an always-on machine; see [config docs](docs/config.md#kept-playlists).
+`spotify_player keep` runs until stopped and keeps the playlists listed as `kept_playlists` in the config, so playing one from its top always picks up where you left off, on any device. Every 10 minutes for the playlist that's playing and every hour for the others, it removes the songs Spotify's listening history shows were played from the playlist, and, while it plays, the songs before the playing one. A playlist with `radio_from` is a rolling radio: it's also refilled with radios seeded by random songs of that playlist, so `buffer` songs (default 200) stay ahead. It needs no running app, so it can run on an always-on machine: [`nas/`](nas) runs it in a container on a Synology NAS, deployed with `nas/deploy.sh`. See [config docs](docs/config.md#kept-playlists).
 
 ### Spotify Connect
 

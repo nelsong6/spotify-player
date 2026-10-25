@@ -34,3 +34,7 @@ foreach ($artifact in 'spotify_player-windows', 'spotify_player-linux') {
 
 publish-tool -Name spt -Version $version -Path $dir `
     -Entry spotify_player.exe -Repo https://github.com/nelsong6/spotify-player -Commit $commit
+
+# spt-keep on the NAS runs the current release from its start; restart it onto this one
+ssh nas 'sudo /usr/local/bin/docker restart spt-keep' 2>&1 | Out-Null
+if ($LASTEXITCODE -eq 0) { Write-Host 'restarted spt-keep on the NAS' }
