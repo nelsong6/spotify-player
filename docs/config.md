@@ -39,7 +39,7 @@ spotify_player -o device.volume=80 -o theme=dracula
 | `client_port`                     | Port for the application's client to handle CLI commands.                                           | `8080`                                                                 |
 | `log_folder`                      | Path to store log files.                                                                            | `None`                                                                 |
 | `session_file`                    | Saved playback session file; instances pointing at the same file share their session.               | `<cache folder>/last_session.json`                                     |
-| `kept_playlists`                  | Playlists `spotify_player keep` keeps; see [Kept playlists](#kept-playlists).                       | `[]`                                                                   |
+| `kept_playlists`                  | Playlists the home cast's session keeps; see [Kept playlists](#kept-playlists).                     | `[]`                                                                   |
 | `tracks_playback_limit`           | Maximum number of tracks in a playback session.                                                     | `50`                                                                   |
 | `top_tracks_limit`                | Maximum number of tracks returned on the user's top tracks page.                                    | `100`                                                                  |
 | `playback_format`                 | Format string for the playback window.                                                              | `{status} {track} • {artists} {liked}\n{album} • {genres}\n{metadata}` |
@@ -87,7 +87,7 @@ spotify_player -o device.volume=80 -o theme=dracula
 - By default, `spotify-player` uses [ncspot](https://github.com/hrkfdn/ncspot)'s client ID for compatibility with Spotify's API. When a custom `client_id` is configured, most requests use it first and any `4xx` response is retried once with a separately authenticated ncspot fallback client. Each Web API token is stored as `<client_id>_token.json`, so changing `client_id` selects a different cache instead of reusing a token issued to another client. The fallback OAuth flow always uses `http://127.0.0.1:8989/ncspot_login`, the redirect URI ncspot registered for its client ID, while `login_redirect_uri` applies only to the custom client. See the [Authentication section of the README](../README.md#authentication) for details.
 - The custom client has no request middleware. For ncspot requests, `spotify-player` stores `Retry-After` durations globally and retries GET requests up to `api_rate_limit_retries` times. New ncspot GET requests wait for an active `Retry-After` period, while mutation requests are never delayed or retried by the middleware.
 - `ap_port` and `proxy` are passed to Librespot for session configuration. Librespot uses its defaults if unset.
-- Setting a positive `app_refresh_duration_in_ms` increases API usage and may trigger rate limits. By default, `playback_refresh_duration_in_ms=0` refreshes playback only on events or commands.
+- Setting a positive `app_refresh_duration_in_ms` increases API usage and may trigger rate limits. By default, `playback_refresh_duration_in_ms=0` refreshes playback only on events or commands. The home cast's session and PCs ignore it: the session refreshes on its player's events, and the PCs get its playback from it.
 - `border_type`, `progress_bar_type`, and `progress_bar_position` accept only the values listed in the table above.
 - `explicit_icon` can be set to any Unicode character or an empty string to disable explicit markers.
 - `cover_img_length = 0` (the default) auto-derives the cover's column count from the terminal's cell aspect ratio. Set a non-zero `cover_img_length` to size the box manually.
@@ -350,7 +350,7 @@ Omitted fields use terminal defaults. Values can be color names or hex codes. Se
 
 ## Kept playlists
 
-`spotify_player keep` keeps each `[[kept_playlists]]` entry: it removes the songs played from the playlist, so it always starts where you left off, and refills a radio playlist. Each entry has:
+The home cast's session keeps each `[[kept_playlists]]` entry: it removes the songs played from the playlist, so it always starts where you left off, and refills a radio playlist. Each entry has:
 
 | Option       | Description                                                                          | Default |
 | ------------ | ------------------------------------------------------------------------------------ | ------- |

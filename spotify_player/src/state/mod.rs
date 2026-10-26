@@ -39,6 +39,10 @@ pub struct State {
     #[cfg(feature = "cast")]
     pub vis_bands: Option<Arc<Mutex<crate::ui::streaming::VisBands>>>,
 
+    /// In the session, raised when its playback or queue changes, so the PCs hear of it
+    #[cfg(feature = "streaming")]
+    pub playback_changed: tokio::sync::Notify,
+
     pub logs: Arc<Mutex<VecDeque<String>>>,
 
     /// Text of the last frame drawn, for `get key app`
@@ -69,11 +73,19 @@ impl State {
             vis_bands: Some(Arc::new(Mutex::new(
                 crate::ui::streaming::VisBands::default(),
             ))),
+            #[cfg(feature = "streaming")]
+            playback_changed: tokio::sync::Notify::new(),
 
             logs: log_buffer,
             screen: Mutex::new(Vec::new()),
             requests: Mutex::new(requests::RequestTracker::default()),
         }
+    }
+
+    /// Whether this is a PC of the home cast, which shows the session's playback and reaches
+    /// Spotify only through the session
+    pub fn follows_session(&self) -> bool {
+        cfg!(feature = "cast") && !self.is_session
     }
 
     /// Returns `true` when the custom queue system should be used for new playback.

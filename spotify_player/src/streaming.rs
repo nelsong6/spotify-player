@@ -238,6 +238,20 @@ pub async fn new_connection(
                     .map(|c| c.uri.clone())
                     .unwrap_or_default();
                 play_reporter.handle(&event, &session, &context_uri);
+                // the session asks Spotify for its playback only when its player reports a
+                // change; these have no `spotify_player` event of their own
+                if matches!(
+                    event,
+                    player::PlayerEvent::Seeked { .. }
+                        | player::PlayerEvent::PositionCorrection { .. }
+                        | player::PlayerEvent::VolumeChanged { .. }
+                        | player::PlayerEvent::ShuffleChanged { .. }
+                        | player::PlayerEvent::RepeatChanged { .. }
+                        | player::PlayerEvent::Stopped { .. }
+                        | player::PlayerEvent::SessionDisconnected { .. }
+                ) {
+                    client.update_playback_non_blocking(&state);
+                }
                 match PlayerEvent::from_librespot_player_event(event) {
                     Err(err) => {
                         tracing::warn!("Failed to convert a `librespot` player event into `spotify_player` player event: {err:#}");
@@ -285,6 +299,7 @@ pub async fn new_connection(
                             }
                             PlayerEvent::Changed { .. } => {}
                         }
+                        state.playback_changed.notify_one();
                         client.update_playback_non_blocking(&state);
 
                         // execute a player event hook command

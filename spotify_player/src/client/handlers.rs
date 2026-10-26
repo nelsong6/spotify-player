@@ -242,8 +242,11 @@ fn handle_player_event(
 ) -> anyhow::Result<()> {
     handle_page_change_event(state, client_pub, handler_state)
         .context("handle page change event")?;
-    handle_playback_change_event(state, client_pub, handler_state)
-        .context("handle playback change event")?;
+    // a PC's playback and queue come from the session as they change
+    if !state.follows_session() {
+        handle_playback_change_event(state, client_pub, handler_state)
+            .context("handle playback change event")?;
+    }
 
     Ok(())
 }
@@ -263,8 +266,11 @@ pub fn start_player_event_watcher(state: &SharedState, client_pub: &flume::Sende
     };
 
     loop {
-        // periodically refresh the playback state (if enabled in config)
-        if configs.app_config.playback_refresh_duration_in_ms > 0
+        // periodically refresh the playback state (if enabled in config). The session hears of
+        // changes from its own player, and a PC from the session, so neither asks Spotify.
+        if !state.is_session
+            && !state.follows_session()
+            && configs.app_config.playback_refresh_duration_in_ms > 0
             && handler_state.last_playback_refresh.elapsed() >= playback_refresh_duration
         {
             client_pub

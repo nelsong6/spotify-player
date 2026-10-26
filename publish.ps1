@@ -33,7 +33,7 @@ if ($LASTEXITCODE -ne 0) { throw "CI failed: https://github.com/$repo/actions/ru
 
 $dir = Join-Path ([IO.Path]::GetTempPath()) "spt-$version"
 Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
-# the Windows build is what the PCs run; the Linux one is `keep` and the session on the NAS
+# the Windows build is what the PCs run; the Linux one is the session on the NAS
 foreach ($artifact in 'spotify_player-windows', 'spotify_player-linux') {
     gh run download $run -R $repo -n $artifact -D $dir
     if ($LASTEXITCODE -ne 0) { throw "downloading $artifact failed" }
@@ -42,10 +42,6 @@ foreach ($artifact in 'spotify_player-windows', 'spotify_player-linux') {
 publish-tool -Name spt -Version $version -Path $dir `
     -Entry spotify_player.exe -Repo https://github.com/nelsong6/spotify-player -Commit $commit
 
-# spt-keep runs the current release from its start; restart it onto this one (before the first
-# `nas/deploy.sh` there is none to restart)
-$restarted = ssh nas 'sudo /usr/local/bin/docker inspect spt-keep >/dev/null 2>&1 && sudo /usr/local/bin/docker restart spt-keep >/dev/null && echo yes || true'
-if ($restarted -eq 'yes') { Write-Host 'restarted spt-keep on the NAS' }
 # the session isn't restarted: its waiting slot starts again on this release and takes the
 # session over at the next song change or pause, so the music doesn't stop
 ssh nas 'sudo /usr/local/bin/docker exec spt-session /upgrade.sh 2>/dev/null || true'

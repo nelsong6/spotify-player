@@ -241,7 +241,7 @@ The ncspot client ID remains available as a fallback because it is registered in
 
 When a custom `client_id` is configured, `spotify-player` sends most Web API requests through that client first. If Spotify rejects custom-client request with any `4xx` response, the request is attempted once through ncspot. Successful requests and failures outside the `4xx` range do not trigger fallback.
 
-The custom client uses no request middleware. The ncspot client stores `Retry-After` durations and retries rate-limited GET requests up to two times by default; mutation requests are never delayed or retried by the middleware. Configure the ncspot retry count with `api_rate_limit_retries`; see the [configuration documentation](https://github.com/aome510/spotify-player/blob/master/docs/config.md) for details.
+While Spotify has asked the custom client to wait (`Retry-After`), it sends nothing and its requests go straight to ncspot; it never retries. The ncspot client stores `Retry-After` durations and retries rate-limited GET requests up to two times by default; mutation requests are never delayed or retried by the middleware. Configure the ncspot retry count with `api_rate_limit_retries`; see the [configuration documentation](https://github.com/aome510/spotify-player/blob/master/docs/config.md) for details.
 
 ### Using a custom client ID
 
@@ -261,7 +261,7 @@ The palette is fzt itself, loaded from `fzt.dll` (from [fzt-terminal](https://gi
 
 ### Kept playlists
 
-`spotify_player keep` runs until stopped and keeps the playlists listed as `kept_playlists` in the config, so playing one from its top always picks up where you left off, on any device. Every 10 minutes for the playlist that's playing and every hour for the others, it removes the songs Spotify's listening history shows were played from the playlist, and, while it plays, the songs before the playing one. A playlist with `radio_from` is a rolling radio: it's also refilled with radios seeded by random songs of that playlist, so `buffer` songs (default 200) stay ahead. It needs no running app, so it can run on an always-on machine: [`nas/`](nas) runs it in a container on a Synology NAS, deployed with `nas/deploy.sh`. See [config docs](docs/config.md#kept-playlists).
+The [home cast's](#home-cast) session keeps the playlists listed as `kept_playlists` in the config, so playing one from its top always picks up where you left off, on any device. Every 10 minutes for the playlist that's playing and every hour for the others, it removes the songs Spotify's listening history shows were played from the playlist, and, while it plays, the songs before the playing one. A playlist with `radio_from` is a rolling radio: it's also refilled with radios seeded by random songs of that playlist, so `buffer` songs (default 200) stay ahead. See [config docs](docs/config.md#kept-playlists).
 
 ### Spotify Connect
 
@@ -274,7 +274,8 @@ A radio, liked songs or other track list played by `spotify_player` can't be tra
 One session, running on an always-on machine, plays the music; every PC with `spotify_player` open plays it aloud, in sync with the others, and controls it. Which PC you sit at doesn't matter: close the app in one room and open it in the next, and the same queue keeps playing.
 
 - **The session** is `spotify_player session`, built with the `streaming` feature. It runs the [librespot](https://github.com/librespot-org/librespot) player, the one Spotify Connect device for the house, named by `name` under `[device]`. It reports what it plays to Spotify, as Spotify's own apps do, so its plays show in your listening history. It writes its audio to stdout for [Snapcast](https://github.com/badaix/snapcast)'s server, which runs it as a `process` source (`codec=pcm`, `sampleformat=44100:16:2`) and streams it to the PCs. [`nas/spt-session`](nas/spt-session) runs both in a container on a Synology NAS, deployed with `nas/deploy.sh`.
-- **A PC** runs `spotify_player` built with the `cast` feature (on by default). It attaches to the Snapcast server named by `cast_server`, plays the session's audio on the system's default output (on Windows it follows a change of default output), and controls the session through Spotify like any Connect device. It never starts a player of its own and never picks another device to play on.
+- **A PC** runs `spotify_player` built with the `cast` feature (on by default). It attaches to the Snapcast server named by `cast_server`, plays the session's audio on the system's default output (on Windows it follows a change of default output), and controls the session like any Connect device. It never starts a player of its own and never picks another device to play on.
+- **One Spotify sign-in**: only the session signs in to Spotify. A PC sends every Spotify request (the library, search, play, lyrics, covers) to the session's relay, on port 1707 of the `cast_server` host, which sends it on with the session's sign-in, merges identical requests and holds the whole house to Spotify's waits. The session doesn't poll what it plays: it asks Spotify when its player reports a change, and passes the playback to every PC with the [shared screen](#home-cast). The relay takes only requests carrying the key the session keeps beside `session_file` (`relay.key`), so a PC needs read access to that folder and nothing else; deleting the key revokes it, and the session makes a new one.
 - **Muting**: `ToggleListening` (`H`) switches between playing the session aloud here and only showing it; the playback window shows `muted here` while muted, and the visualization's transport line `here muted`. A muted PC still draws the [audio visualization](#audio-visualization).
 - **Muting another PC**: `MutePc` (`P`) lists the PCs playing the session and whether each is muted; **enter** mutes or unmutes the selected one. The session passes the request to Snapcast, and only for a PC signed in to auth.romaine.life as an admin: the first time, `spotify_player` opens the browser to sign in, and it renews the sign-in on its own from then on (saved as `home_auth.json` in the cache folder).
 - **Pausing**: when no PC is left playing the session aloud (every PC closed or muted), the session pauses, and it pauses again any playback started while nobody listens. Resume from any PC.
@@ -375,7 +376,6 @@ To enable [fuzzy search](https://en.wikipedia.org/wiki/Approximate_string_matchi
 - `like`: Like currently playing track
 - `authenticate`: Authenticate the application
 - `playlist`: Playlist editing (new, delete, import, fork, etc)
-- `keep`: Keep the config's [kept playlists](#kept-playlists), until stopped
 - `session`: Run the [home cast's](#home-cast) session (`streaming` feature only)
 
 For more details, run `spotify_player -h` or `spotify_player {command} -h`.
