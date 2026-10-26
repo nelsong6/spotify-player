@@ -39,6 +39,7 @@ This file guides coding agents when working in this repository.
 | `ui/ascii_cover.rs`           | ASCII album cover beside the bars, pulsing with the bass (feature-gated)    |
 | `streaming.rs`                | The session's librespot player, its audio on stdout (feature-gated)         |
 | `listeners.rs`                | Pauses the session when no PC plays it aloud (Snapcast's client list)       |
+| `screen.rs`                   | One screen on every PC: the session keeps it, one PC at a time controls it  |
 | `cast/`                       | A PC's side of the home cast: Snapcast client, clock sync, synced output    |
 | `cli/`                        | Unix socket server and client for inter-process CLI commands                |
 | `auth.rs`                     | OAuth scopes and librespot credential/session building                      |

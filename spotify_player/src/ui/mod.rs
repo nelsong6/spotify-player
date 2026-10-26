@@ -192,6 +192,23 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
 
     // drawn over the page, so after it
     palette::render(frame, ui, page_rect);
+    #[cfg(feature = "cast")]
+    if crate::screen::pc::is_locked() {
+        render_lock(frame, page_rect);
+    }
+}
+
+/// Mark the screen as another PC's, at the right of the page's top border
+#[cfg(feature = "cast")]
+fn render_lock(frame: &mut Frame, rect: Rect) {
+    let lock = Line::from(" locked: space to take control ").style(
+        Style::default()
+            .fg(ratatui::style::Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    );
+    let width = (lock.width() as u16).min(rect.width.saturating_sub(2));
+    let area = Rect::new(rect.right().saturating_sub(width + 2), rect.y, width, 1);
+    frame.render_widget(lock, area);
 }
 
 fn visualization_shown(state: &SharedState) -> bool {

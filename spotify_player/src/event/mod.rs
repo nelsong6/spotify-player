@@ -38,6 +38,16 @@ mod window;
 pub fn start_event_handler(state: &SharedState, client_pub: &flume::Sender<ClientRequest>) {
     while let Ok(event) = crossterm::event::read() {
         let _enter = tracing::info_span!("terminal_event", event = ?event).entered();
+        #[cfg(feature = "cast")]
+        if crate::screen::pc::is_locked()
+            && matches!(
+                event,
+                crossterm::event::Event::Key(_) | crossterm::event::Event::Mouse(_)
+            )
+        {
+            handle_locked_event(&event);
+            continue;
+        }
         if let Err(err) = match event {
             crossterm::event::Event::Mouse(event) => handle_mouse_event(event, client_pub, state),
             crossterm::event::Event::Resize(columns, rows) => {
@@ -58,6 +68,21 @@ pub fn start_event_handler(state: &SharedState, client_pub: &flume::Sender<Clien
             _ => Ok(()),
         } {
             tracing::error!("Failed to handle terminal event: {err:#}");
+        }
+        #[cfg(feature = "cast")]
+        crate::screen::pc::changed();
+    }
+}
+
+/// While another PC is in control, space takes control and nothing else does anything.
+#[cfg(feature = "cast")]
+fn handle_locked_event(event: &crossterm::event::Event) {
+    if let crossterm::event::Event::Key(key) = event {
+        if key.kind == crossterm::event::KeyEventKind::Press
+            && key.code == KeyCode::Char(' ')
+            && key.modifiers.is_empty()
+        {
+            crate::screen::pc::take_control();
         }
     }
 }

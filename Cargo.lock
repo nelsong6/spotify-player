@@ -437,6 +437,9 @@ name = "bitflags"
 version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "bitstream-io"
@@ -787,6 +790,7 @@ dependencies = [
  "itoa",
  "rustversion",
  "ryu",
+ "serde",
  "static_assertions",
 ]
 
@@ -1012,6 +1016,23 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "crossterm"
+version = "0.28.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "829d955a0bb380ef178a640b91779e3987da38c9aea133b20614cfed8cdea9c6"
+dependencies = [
+ "bitflags 2.13.1",
+ "crossterm_winapi",
+ "mio",
+ "parking_lot",
+ "rustix 0.38.44",
+ "serde",
+ "signal-hook",
+ "signal-hook-mio",
+ "winapi",
+]
+
+[[package]]
+name = "crossterm"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b9f2e4c67f833b660cdb0a3523065869fb35570177239812ed4c905aeff87b"
@@ -1023,6 +1044,7 @@ dependencies = [
  "mio",
  "parking_lot",
  "rustix 1.1.4",
+ "serde",
  "signal-hook",
  "signal-hook-mio",
  "winapi",
@@ -3270,6 +3292,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "numtoa"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6aa2c4e539b869820a2b82e1aef6ff40aa85e65decdd5185e83fb4b1249cd00f"
+
+[[package]]
 name = "oauth2"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4352,6 +4380,7 @@ dependencies = [
  "ratatui-crossterm",
  "ratatui-macros",
  "ratatui-termina",
+ "ratatui-termion",
  "ratatui-termwiz",
  "ratatui-widgets",
  "serde",
@@ -4386,7 +4415,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "567584a3b0e6a8203c23de40b4861497266725eb5363dbfd18a1edd603cca9f0"
 dependencies = [
  "cfg-if",
- "crossterm",
+ "crossterm 0.28.1",
+ "crossterm 0.29.0",
  "instability",
  "ratatui-core",
 ]
@@ -4427,6 +4457,17 @@ dependencies = [
  "instability",
  "ratatui-core",
  "termina",
+]
+
+[[package]]
+name = "ratatui-termion"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87c732202fa5a71a9da0991013f0853e53f87048f45198e3a1ca3ee722accc2f"
+dependencies = [
+ "instability",
+ "ratatui-core",
+ "termion",
 ]
 
 [[package]]
@@ -5316,7 +5357,7 @@ dependencies = [
  "clipboard-win",
  "config_parser2",
  "cpal",
- "crossterm",
+ "crossterm 0.29.0",
  "dirs-next",
  "flume",
  "futures",
@@ -5689,6 +5730,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "termion"
+version = "4.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f44138a9ae08f0f502f24104d82517ef4da7330c35acd638f1f29d3cd5475ecb"
+dependencies = [
+ "libc",
+ "numtoa",
+ "serde",
+]
+
+[[package]]
 name = "termios"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5722,6 +5774,7 @@ dependencies = [
  "pest",
  "pest_derive",
  "phf",
+ "serde",
  "sha2 0.10.9",
  "signal-hook",
  "siphasher",
@@ -6253,6 +6306,7 @@ dependencies = [
  "atomic",
  "getrandom 0.4.3",
  "js-sys",
+ "serde_core",
  "wasm-bindgen",
 ]
 
@@ -6596,6 +6650,7 @@ checksum = "692daff6d93d94e29e4114544ef6d5c942a7ed998b37abdc19b17136ea428eb7"
 dependencies = [
  "getrandom 0.3.4",
  "mac_address",
+ "serde",
  "sha2 0.10.9",
  "thiserror 1.0.69",
  "uuid",
@@ -6610,6 +6665,7 @@ dependencies = [
  "csscolorparser",
  "deltae",
  "lazy_static",
+ "serde",
  "wezterm-dynamic",
 ]
 

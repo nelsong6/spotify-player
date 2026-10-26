@@ -37,13 +37,15 @@ serde = { version = "1.0.229", features = ["derive"] }
 tokio = { version = "1.53.1", features = [
 	"rt",
 	"rt-multi-thread",
+	"io-util",
 	"macros",
+	"net",
 	"sync",
 	"test-util",
 	"time",
 ] }
 toml = "1.1.5"
-ratatui = { version = "0.30.2" }
+ratatui = { version = "0.30.2", features = ["serde"] }
 protobuf = { version = "3.7.2", optional = true }
 rand = "0.10.2"
 maybe-async = "0.2.11"
