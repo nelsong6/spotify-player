@@ -40,6 +40,9 @@ fi
 for name in spt-keep spt-session; do
   K=/volume1/docker/$name
   chown -R 1026:100 $K
+  # removing Synology's ACLs leaves no permission bits behind
+  chmod 755 $K
+  if [ -d $K/data ]; then chmod 755 $K/data; fi
   chmod 700 $K/cache
   chmod 600 $K/cache/*.json
   (cd $K && $D compose up -d --build --force-recreate 2>&1 | grep -v -E "Running|Up-to-date" || true)
