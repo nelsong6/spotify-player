@@ -205,7 +205,7 @@ docker run --rm \
 
 The simplest way to authenticate is to just **run the application** — on first use it prompts for whichever credentials are not yet cached. Each prompt opens the Spotify authorization page in your browser; after you approve access, Spotify redirects to a local loopback address (`login_redirect_uri`, default `http://127.0.0.1:8989/login`) where `spotify_player` captures the authorization code and exchanges it for an access token. Credentials are cached in the application's [cache folder](#caches), so this is a one-time step per machine.
 
-Alternatively, run the `spotify_player authenticate` CLI command to authenticate all required credentials up front — useful for setting things up ahead of a [daemon](#daemon) or headless launch. Unlike a normal launch, `authenticate` always forces fresh interactive logins, ignoring cached credentials, so it can also be used to re-authenticate from scratch.
+Alternatively, run the `spotify_player authenticate` CLI command to authenticate all required credentials up front — useful for setting things up ahead of a headless launch such as the session. Unlike a normal launch, `authenticate` always forces fresh interactive logins, ignoring cached credentials, so it can also be used to re-authenticate from scratch.
 
 ### How authentication works
 

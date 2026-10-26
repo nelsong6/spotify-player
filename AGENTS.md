@@ -4,7 +4,7 @@ This file guides coding agents when working in this repository.
 
 ## Project Overview
 
-`spotify-player` is a terminal Spotify client (requires Spotify Premium) written in Rust. It supports playback control, Spotify Connect, direct streaming via librespot, synced lyrics, desktop notifications, OS media controls, album art rendering, a daemon mode, and a full CLI interface.
+`spotify-player` is a terminal Spotify client (requires Spotify Premium) written in Rust. It supports playback control, Spotify Connect, synced lyrics, desktop notifications, OS media controls, album art rendering, and a full CLI interface. In this fork every PC plays one shared session on the NAS (the home cast; see Fork notes).
 
 ## Architecture
 
