@@ -39,7 +39,7 @@
   description: "Where the music plays"
   children:
     - {name: "send", description: "Move playback to another device", action: "SwitchDevice"}
-    - {name: "restart player", description: "Restart this computer's built-in player", action: "RestartIntegratedClient"}
+    - {name: "listen here", description: "Play the music aloud on this PC, or only show it here", action: "ToggleListening"}
 - name: "library"
   description: "Your playlists, artists, albums and liked songs"
   children:

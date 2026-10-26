@@ -232,3 +232,33 @@ fn edit_menu() -> Result<()> {
     }
     open::that_detached(&path).with_context(|| format!("open {}", path.display()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_menu_names_only_real_commands_and_actions() {
+        let actions = regex::Regex::new(r#"action: "([^"]*)""#).unwrap();
+        for found in actions.captures_iter(DEFAULT_MENU) {
+            let action = &found[1];
+            if ["play:", "radio:", "prompt:"]
+                .iter()
+                .any(|p| action.starts_with(p))
+            {
+                continue;
+            }
+            let value = |name: &str| serde_json::Value::String(name.to_string());
+            match action.strip_prefix("action:") {
+                Some(name) => assert!(
+                    serde_json::from_value::<Action>(value(name)).is_ok(),
+                    "unknown action {name}"
+                ),
+                None => assert!(
+                    serde_json::from_value::<Command>(value(action)).is_ok(),
+                    "unknown command {action}"
+                ),
+            }
+        }
+    }
+}
