@@ -133,6 +133,8 @@ Keep `.github/copilot-instructions.md` and this `AGENTS.md` in sync when project
 1. Add the variant to `Command` in `command.rs` and update `Command::desc()`.
 2. Add a default keybinding in `config/keymap.rs`.
 3. Update the command table in `README.md`.
+4. Add it to the command palette's default menu, `examples/menu.yaml` (and the shared
+   `\NelsonNAS\tools\spt\config\menu.yaml`, which overrides it on the home PCs).
 
 ## Writing PR descriptions
 
