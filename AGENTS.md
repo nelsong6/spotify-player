@@ -56,6 +56,7 @@ Multiple OS threads communicate via `flume` channels and `Arc<State>`:
 - **Media-control thread** — OS media key events (feature-gated)
 - **Cast threads** (a PC) — the Snapcast connection, its time sync, the sound card's callback,
   and the visualization's analyzer
+- **Screen threads** (a PC) — the shared screen's connection to the session, and its sender
 
 Event/UI threads never call async functions directly. They send a `ClientRequest` over a `flume` channel; the async handler updates `Arc<State>`.
 
@@ -193,6 +194,12 @@ Working on the fork:
   audio in sync through Snapcast, and controls it through Spotify. Only a PC with spt open
   is an output, and the session pauses when none plays it aloud. Kept playlists are a
   separate feature, and phones play only those.
+- One screen (decided 2026-10-25, OpenProject #79): every PC shows the same screen, kept by
+  the session (`screen.rs`), since Nelson is the only user and wants no drift between rooms.
+  One PC at a time controls it, by his choice: the controller changes its own screen at once
+  and sends it, and a locked PC takes control with space. Rejected: every PC sending commands
+  to the session and drawing what comes back (consistent too, but each change waits on the
+  NAS). The lock is plain text; a 🔒 emoji left a stray border character beside it.
 - The PCs' sync is snapclient's algorithm (`cast/stream.rs`), timed from cpal's callback
   timestamps (when the buffer reaches the speaker). WASAPI shared mode takes only the
   device's rate, so the 44.1 kHz stream is resampled to it on arrival (`cast/resample.rs`).
