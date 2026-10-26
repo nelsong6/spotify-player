@@ -60,7 +60,7 @@ struct Palette {
     bright_yellow: Color,
 }
 
-#[cfg(feature = "streaming")]
+#[cfg(feature = "cast")]
 #[derive(Clone, Debug, Default, Deserialize)]
 struct VisualizationStyle {
     low: Option<StyleColor>,
@@ -69,7 +69,7 @@ struct VisualizationStyle {
 }
 
 /// Amplitude-keyed colors resolved from a theme's `visualization` style.
-#[cfg(feature = "streaming")]
+#[cfg(feature = "cast")]
 #[derive(Clone, Debug)]
 pub struct VisualizationColors {
     pub low: style::Color,
@@ -98,7 +98,7 @@ struct ComponentStyle {
     like: Option<Style>,
     lyrics_played: Option<Style>,
     lyrics_playing: Option<Style>,
-    #[cfg(feature = "streaming")]
+    #[cfg(feature = "cast")]
     visualization: Option<VisualizationStyle>,
 }
 
@@ -396,7 +396,7 @@ impl Theme {
     /// Colors used by the audio visualization bars, keyed by amplitude, or `None` when the
     /// theme doesn't set them. Quiet bars use `low`, medium bars use `mid`, loud bars use
     /// `high`, with a gradient between adjacent stops.
-    #[cfg(feature = "streaming")]
+    #[cfg(feature = "cast")]
     pub fn visualization(&self) -> Option<VisualizationColors> {
         self.component_style
             .visualization
@@ -405,7 +405,7 @@ impl Theme {
     }
 }
 
-#[cfg(feature = "streaming")]
+#[cfg(feature = "cast")]
 impl VisualizationStyle {
     fn resolve(&self, palette: &Palette) -> VisualizationColors {
         VisualizationColors {

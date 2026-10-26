@@ -286,7 +286,7 @@ impl AppClient {
 
         #[cfg(feature = "streaming")]
         if let Some(state) = state {
-            if state.is_streaming_enabled() {
+            if state.is_session {
                 self.new_streaming_connection(state.clone(), session.clone(), creds.clone())
                     .await
                     .context("new streaming connection")?;
@@ -360,17 +360,16 @@ impl AppClient {
         Ok(())
     }
 
-    /// Pause the integrated streaming client, if a connection exists.
+    /// Pause the session's player, if a connection exists.
     ///
     /// Returns `true` if a streaming connection was present and the pause
-    /// command was issued. Used to suppress Spotify's auto-resume of the
-    /// previous session on startup when `pause_on_startup` is enabled.
+    /// command was issued.
     #[cfg(feature = "streaming")]
-    pub fn pause_streaming_on_startup(&self) -> bool {
+    pub fn pause_player(&self) -> bool {
         match self.stream_conn.lock().as_ref() {
             Some(spirc) => {
                 if let Err(err) = spirc.pause() {
-                    tracing::warn!("Failed to pause integrated client on startup: {err:#}");
+                    tracing::warn!("Failed to pause the player: {err:#}");
                 }
                 true
             }
@@ -521,10 +520,6 @@ impl AppClient {
                         .insert(uri, lyrics, *TTL_CACHE_DURATION);
                 }
             }
-            #[cfg(feature = "streaming")]
-            ClientRequest::RestartIntegratedClient => {
-                self.new_session(Some(state), false).await?;
-            }
             ClientRequest::GetCurrentUser => {
                 let user = self.current_user().await?;
                 state.data.write().user_data.user = Some(user);
@@ -567,7 +562,7 @@ impl AppClient {
                     .collect();
 
                 #[cfg(feature = "streaming")]
-                if state.is_streaming_enabled() {
+                if state.is_session {
                     self.ensure_integrated_device(&mut devices).await;
                 }
 
@@ -863,7 +858,8 @@ impl AppClient {
             .collect())
     }
 
-    /// Find an available device. If found, return the device's ID.
+    /// Find a device to play on: the active one, else the session's player, which has the
+    /// config's device name. A PC never picks another device. If found, return the device's ID.
     #[cfg_attr(not(feature = "streaming"), allow(unused_variables))]
     async fn find_available_device(&self, state: &SharedState) -> Result<Option<String>> {
         let devices = self.available_devices().await?;
@@ -880,23 +876,18 @@ impl AppClient {
             .collect::<Vec<_>>();
 
         #[cfg(feature = "streaming")]
-        if state.is_streaming_enabled() {
+        if state.is_session {
             self.ensure_integrated_device(&mut devices).await;
         }
 
         tracing::info!("no active device found, available devices: {devices:?}");
 
-        if devices.is_empty() {
-            return Ok(None);
-        }
-
-        // Prioritize the integrated device; otherwise, use the first available device.
+        let session_name = &config::get_config().app_config.device.name;
         let id = devices
             .iter()
             .position(|d| d.is_integrated)
-            .unwrap_or_default();
-
-        Ok(Some(devices.remove(id).id))
+            .or_else(|| devices.iter().position(|d| &d.name == session_name));
+        Ok(id.map(|i| devices.remove(i).id))
     }
 
     /// Ensures the integrated librespot device (of *this* running instance) is present in `devices`.
@@ -908,10 +899,9 @@ impl AppClient {
     ///    By default, the application uses Spotify web app's client ID, which doesn't have
     ///    access to user's active devices.
     ///
-    /// Callers must check [`SharedState::is_streaming_enabled`] first. The `streaming` feature
-    /// being compiled in does not mean *this* instance runs an integrated player: with
-    /// `enable_streaming = "DaemonOnly"` only the daemon does, so a non-daemon instance would
-    /// otherwise advertise a device that does not exist.
+    /// Callers must check [`crate::state::State::is_session`] first. The `streaming` feature being compiled in
+    /// does not mean *this* instance runs the player: only the session does, so another instance
+    /// would otherwise advertise a device that does not exist.
     #[cfg(feature = "streaming")]
     async fn ensure_integrated_device(&self, devices: &mut Vec<Device>) {
         let session = self.spotify.session().await;
@@ -2192,14 +2182,7 @@ impl AppClient {
         }
 
         // notify user about the playback's change if any
-        #[cfg(all(feature = "notify", feature = "streaming"))]
-        if configs.app_config.enable_notify
-            && (!configs.app_config.notify_streaming_only || self.stream_conn.lock().is_some())
-        {
-            Self::notify_new_playback(&curr_item, &path)?;
-        }
-
-        #[cfg(all(feature = "notify", not(feature = "streaming")))]
+        #[cfg(feature = "notify")]
         if configs.app_config.enable_notify {
             Self::notify_new_playback(&curr_item, &path)?;
         }

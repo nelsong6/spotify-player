@@ -7,13 +7,8 @@
   installShellFiles,
   writableTmpDirAsHomeHook,
 
-  # deps for audio backends
+  # the cast's audio output
   alsa-lib,
-  libpulseaudio,
-  portaudio,
-  libjack2,
-  SDL2,
-  gst_all_1,
   dbus,
   fontconfig,
   libsixel,
@@ -23,8 +18,7 @@
 
   # build options
   withStreaming ? true,
-  withDaemon ? true,
-  withAudioBackend ? "rodio", # alsa, pulseaudio, rodio, portaudio, jackaudio, rodiojack, sdl, gstreamer
+  withCast ? true,
   withMediaControl ? true,
   withImage ? true,
   withNotify ? true,
@@ -33,18 +27,6 @@
   stdenv,
   makeBinaryWrapper,
 }:
-
-assert lib.assertOneOf "withAudioBackend" withAudioBackend [
-  ""
-  "alsa"
-  "pulseaudio"
-  "rodio"
-  "portaudio"
-  "jackaudio"
-  "rodiojack"
-  "sdl"
-  "gstreamer"
-];
 
 rustPlatform.buildRustPackage rec {
   pname = "spotify-player";
@@ -79,31 +61,15 @@ rustPlatform.buildRustPackage rec {
     fontconfig
   ]
   ++ lib.optionals withSixel [ libsixel ]
-  ++ lib.optionals (withAudioBackend == "alsa") [ alsa-lib ]
-  ++ lib.optionals (withAudioBackend == "pulseaudio") [ libpulseaudio ]
-  ++ lib.optionals (withAudioBackend == "rodio" && stdenv.hostPlatform.isLinux) [ alsa-lib ]
-  ++ lib.optionals (withAudioBackend == "portaudio") [ portaudio ]
-  ++ lib.optionals (withAudioBackend == "jackaudio") [ libjack2 ]
-  ++ lib.optionals (withAudioBackend == "rodiojack") [
-    alsa-lib
-    libjack2
-  ]
-  ++ lib.optionals (withAudioBackend == "sdl") [ SDL2 ]
-  ++ lib.optionals (withAudioBackend == "gstreamer") [
-    gst_all_1.gstreamer
-    gst_all_1.gst-devtools
-    gst_all_1.gst-plugins-base
-    gst_all_1.gst-plugins-good
-  ];
+  ++ lib.optionals (withCast && stdenv.hostPlatform.isLinux) [ alsa-lib ];
 
   buildNoDefaultFeatures = true;
 
   buildFeatures =
     [ ]
-    ++ lib.optionals (withAudioBackend != "") [ "${withAudioBackend}-backend" ]
+    ++ lib.optionals withCast [ "cast" ]
     ++ lib.optionals withMediaControl [ "media-control" ]
     ++ lib.optionals withImage [ "image" ]
-    ++ lib.optionals withDaemon [ "daemon" ]
     ++ lib.optionals withNotify [ "notify" ]
     ++ lib.optionals withStreaming [ "streaming" ]
     ++ lib.optionals withSixel [ "sixel" ]

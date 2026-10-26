@@ -56,12 +56,11 @@ spotify_player -o device.volume=80 -o theme=dracula
 | `api_rate_limit_retries`          | Number of times to retry an ncspot GET request after Spotify returns `429 Too Many Requests`.       | `2`                                                                    |
 | `page_size_in_rows`               | Number of rows per page for navigation.                                                             | `20`                                                                   |
 | `enable_media_control`            | Enable media control support (requires `media-control` feature).                                    | `true` (Linux), `false` (macOS/Windows)                                |
-| `enable_streaming`                | Enable streaming (`Always`, `Never`, or `DaemonOnly`).                                              | `Always`                                                               |
-| `enable_audio_visualization`      | Show ASCII frequency bars in place of the page (requires `streaming` feature).                      | `false`                                                                |
+| `cast_server`                     | The Snapcast server the [home cast](../README.md#home-cast) plays from (requires `cast` feature).   | `nas`                                                                  |
+| `enable_audio_visualization`      | Show ASCII frequency bars in place of the page (requires `cast` feature).                           | `false`                                                                |
 | `ascii_cover`                     | ASCII album cover beside the visualization: `Pulse`, `Still` or `Off` (`ascii-cover` feature).      | `Pulse`                                                                |
 | `enable_notify`                   | Enable notifications (requires `notify` feature).                                                   | `true`                                                                 |
 | `enable_cover_image_cache`        | Cache album cover images.                                                                           | `true`                                                                 |
-| `notify_streaming_only`           | Send notifications only when streaming is active (requires `streaming` and `notify` features).      | `false`                                                                |
 | `play_icon`                       | Icon for playing state.                                                                             | `▶`                                                                    |
 | `pause_icon`                      | Icon for paused state.                                                                              | `▌▌`                                                                   |
 | `liked_icon`                      | Icon for liked songs.                                                                               | `♥`                                                                    |
@@ -78,8 +77,8 @@ spotify_player -o device.volume=80 -o theme=dracula
 | `sort_artist_albums_by_type`      | Sort albums by type on artist pages.                                                                | `false`                                                                |
 | `volume_scroll_step`              | Volume change step when using mouse scroll.                                                         | `5`                                                                    |
 | `enable_mouse_scroll_volume`      | Enable volume control via mouse scroll.                                                             | `false`                                                                |
-| `custom_queue`                    | Enable app-managed queue for custom playback integration (requires `streaming` feature).            | `true`                                                                 |
-| `pause_on_startup`                | Start with playback paused instead of resuming the previous session (requires `streaming` feature). | `false`                                                                |
+| `custom_queue`                    | Enable app-managed queue for custom playback integration (the session only).                        | `true`                                                                 |
+| `pause_on_startup`                | Start the session with playback paused instead of resuming the previous one (the session only).     | `false`                                                                |
 | `enable_relative_line_number`     | Enable Vim-style relative line numbers for lists and popups.                                        | `false`                                                                |
 | `device`                          | Device configuration (see below).                                                                   | See below                                                              |
 
@@ -89,7 +88,6 @@ spotify_player -o device.volume=80 -o theme=dracula
 - The custom client has no request middleware. For ncspot requests, `spotify-player` stores `Retry-After` durations globally and retries GET requests up to `api_rate_limit_retries` times. New ncspot GET requests wait for an active `Retry-After` period, while mutation requests are never delayed or retried by the middleware.
 - `ap_port` and `proxy` are passed to Librespot for session configuration. Librespot uses its defaults if unset.
 - Setting a positive `app_refresh_duration_in_ms` increases API usage and may trigger rate limits. By default, `playback_refresh_duration_in_ms=0` refreshes playback only on events or commands.
-- `enable_streaming` accepts `Always`, `Never`, or `DaemonOnly`. For backward compatibility, `true`/`false` are also accepted.
 - `border_type`, `progress_bar_type`, and `progress_bar_position` accept only the values listed in the table above.
 - `explicit_icon` can be set to any Unicode character or an empty string to disable explicit markers.
 - `cover_img_length = 0` (the default) auto-derives the cover's column count from the terminal's cell aspect ratio. Set a non-zero `cover_img_length` to size the box manually.
@@ -144,17 +142,17 @@ client_id_command = { command = "cat", args = ["/full/path/to/file"] }
 
 ### Device configuration
 
-Device options are configured in the `[device]` section:
+Device options are configured in the `[device]` section. They are the [home cast's](../README.md#home-cast) session's player; a PC finds the session's device by its `name`, so the session and the PCs share it.
 
-| Option          | Description                                                    | Default          |
-| --------------- | -------------------------------------------------------------- | ---------------- |
-| `name`          | Device name; `{hostname}` is replaced with the machine's name. | `spotify-player` |
-| `device_type`   | Device type.                                                   | `speaker`        |
-| `volume`        | Initial volume (percent).                                      | `70`             |
-| `bitrate`       | Bitrate in kbps (`96`, `160`, or `320`).                       | `320`            |
-| `audio_cache`   | Enable audio file caching.                                     | `false`          |
-| `normalization` | Enable audio normalization.                                    | `false`          |
-| `autoplay`      | Enable autoplay of similar songs.                              | `false`          |
+| Option          | Description                                   | Default          |
+| --------------- | --------------------------------------------- | ---------------- |
+| `name`          | The session's Spotify Connect device name.    | `spotify-player` |
+| `device_type`   | Device type.                                  | `speaker`        |
+| `volume`        | Initial volume (percent).                     | `70`             |
+| `bitrate`       | Bitrate in kbps (`96`, `160`, or `320`).      | `320`            |
+| `audio_cache`   | Enable audio file caching.                    | `false`          |
+| `normalization` | Enable audio normalization.                   | `false`          |
+| `autoplay`      | Enable autoplay of similar songs.             | `false`          |
 
 See the [Librespot wiki](https://github.com/librespot-org/librespot/wiki/Options) for more details on these options.
 

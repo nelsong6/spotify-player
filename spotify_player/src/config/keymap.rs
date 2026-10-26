@@ -131,11 +131,6 @@ impl Default for KeymapConfig {
                     key_sequence: "A".into(),
                     command: Command::ShowActionsOnCurrentContext,
                 },
-                #[cfg(feature = "streaming")]
-                Keymap {
-                    key_sequence: "R".into(),
-                    command: Command::RestartIntegratedClient,
-                },
                 Keymap {
                     key_sequence: "tab".into(),
                     command: Command::FocusNextWindow,
@@ -351,6 +346,10 @@ impl Default for KeymapConfig {
                 Keymap {
                     key_sequence: "I".into(),
                     command: Command::CycleAsciiCover,
+                },
+                Keymap {
+                    key_sequence: "H".into(),
+                    command: Command::ToggleListening,
                 },
             ],
         }

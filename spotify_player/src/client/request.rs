@@ -53,8 +53,6 @@ pub enum ClientRequest {
     GetLyrics {
         track_id: TrackId<'static>,
     },
-    #[cfg(feature = "streaming")]
-    RestartIntegratedClient,
     CreatePlaylist {
         playlist_name: String,
         public: bool,

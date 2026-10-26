@@ -32,12 +32,11 @@ pub struct State {
     /// The playback session saved for the next run
     pub session: Mutex<session::SessionState>,
 
-    pub is_daemon: bool,
+    /// Whether this instance is the home cast's session: headless, running the player
+    pub is_session: bool,
 
-    /// Shared FFT frequency-band data written by the audio sink and read by the UI.
-    /// `Some` only when `enable_audio_visualization` is `true`; avoids allocating
-    /// the mutex/state entirely when the feature is not in use.
-    #[cfg(feature = "streaming")]
+    /// Shared FFT frequency-band data written by the cast's analyzer and read by the UI.
+    #[cfg(feature = "cast")]
     pub vis_bands: Option<Arc<Mutex<crate::ui::streaming::VisBands>>>,
 
     pub logs: Arc<Mutex<VecDeque<String>>>,
@@ -49,7 +48,7 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(is_daemon: bool, log_buffer: Arc<Mutex<VecDeque<String>>>) -> Self {
+    pub fn new(is_session: bool, log_buffer: Arc<Mutex<VecDeque<String>>>) -> Self {
         let mut ui = UIState::default();
         let configs = config::get_config();
 
@@ -65,8 +64,8 @@ impl State {
             player: RwLock::new(PlayerState::default()),
             data: RwLock::new(app_data),
             session: Mutex::new(session::SessionState::default()),
-            is_daemon,
-            #[cfg(feature = "streaming")]
+            is_session,
+            #[cfg(feature = "cast")]
             vis_bands: Some(Arc::new(Mutex::new(
                 crate::ui::streaming::VisBands::default(),
             ))),
@@ -77,26 +76,18 @@ impl State {
         }
     }
 
-    #[cfg(feature = "streaming")]
-    pub fn is_streaming_enabled(&self) -> bool {
-        let configs = config::get_config();
-        configs.app_config.enable_streaming == config::StreamingType::Always
-            || (configs.app_config.enable_streaming == config::StreamingType::DaemonOnly
-                && self.is_daemon)
-    }
-
     /// Returns `true` when the custom queue system should be used for new playback.
     ///
-    /// Requires streaming to be enabled and the `custom_queue` config option
-    /// to be `true`.
+    /// Requires the session's player and the `custom_queue` config option to be
+    /// `true`.
     #[cfg(feature = "streaming")]
     #[allow(dead_code)]
     pub fn should_use_custom_queue(&self) -> bool {
-        self.is_streaming_enabled() && config::get_config().app_config.custom_queue
+        self.is_session && config::get_config().app_config.custom_queue
     }
 
     /// Whether the audio visualization is switched on and has audio to show
-    #[cfg(feature = "streaming")]
+    #[cfg(feature = "cast")]
     pub fn is_visualization_shown(&self) -> bool {
         self.vis_bands.as_ref().is_some_and(|bands| {
             let bands = bands.lock();

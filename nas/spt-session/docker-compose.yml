@@ -1,0 +1,20 @@
+services:
+  spt-session:
+    build: .
+    image: spt-session:local
+    container_name: spt-session
+    user: "1026:100"
+    # the tools share grants access through the administrators group only
+    group_add:
+      - "101"
+    ports:
+      - "1704:1704"
+    volumes:
+      - /volume1/tools/spt:/tools/spt:ro
+      - /volume1/docker/spt-session/cache:/cache
+      - /volume1/docker/spt-session/data:/data
+      # the saved session the PCs share: the radio, what plays after a song ends
+      - /volume1/Files/spt:/session
+    environment:
+      - TZ=America/Los_Angeles
+    restart: unless-stopped

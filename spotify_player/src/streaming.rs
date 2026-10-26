@@ -4,9 +4,7 @@ use librespot_connect::{ConnectConfig, Spirc};
 use librespot_core::authentication::Credentials;
 use librespot_core::config::DeviceType;
 use librespot_core::{spotify_uri, Session, SpotifyUri};
-use librespot_playback::audio_backend::Sink;
 use librespot_playback::mixer::MixerConfig;
-#[cfg(not(feature = "rodio-backend"))]
 use librespot_playback::{audio_backend, config::AudioFormat};
 use librespot_playback::{
     config::{Bitrate, PlayerConfig},
@@ -24,28 +22,6 @@ use std::sync::Arc;
 /// reconnecting mid-session (e.g. via `RestartIntegratedClient`) does not
 /// pause an intentionally playing track.
 static IS_FIRST_CONNECTION: AtomicBool = AtomicBool::new(true);
-
-#[cfg(not(any(
-    feature = "rodio-backend",
-    feature = "alsa-backend",
-    feature = "pulseaudio-backend",
-    feature = "portaudio-backend",
-    feature = "jackaudio-backend",
-    feature = "rodiojack-backend",
-    feature = "sdl-backend",
-    feature = "gstreamer-backend"
-)))]
-compile_error!("Streaming feature is enabled but no audio backend has been selected. Consider adding one of the following features:
-    rodio-backend,
-    alsa-backend,
-    pulseaudio-backend,
-    portaudio-backend,
-    jackaudio-backend,
-    rodiojack-backend,
-    sdl-backend,
-    gstreamer-backend
-For more information, visit https://github.com/aome510/spotify-player?tab=readme-ov-file#streaming
-");
 
 #[derive(Debug, Serialize)]
 enum PlayerEvent {
@@ -182,8 +158,9 @@ pub async fn new_connection(
     );
     mixer.set_volume(volume);
 
-    #[cfg(not(feature = "rodio-backend"))]
-    let backend = audio_backend::find(None).expect("should be able to find an audio backend");
+    // the Snapcast server runs this process and reads its audio from stdout
+    let backend =
+        audio_backend::find(Some("pipe".to_string())).context("find librespot's pipe output")?;
     let player_config = PlayerConfig {
         bitrate: device
             .bitrate
@@ -200,33 +177,12 @@ pub async fn new_connection(
     );
     state.session.lock().own_device = Some(session.device_id().to_string());
 
-    let player = {
-        // Clone the Option<Arc<...>> so the factory closure can move it.
-        // vis_bands is Some iff enable_audio_visualization is true.
-        let vis_bands = state.vis_bands.as_ref().map(Arc::clone);
-        player::Player::new(
-            player_config,
-            session.clone(),
-            mixer.get_soft_volume(),
-            move || -> Box<dyn Sink> {
-                #[cfg(feature = "rodio-backend")]
-                let real: Box<dyn Sink> = Box::new(crate::audio_output::RecoveringSink::open());
-                #[cfg(not(feature = "rodio-backend"))]
-                let real = backend(None, AudioFormat::default());
-                if let Some(ref bands) = vis_bands {
-                    Box::new(crate::ui::streaming::VisualizationSink::new(
-                        real,
-                        Arc::clone(bands),
-                        // librespot defaults to 44100 Hz; adjust here if
-                        // PlayerConfig::sample_rate is changed in the future.
-                        44_100.0,
-                    ))
-                } else {
-                    real
-                }
-            },
-        )
-    };
+    let player = player::Player::new(
+        player_config,
+        session.clone(),
+        mixer.get_soft_volume(),
+        move || backend(None, AudioFormat::S16),
+    );
 
     // When `pause_on_startup` is enabled, suppress Spotify's auto-resume of the
     // previous session by pausing the first auto-started playback. Scoped to the
@@ -252,12 +208,12 @@ pub async fn new_connection(
                         // is a no-op if the transfer has not set the play state
                         // yet, so we do NOT disarm here.
                         player::PlayerEvent::Loading { .. } => {
-                            client.pause_streaming_on_startup();
+                            client.pause_player();
                         }
                         // Authoritative: playback actually started (the transfer
                         // finalized into "playing"). Pause and stop interfering.
                         player::PlayerEvent::Playing { .. } => {
-                            if client.pause_streaming_on_startup() {
+                            if client.pause_player() {
                                 pause_armed = false;
                             }
                         }
@@ -287,21 +243,19 @@ pub async fn new_connection(
                         tracing::info!("Got a new player event: {event:?}");
                         match event {
                             PlayerEvent::Playing { .. } => {
+                                if crate::listeners::is_unheard() {
+                                    tracing::info!("No PC plays the session aloud; pausing");
+                                    client.pause_player();
+                                }
                                 let mut player = state.player.write();
                                 if let Some(playback) = player.buffered_playback.as_mut() {
                                     playback.is_playing = true;
-                                }
-                                if let Some(ref bands) = state.vis_bands {
-                                    bands.lock().is_active = true;
                                 }
                             }
                             PlayerEvent::Paused { .. } => {
                                 let mut player = state.player.write();
                                 if let Some(playback) = player.buffered_playback.as_mut() {
                                     playback.is_playing = false;
-                                }
-                                if let Some(ref bands) = state.vis_bands {
-                                    bands.lock().is_active = false;
                                 }
                             }
                             PlayerEvent::EndOfTrack { ref playable_id } => {
