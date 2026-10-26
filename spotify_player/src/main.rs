@@ -10,6 +10,8 @@ mod event;
 mod fzt;
 #[cfg(feature = "streaming")]
 mod handover;
+#[cfg(any(feature = "cast", feature = "streaming"))]
+mod home_auth;
 mod keeper;
 mod key;
 #[cfg(feature = "streaming")]

@@ -74,9 +74,13 @@ futures = "0.3.34"
 # fix for https://github.com/aome510/spotify-player/issues/914
 vergen = "=9.0.6"
 ratatui-image = { version = "11.0.8", optional = true, default-features = false, features = ["crossterm"] }
+# checks auth.romaine.life's tokens in the session (`home_auth`)
+jsonwebtoken = { version = "9.3.1", optional = true }
 
 [dev-dependencies]
 wiremock = "0.6.5"
+# signs test tokens for `home_auth`
+rsa = { version = "0.9.10", features = ["getrandom", "pem"] }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies.winit]
 version = "0.30.13"
@@ -103,7 +107,7 @@ optional = true
 
 [features]
 # the home cast's session (`spotify_player session`): the player, its audio on stdout for Snapcast
-streaming = ["librespot-playback", "librespot-connect", "librespot-protocol", "protobuf"]
+streaming = ["librespot-playback", "librespot-connect", "librespot-protocol", "protobuf", "dep:jsonwebtoken"]
 # a PC attached to the session: plays its audio from Snapcast and draws the visualization
 cast = ["dep:cpal", "rustfft", "dep:gethostname", "windows", "dep:windows-core"]
 media-control = ["souvlaki", "winit", "windows"]

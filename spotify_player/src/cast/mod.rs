@@ -147,7 +147,7 @@ fn connect(
         .name("cast-time-sync".to_string())
         .spawn(move || sync_time(&mut writer, &answers))?;
     // dropping `answered` when the connection ends stops the time sync
-    receive(&mut BufReader::new(socket), shared, clock, &answered)
+    receive(&mut BufReader::new(socket), cast, shared, clock, &answered)
 }
 
 /// Send time requests for as long as the connection lasts. Like snapclient, each one waits for the
@@ -176,15 +176,23 @@ fn sync_time(writer: &mut TcpStream, answers: &flume::Receiver<()>) {
 
 fn receive(
     reader: &mut BufReader<TcpStream>,
+    cast: &Cast,
     shared: &Arc<Mutex<Shared>>,
     clock: &Arc<Clock>,
     answered: &flume::Sender<()>,
 ) -> anyhow::Result<()> {
+    // The server's answer to the hello carries the muting it stored, which this PC's own choice
+    // replaces; any later settings come from another PC muting or unmuting this one.
+    let mut hello_answered = false;
     loop {
         let (header, message) = protocol::read(reader, clock::now)?;
         match message {
             Message::ServerSettings(settings) => {
                 tracing::info!("Cast server settings: {settings:?}");
+                if hello_answered {
+                    cast.muted.store(settings.muted, Ordering::Relaxed);
+                }
+                hello_answered = true;
                 shared
                     .lock()
                     .set_buffer((settings.buffer_ms - settings.latency) * 1000);

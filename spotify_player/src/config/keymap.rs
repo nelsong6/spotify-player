@@ -351,6 +351,10 @@ impl Default for KeymapConfig {
                     key_sequence: "H".into(),
                     command: Command::ToggleListening,
                 },
+                Keymap {
+                    key_sequence: "P".into(),
+                    command: Command::MutePc,
+                },
             ],
         }
     }

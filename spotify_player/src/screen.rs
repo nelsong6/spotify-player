@@ -1,6 +1,7 @@
 //! The shared screen: every PC shows the same page, popup and visualization. The session on the
 //! NAS keeps what the screen shows and passes it to every PC. One PC at a time is in control and
-//! changes the screen; the others show it locked until space takes control.
+//! changes the screen; the others show it locked until space takes control. The session also
+//! lists the PCs playing its audio, and mutes one when another asks.
 
 use serde::{Deserialize, Serialize};
 
@@ -18,21 +19,38 @@ enum ToSession {
         pc: String,
         screen: serde_json::Value,
     },
+    /// Mute or unmute a PC, with an auth.romaine.life access token (`home_auth`)
+    Mute {
+        pc: String,
+        muted: bool,
+        token: String,
+    },
 }
 
-/// From the session to every PC, one JSON object per line, sent whenever either changes
+/// A PC playing the session's audio, as the cast server knows it
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Pc {
+    /// The cast server's id for it: its host name
+    pub id: String,
+    pub name: String,
+    pub muted: bool,
+}
+
+/// From the session to every PC, one JSON object per line, sent whenever any of it changes
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct FromSession {
     controller: Option<String>,
     /// `None` until a PC first takes control
     screen: Option<serde_json::Value>,
+    #[serde(default)]
+    pcs: Vec<Pc>,
 }
 
 /// The session's side: keeps the screen, saved to `path` so a restart keeps it, and passes it on.
 /// The screen is opaque here, so the session needs no update when its contents change.
 #[cfg(feature = "streaming")]
 pub mod session {
-    use super::{FromSession, ToSession, PORT};
+    use super::{FromSession, Pc, ToSession, PORT};
     use anyhow::Context as _;
     use std::path::{Path, PathBuf};
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -44,7 +62,7 @@ pub mod session {
         let mut logged = false;
         loop {
             match tokio::net::TcpListener::bind(("0.0.0.0", PORT)).await {
-                Ok(listener) => return relay(listener, path).await,
+                Ok(listener) => return relay(listener, path, crate::listeners::pcs()).await,
                 Err(err) if !logged => {
                     tracing::info!("Waiting for port {PORT} for the shared screen: {err:#}");
                     logged = true;
@@ -55,13 +73,27 @@ pub mod session {
         }
     }
 
-    async fn relay(listener: tokio::net::TcpListener, path: PathBuf) {
+    async fn relay(
+        listener: tokio::net::TcpListener,
+        path: PathBuf,
+        mut pcs: watch::Receiver<Vec<Pc>>,
+    ) {
         let screen = std::fs::read_to_string(&path)
             .ok()
             .and_then(|saved| serde_json::from_str(&saved).ok());
         let (shared, _) = watch::channel(FromSession {
             controller: None,
             screen,
+            pcs: pcs.borrow_and_update().clone(),
+        });
+        tokio::spawn({
+            let shared = shared.clone();
+            async move {
+                while pcs.changed().await.is_ok() {
+                    let now = pcs.borrow_and_update().clone();
+                    shared.send_modify(|shared| shared.pcs = now);
+                }
+            }
         });
         loop {
             match listener.accept().await {
@@ -116,10 +148,26 @@ pub mod session {
                             }
                             shared.send_modify(|shared| shared.screen = Some(screen));
                         }
+                        ToSession::Mute { pc, muted, token } => {
+                            tokio::spawn(async move {
+                                if let Err(err) = mute(&pc, muted, &token).await {
+                                    tracing::warn!("Failed to mute {pc}: {err:#}");
+                                }
+                            });
+                        }
                     }
                 }
             }
         }
+    }
+
+    async fn mute(pc: &str, muted: bool, token: &str) -> anyhow::Result<()> {
+        crate::home_auth::session::check(token)
+            .await
+            .context("refuse the request")?;
+        crate::listeners::set_muted(pc, muted).await?;
+        tracing::info!("{} {pc}", if muted { "Muted" } else { "Unmuted" });
+        Ok(())
     }
 
     #[cfg(test)]
@@ -158,13 +206,14 @@ pub mod session {
             let _ = std::fs::remove_file(&path);
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
-            tokio::spawn(relay(listener, path.clone()));
+            let (pcs, pcs_rx) = watch::channel(Vec::new());
+            tokio::spawn(relay(listener, path.clone(), pcs_rx));
 
             let (mut a_in, mut a_out) = pc(addr).await;
             let (mut b_in, mut b_out) = pc(addr).await;
             assert_eq!(
                 next(&mut a_in).await,
-                serde_json::json!({"controller": null, "screen": null})
+                serde_json::json!({"controller": null, "screen": null, "pcs": []})
             );
             next(&mut b_in).await;
 
@@ -192,13 +241,25 @@ pub mod session {
                 .unwrap();
             assert_eq!(
                 next(&mut b_in).await,
-                serde_json::json!({"controller": "a", "screen": "library"})
+                serde_json::json!({"controller": "a", "screen": "library", "pcs": []})
             );
             assert_eq!(std::fs::read_to_string(&path).unwrap(), "\"library\"");
 
             // a PC that opens later starts from it
             let (mut c_in, _c_out) = pc(addr).await;
             assert_eq!(next(&mut c_in).await["screen"], "library");
+
+            // and every PC hears of the PCs playing the audio
+            pcs.send(vec![Pc {
+                id: "upstairspc".to_string(),
+                name: "upstairspc".to_string(),
+                muted: true,
+            }])
+            .unwrap();
+            assert_eq!(
+                next(&mut c_in).await["pcs"],
+                serde_json::json!([{"id": "upstairspc", "name": "upstairspc", "muted": true}])
+            );
             std::fs::remove_dir_all(&dir).unwrap();
         }
     }
@@ -208,7 +269,7 @@ pub mod session {
 /// With the session out of reach, the PC is its own screen.
 #[cfg(feature = "cast")]
 pub mod pc {
-    use super::{FromSession, ToSession, PORT};
+    use super::{FromSession, Pc, ToSession, PORT};
     use crate::client::ClientRequest;
     use crate::config;
     use crate::state::{
@@ -269,6 +330,7 @@ pub mod pc {
         writer: Mutex<Option<TcpStream>>,
         /// Wakes the sender after a key press, so the other PCs follow without waiting for a poll
         wake: flume::Sender<()>,
+        pcs: Mutex<Vec<Pc>>,
     }
 
     static LINK: OnceLock<Link> = OnceLock::new();
@@ -295,6 +357,7 @@ pub mod pc {
             in_control: AtomicBool::new(false),
             writer: Mutex::new(None),
             wake,
+            pcs: Mutex::new(Vec::new()),
         });
         std::thread::Builder::new()
             .name("screen-connection".to_string())
@@ -343,6 +406,52 @@ pub mod pc {
         changed();
     }
 
+    /// The PCs playing the session's audio
+    pub fn pcs() -> Vec<Pc> {
+        LINK.get()
+            .map(|link| link.pcs.lock().clone())
+            .unwrap_or_default()
+    }
+
+    /// Mute or unmute a PC: this one directly, another through the session, signing in to
+    /// auth.romaine.life first if needed
+    pub fn set_muted(pc: &Pc, muted: bool) {
+        if pc.id == gethostname::gethostname().to_string_lossy() {
+            if crate::cast::is_listening() == muted {
+                crate::cast::toggle_listening();
+            }
+            return;
+        }
+        let Some(link) = LINK.get() else {
+            return;
+        };
+        let pc = pc.id.clone();
+        let sent = std::thread::Builder::new()
+            .name("mute-a-pc".to_string())
+            .spawn(move || {
+                let sent = crate::home_auth::pc::access_token().and_then(|token| {
+                    anyhow::ensure!(
+                        link.connected.load(Ordering::Relaxed),
+                        "the session is out of reach"
+                    );
+                    send(
+                        link,
+                        &ToSession::Mute {
+                            pc: pc.clone(),
+                            muted,
+                            token,
+                        },
+                    )
+                });
+                if let Err(err) = sent {
+                    tracing::error!("Failed to ask the session to mute {pc}: {err:#}");
+                }
+            });
+        if let Err(err) = sent {
+            tracing::error!("Failed to start muting a PC: {err:#}");
+        }
+    }
+
     /// Send the screen now, after a key press may have changed it
     pub fn changed() {
         if let Some(link) = LINK.get() {
@@ -382,9 +491,17 @@ pub mod pc {
         }
         link.connected.store(true, Ordering::Relaxed);
         tracing::info!("Shared screen: connected to {server}:{PORT}");
+        let mut last = None;
         for line in BufReader::new(stream).lines() {
-            let message: FromSession =
+            let mut message: FromSession =
                 serde_json::from_str(&line?).context("parse the session's message")?;
+            *link.pcs.lock() = std::mem::take(&mut message.pcs);
+            // a change to the PCs alone leaves the screen as it is
+            let shown = Some((message.controller.clone(), message.screen.clone()));
+            if shown == last {
+                continue;
+            }
+            last = shown;
             let in_control = message.controller.as_deref() == Some(link.pc.as_str());
             link.in_control.store(in_control, Ordering::Relaxed);
             if in_control {

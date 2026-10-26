@@ -112,6 +112,24 @@ pub fn render_popup(
                 let rect = render_list_popup(frame, rect, "Devices", items, 5, ui);
                 (rect, false)
             }
+            PopupState::PcList(_) => {
+                #[cfg(feature = "cast")]
+                let items = {
+                    let here = gethostname::gethostname().to_string_lossy().into_owned();
+                    crate::screen::pc::pcs()
+                        .iter()
+                        .map(|pc| {
+                            let muted = if pc.muted { "muted" } else { "playing aloud" };
+                            (format!("{} | {muted}", pc.name), pc.id == here)
+                        })
+                        .collect()
+                };
+                #[cfg(not(feature = "cast"))]
+                let items = Vec::new();
+
+                let rect = render_list_popup(frame, rect, "PCs", items, 5, ui);
+                (rect, false)
+            }
             PopupState::ThemeList(themes, ..) => {
                 let items = themes.iter().map(|t| (t.name.clone(), false)).collect();
 
