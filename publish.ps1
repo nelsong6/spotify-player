@@ -45,3 +45,16 @@ publish-tool -Name spt -Version $version -Path $dir `
 # the session isn't restarted: its waiting slot starts again on this release and takes the
 # session over at the next song change or pause, so the music doesn't stop
 ssh nas 'sudo /usr/local/bin/docker exec spt-session /upgrade.sh 2>/dev/null || true'
+
+# a running spt keeps its release until restarted, so restart each one on the PCs; a PC that is
+# asleep or off gets this release the next time spt opens
+$restart = [Convert]::ToBase64String(
+    [Text.Encoding]::Unicode.GetBytes((Get-Content (Join-Path $PSScriptRoot 'restart-spt.ps1') -Raw)))
+foreach ($pc in 'nelsonpc', 'upstairspc', 'treadmill') {
+    if ($pc -eq $env:COMPUTERNAME) {
+        pwsh -NoProfile -EncodedCommand $restart
+    } else {
+        ssh -o BatchMode=yes -o ConnectTimeout=5 $pc "pwsh -NoProfile -EncodedCommand $restart"
+        if ($LASTEXITCODE -ne 0) { Write-Host "$pc`: out of reach; spt there updates when it next opens" }
+    }
+}
