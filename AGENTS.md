@@ -180,7 +180,10 @@ Working on the fork:
   the Windows exe plus `fzt.dll` (pinned in `fzt.lock`, from fzt-terminal releases) and the
   Linux binary `nas/` runs for the session, then restarts only the session's waiting slot,
   which takes over between songs
-  (`handover.rs`, OpenProject #78). CI's `windows-build` and `linux-build`
+  (`handover.rs`, OpenProject #78), and restarts every spt running in a tmux pane on the
+  PCs, in its pane (`restart-spt.ps1`, over ssh for the other PCs; one asleep is skipped and
+  updates when spt next opens). It skips a tab still on a tmux older than win32.7-7, whose
+  `respawn-pane -k` crashed the whole tab (2026-10-26, it took a Claude session with it). CI's `windows-build` and `linux-build`
   jobs run on PRs and on master, alongside the checks rather than after them;
   `publish.ps1` takes them only from a run that passed in full. For a squash merge whose
   tree matches its PR's last commit it takes the PR run's build instead of waiting for the
