@@ -264,6 +264,11 @@ pub mod pc {
     use reqwest_middleware::{Middleware, Next};
     use std::path::PathBuf;
     use std::sync::Arc;
+    use std::time::Duration;
+
+    /// How long a request may take: the session holds one while Spotify has asked it to wait,
+    /// which outlasts rspotify's own 10 s
+    const TIMEOUT: Duration = Duration::from_mins(3);
 
     /// Adds the key to every request, reading it again once when the session refuses it
     #[derive(Clone)]
@@ -302,6 +307,7 @@ pub mod pc {
                 .context("the relay's key")
                 .map_err(reqwest_middleware::Error::Middleware)?;
             request.headers_mut().insert(KEY_HEADER, value);
+            *request.timeout_mut() = Some(TIMEOUT);
             Ok(())
         }
     }
@@ -437,6 +443,32 @@ pub mod pc {
             std::fs::write(&path, "new").unwrap();
             let sent = client.get(server.uri()).send().await.unwrap();
             assert_eq!(sent.status(), 200);
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+
+        #[tokio::test]
+        async fn outwaits_the_clients_own_timeout() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .respond_with(
+                    ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(2)),
+                )
+                .mount(&server)
+                .await;
+            let dir = std::env::temp_dir().join(format!("spt-relay-wait-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join("relay.key");
+            std::fs::write(&path, "key").unwrap();
+            let short = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(1))
+                .build()
+                .unwrap();
+            let client = reqwest_middleware::ClientBuilder::new(short)
+                .with(KeyMiddleware::from_file(path))
+                .build();
+
+            let response = client.get(server.uri()).send().await.unwrap();
+            assert_eq!(response.status(), 200);
             std::fs::remove_dir_all(&dir).unwrap();
         }
     }
