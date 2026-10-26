@@ -1,9 +1,9 @@
-//! `spotify_player keep`: keeps playlists in step with what has been played from them, so playing
-//! one from its top always picks up where you left off. Each pass removes the songs Spotify's
-//! listening history shows were played from a kept playlist, and, while it is the one playing,
-//! the songs before the playing one; a radio playlist is then refilled with radios seeded by
-//! random songs of its source playlist. A pass runs every `PLAYING_INTERVAL` for the playlist
-//! playing and every `IDLE_INTERVAL` for the others.
+//! The session keeps playlists in step with what has been played from them, so playing one from
+//! its top always picks up where you left off. Each pass removes the songs Spotify's listening
+//! history shows were played from a kept playlist, and, while it is the one playing, the songs
+//! before the playing one; a radio playlist is then refilled with radios seeded by random songs
+//! of its source playlist. A pass runs every `PLAYING_INTERVAL` for the playlist playing and
+//! every `IDLE_INTERVAL` for the others.
 
 use crate::{
     client::AppClient,
@@ -39,8 +39,9 @@ struct PlaylistState {
     last_kept: Option<DateTime<Utc>>,
 }
 
+/// Beside the saved session, so a new release's slot carries on from the last one's
 fn state_path() -> std::path::PathBuf {
-    config::get_config().cache_folder.join(STATE_FILE)
+    config::get_config().session_folder().join(STATE_FILE)
 }
 
 fn load_state() -> KeeperState {
@@ -59,29 +60,23 @@ fn save_state(state: &KeeperState) {
     }
 }
 
-/// Run until stopped
-pub fn run() -> Result<()> {
+/// Keep the configured playlists until the session stops
+pub async fn run(client: AppClient) {
     let kept = config::get_config().app_config.kept_playlists.clone();
-    anyhow::ensure!(!kept.is_empty(), "no kept_playlists in the config");
-    tokio::runtime::Runtime::new()?.block_on(async {
-        let client = AppClient::new().await?;
-        client
-            .new_session(None, false)
-            .await
-            .context("connect to Spotify")?;
-        let mut state = load_state();
-        loop {
-            if let Err(err) = pass(&client, &kept, &mut state).await {
-                tracing::error!("Failed to keep playlists: {err:#}");
-            }
-            save_state(&state);
-            tokio::time::sleep(PLAYING_INTERVAL).await;
+    if kept.is_empty() {
+        return;
+    }
+    let mut state = load_state();
+    loop {
+        if let Err(err) = pass(&client, &kept, &mut state).await {
+            tracing::error!("Failed to keep playlists: {err:#}");
         }
-    })
+        save_state(&state);
+        tokio::time::sleep(PLAYING_INTERVAL).await;
+    }
 }
 
 async fn pass(client: &AppClient, kept: &[KeptPlaylist], state: &mut KeeperState) -> Result<()> {
-    client.renew_session_if_invalid().await?;
     let playback = client.current_playback2().await?;
     let playing_context = playback
         .as_ref()

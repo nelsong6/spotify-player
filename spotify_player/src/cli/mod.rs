@@ -185,8 +185,7 @@ pub fn init_cli() -> anyhow::Result<clap::Command> {
         .subcommand(commands::init_search_command())
         .subcommand(commands::init_print_features_command())
         .subcommand(commands::init_lyrics_command())
-        .subcommand(commands::init_quit_command())
-        .subcommand(commands::init_keep_command());
+        .subcommand(commands::init_quit_command());
     #[cfg(feature = "streaming")]
     let cmd = cmd.subcommand(commands::init_session_command());
     let cmd = cmd

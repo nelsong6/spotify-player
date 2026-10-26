@@ -157,12 +157,18 @@ fn try_connect_to_client(socket: &UdpSocket, configs: &config::Configs) -> Resul
 
             let rt = tokio::runtime::Runtime::new()?;
 
-            // create a Spotify API client
-            let client = rt
-                .block_on(client::AppClient::new())
-                .context("construct app client")?;
-            rt.block_on(client.new_session(None, false))
-                .context("new session")?;
+            // create a Spotify API client; a PC's goes through the session
+            #[cfg(feature = "cast")]
+            let client = client::AppClient::relayed().context("construct the relayed client")?;
+            #[cfg(not(feature = "cast"))]
+            let client = {
+                let client = rt
+                    .block_on(client::AppClient::new())
+                    .context("construct app client")?;
+                rt.block_on(client.new_session(None, false))
+                    .context("new session")?;
+                client
+            };
 
             // create a client socket for handling CLI commands
             // NOTE: the socket must be bound *before* spawning the thread to avoid a

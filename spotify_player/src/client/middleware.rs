@@ -192,6 +192,13 @@ impl SpotifyApiRequestManager {
         }
     }
 
+    /// How long Spotify's last refusal still holds
+    async fn retry_after_holding(&self) -> Option<Duration> {
+        let deadline = self.state.lock().await.retry_after_until?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        (!remaining.is_zero()).then_some(remaining)
+    }
+
     #[cfg(test)]
     async fn retry_after_remaining(&self) -> Option<Duration> {
         self.state
@@ -206,6 +213,9 @@ impl SpotifyApiRequestManager {
 pub(super) struct SpotifyApiMiddleware {
     api_base_url: Url,
     requests: SpotifyApiRequestManager,
+    /// While Spotify has asked this client to wait, answer for it with that refusal instead of
+    /// waiting, so a client with a fallback falls back at once
+    refuse_while_limited: bool,
 }
 
 impl SpotifyApiMiddleware {
@@ -213,7 +223,29 @@ impl SpotifyApiMiddleware {
         Ok(Self {
             api_base_url: Url::parse(api_base_url)?,
             requests: SpotifyApiRequestManager::new(max_retries),
+            refuse_while_limited: false,
         })
+    }
+
+    /// For a client with a fallback: no retries, and no requests while Spotify has asked it to
+    /// wait
+    pub(super) fn refusing_while_limited(api_base_url: &str) -> anyhow::Result<Self> {
+        Ok(Self {
+            refuse_while_limited: true,
+            ..Self::new(api_base_url, 0)?
+        })
+    }
+
+    /// The refusal Spotify gave, while it still holds
+    async fn refusal(&self, url: &Url) -> Option<Response> {
+        let remaining = self.requests.retry_after_holding().await?;
+        let response = http::Response::builder()
+            .status(StatusCode::TOO_MANY_REQUESTS)
+            .header(RETRY_AFTER, remaining.as_secs().max(1))
+            .url(url.clone())
+            .body(Vec::new())
+            .expect("a refusal is a valid response");
+        Some(response.into())
     }
 
     /// Returns a normalized key for the given URL that guarantees consistent ordering of query parameters,
@@ -364,6 +396,11 @@ impl Middleware for SpotifyApiMiddleware {
     ) -> reqwest_middleware::Result<Response> {
         if !self.is_api_request(request.url()) {
             return next.run(request, extensions).await;
+        }
+        if self.refuse_while_limited {
+            if let Some(refusal) = self.refusal(request.url()).await {
+                return Ok(refusal);
+            }
         }
 
         let method = request.method().to_owned();
@@ -533,6 +570,42 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.text().await.unwrap(), "ok");
         assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn refusing_client_sends_nothing_while_spotify_wait_holds() {
+        let server = MockServer::start().await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(RateLimitThenOk {
+                calls: Arc::clone(&calls),
+            })
+            .mount(&server)
+            .await;
+
+        let client = ClientBuilder::new(reqwest::Client::new())
+            .with(
+                SpotifyApiMiddleware::refusing_while_limited(&format!("{}/v1", server.uri()))
+                    .unwrap(),
+            )
+            .build();
+        let first = client
+            .get(format!("{}/v1/me", server.uri()))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::TOO_MANY_REQUESTS);
+
+        // a different request, so it isn't the first one's shared response
+        let second = client
+            .get(format!("{}/v1/me?market=from_token", server.uri()))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(second.headers().contains_key(reqwest::header::RETRY_AFTER));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

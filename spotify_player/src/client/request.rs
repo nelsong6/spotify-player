@@ -34,6 +34,9 @@ pub enum ClientRequest {
     /// Start a radio seeded by a random track from a playlist
     StartRandomTrackRadio(PlaylistId<'static>),
     GetCurrentPlayback,
+    /// On a PC, the session's playback, as the session pushed it
+    #[cfg(feature = "cast")]
+    FollowSessionPlayback(Box<crate::screen::SessionPlayback>),
     Search(String),
     AddPlayableToQueue(PlayableId<'static>),
     AddAlbumToQueue(AlbumId<'static>),

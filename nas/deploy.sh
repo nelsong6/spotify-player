@@ -1,52 +1,50 @@
 #!/bin/bash
-# Push nas/ to the NAS (over `ssh nas`) and (re)start its containers, which run the published spt
-# release: spt-keep runs `spotify_player keep`; spt-session runs the home cast's session under
-# Snapcast's server.
+# Push nas/spt-session to the NAS (over `ssh nas`) and (re)start it: Snapcast's server running the
+# home cast's session from the published spt release. The session holds the house's one Spotify
+# sign-in, keeps the playlists, and relays the PCs' requests to Spotify.
 #
-# Both sign in to Spotify with spt's cached sign-in. The first deploy copies it from this
-# machine's spt cache into spt-keep, and spt-session starts from spt-keep's copy; it stays on the
-# NAS (/volume1/docker/<container>/cache, owner-only) and never enters this repo.
+# The first deploy copies spt's cached sign-in from this machine's spt cache; it stays on the NAS
+# (/volume1/docker/spt-session/cache, owner-only) and never enters this repo.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 CACHE="${SPT_CACHE:-$HOME/.cache/spotify-player}"
-tar cf - spt-keep spt-session | ssh nas "cat > /tmp/spt-deploy.tar"
-if ! ssh nas "sudo test -f /volume1/docker/spt-keep/cache/credentials.json"; then
-  (cd "$CACHE" && tar cf - credentials.json ./*_token.json) | ssh nas "cat > /tmp/spt-keep-auth.tar"
+tar cf - spt-session | ssh nas "cat > /tmp/spt-deploy.tar"
+if ! ssh nas "sudo test -f /volume1/docker/spt-session/cache/credentials.json"; then
+  (cd "$CACHE" && tar cf - credentials.json ./*_token.json) | ssh nas "cat > /tmp/spt-session-auth.tar"
   echo "copying spt's sign-in from $CACHE"
 fi
 
 ssh nas "sudo bash -s" <<'REMOTE'
 set -euo pipefail
 D=/usr/local/bin/docker
+K=/volume1/docker/spt-session
 T=$(mktemp -d); tar xf /tmp/spt-deploy.tar -C "$T"; rm /tmp/spt-deploy.tar
-mkdir -p /volume1/docker/spt-session/data
-for name in spt-keep spt-session; do
-  K=/volume1/docker/$name
-  mkdir -p $K/cache
-  for d in $K $K/cache $K/data; do
-    if [ -d $d ]; then /usr/syno/bin/synoacltool -del $d >/dev/null 2>&1 || true; fi
-  done
-  cp "$T/$name"/* $K/
-  chmod 755 $K/*.sh
+mkdir -p $K/cache $K/data
+for d in $K $K/cache $K/data; do
+  /usr/syno/bin/synoacltool -del $d >/dev/null 2>&1 || true
 done
-if [ -f /tmp/spt-keep-auth.tar ]; then
-  tar xf /tmp/spt-keep-auth.tar -C /volume1/docker/spt-keep/cache; rm /tmp/spt-keep-auth.tar
+cp "$T"/spt-session/* $K/
+chmod 755 $K/*.sh
+if [ -f /tmp/spt-session-auth.tar ]; then
+  tar xf /tmp/spt-session-auth.tar -C $K/cache; rm /tmp/spt-session-auth.tar
 fi
-if [ ! -f /volume1/docker/spt-session/cache/credentials.json ]; then
-  cp /volume1/docker/spt-keep/cache/credentials.json /volume1/docker/spt-keep/cache/*_token.json \
-    /volume1/docker/spt-session/cache/
+# the session took over spt-keep's job; its state carries on beside the saved session
+if [ -d /volume1/docker/spt-keep ]; then
+  $D rm -f spt-keep >/dev/null 2>&1 || true
+  if [ -f /volume1/docker/spt-keep/cache/keeper.json ] && [ ! -f /volume1/Files/spt/keeper.json ]; then
+    cp /volume1/docker/spt-keep/cache/keeper.json /volume1/Files/spt/keeper.json
+    chown 1026:100 /volume1/Files/spt/keeper.json
+  fi
+  rm -rf /volume1/docker/spt-keep
+  echo "removed spt-keep"
 fi
-for name in spt-keep spt-session; do
-  K=/volume1/docker/$name
-  chown -R 1026:100 $K
-  # removing Synology's ACLs leaves no permission bits behind
-  chmod 755 $K
-  if [ -d $K/data ]; then chmod 755 $K/data; fi
-  chmod 700 $K/cache
-  chmod 600 $K/cache/*.json
-  (cd $K && $D compose up -d --build --force-recreate 2>&1 | grep -v -E "Running|Up-to-date" || true)
-done
+chown -R 1026:100 $K
+# removing Synology's ACLs leaves no permission bits behind
+chmod 755 $K $K/data
+chmod 700 $K/cache
+chmod 600 $K/cache/*.json
+(cd $K && $D compose up -d --build --force-recreate 2>&1 | grep -v -E "Running|Up-to-date" || true)
 rm -rf "$T"
 echo "deployed"
 REMOTE

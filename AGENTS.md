@@ -33,7 +33,8 @@ This file guides coding agents when working in this repository.
 | `ui/{page,playback,popup}.rs` | Render functions for pages, playback bar, popups                            |
 | `ui/palette.rs`               | Draws the command palette over the page from fzt's rows                     |
 | `fzt.rs`                      | Loads fzt (`fzt.dll`, fzt-terminal's `cmd/fztlib`) and wraps its JSON calls |
-| `keeper.rs`                   | `spotify_player keep`: trims played songs, refills radio playlists          |
+| `keeper.rs`                   | The session's job of trimming played songs and refilling radio playlists    |
+| `relay.rs`                    | The session's relay: a PC's only way to Spotify, behind a key on the NAS    |
 | `play_report.rs`              | Reports the session's plays to Spotify (feature-gated)                      |
 | `ui/streaming.rs`             | FFT audio visualizer: `Analyzer`, `VisBands`, visualization page            |
 | `ui/ascii_cover.rs`           | ASCII album cover beside the bars, pulsing with the bass (feature-gated)    |
@@ -177,8 +178,8 @@ Working on the fork:
 
 - `publish.ps1` publishes CI's build of the pushed commit to `\NelsonNAS\tools\spt`:
   the Windows exe plus `fzt.dll` (pinned in `fzt.lock`, from fzt-terminal releases) and the
-  Linux binary `nas/` runs for `spotify_player keep` and the session, then restarts
-  `spt-keep` and only the session's waiting slot, which takes over between songs
+  Linux binary `nas/` runs for the session, then restarts only the session's waiting slot,
+  which takes over between songs
   (`handover.rs`, OpenProject #78). CI's `windows-build` and `linux-build`
   jobs run on PRs and on master, alongside the checks rather than after them;
   `publish.ps1` takes them only from a run that passed in full. For a squash merge whose
@@ -192,7 +193,7 @@ Working on the fork:
   rejected by Nelson; so was a hand-written WASAPI sink.
 - The home cast (decided 2026-10-25, OpenProject #71): spt on a PC has one mode. It never
   plays on its own; it attaches to the one session on the NAS (`nas/spt-session`), plays its
-  audio in sync through Snapcast, and controls it through Spotify. Only a PC with spt open
+  audio in sync through Snapcast, and controls it through the session's relay. Only a PC with spt open
   is an output, and the session pauses when none plays it aloud. Kept playlists are a
   separate feature, and phones play only those.
 - One screen (decided 2026-10-25, OpenProject #79): every PC shows the same screen, kept by
@@ -201,6 +202,15 @@ Working on the fork:
   and sends it, and a locked PC takes control with space. Rejected: every PC sending commands
   to the session and drawing what comes back (consistent too, but each change waits on the
   NAS). The lock is plain text; a 🔒 emoji left a stray border character beside it.
+- One Spotify sign-in (decided 2026-10-26, OpenProject #82): only the session talks to
+  Spotify. Three instances polling `/me/player` every 5 s kept the account rate-limited all
+  day. A PC sends its Web API requests, lyrics, radios and covers to the session's relay
+  (`relay.rs`, port 1707), which sends them on as its own; the session asks for its playback
+  only on its player's events and pushes it to the PCs over the screen connection. The relay
+  takes only requests carrying `relay.key`, which the session keeps beside the saved session
+  on the NAS, where only Nelson's account and the NAS admins can read it: a PC proves itself
+  through his Windows login and never signs in. The keeper runs in the slot that holds the
+  relay's port, so only one slot keeps playlists.
 - The PCs' sync is snapclient's algorithm (`cast/stream.rs`), timed from cpal's callback
   timestamps (when the buffer reaches the speaker). WASAPI shared mode takes only the
   device's rate, so the 44.1 kHz stream is resampled to it on arrival (`cast/resample.rs`).

@@ -79,6 +79,9 @@ pub struct AppClient {
     api_client: WebApiClient,
     #[cfg(feature = "streaming")]
     stream_conn: Arc<Mutex<Option<librespot_connect::Spirc>>>,
+    /// On a PC, the session's relay, its only way to Spotify
+    #[cfg(feature = "cast")]
+    relay: Option<crate::relay::pc::Relay>,
 }
 
 impl Deref for AppClient {
@@ -136,11 +139,16 @@ pub fn new_api_client() -> Result<WebApiClient> {
         %id,
         "Using custom Spotify Web API client with ncspot fallback"
     );
+    let primary_config = build_config(&primary_cache_file);
+    // a refused request falls back to ncspot's client at once, and Spotify's wait is kept
+    let primary_middleware =
+        SpotifyApiMiddleware::refusing_while_limited(&primary_config.api_base_url)?;
     let primary = rspotify::AuthCodePkceSpotify::with_config(
         rspotify::Credentials { id, secret: None },
         build_oauth(configs.app_config.login_redirect_uri.clone()),
-        build_config(&primary_cache_file),
-    );
+        primary_config,
+    )
+    .with_middleware(primary_middleware);
 
     let fallback_cache_file = format!("{}_token.json", auth::NCSPOT_CLIENT_ID);
     let fallback_config = build_config(&fallback_cache_file);
@@ -181,7 +189,53 @@ impl AppClient {
 
             #[cfg(feature = "streaming")]
             stream_conn: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "cast")]
+            relay: None,
         })
+    }
+
+    /// Construct a PC's client, which never signs in to Spotify: every request goes through the
+    /// session's relay, and the session pushes its playback (`screen`).
+    #[cfg(feature = "cast")]
+    pub fn relayed() -> Result<Self> {
+        let config = rspotify::Config {
+            api_base_url: crate::relay::pc::api_base_url(),
+            token_refreshing: false,
+            ..Default::default()
+        };
+        let mut primary = rspotify::AuthCodePkceSpotify::with_config(
+            rspotify::Credentials::default(),
+            rspotify::OAuth::default(),
+            config,
+        )
+        .with_middleware(crate::relay::pc::KeyMiddleware::new());
+        // the relay goes by its key; rspotify only needs a token to send
+        primary.token = Arc::new(rspotify::sync::Mutex::new(Some(rspotify::Token {
+            access_token: "relay".to_string(),
+            ..Default::default()
+        })));
+        Ok(Self {
+            spotify: Arc::new(spotify::Spotify::new()),
+            http: reqwest::Client::new(),
+            auth_config: AuthConfig::new(config::get_config())?,
+            api_client: WebApiClient::new(primary, None).with_ncspot_only_get_endpoints(Vec::new()),
+            #[cfg(feature = "streaming")]
+            stream_conn: Arc::new(Mutex::new(None)),
+            relay: Some(crate::relay::pc::Relay::new()),
+        })
+    }
+
+    /// Whether this is a PC's client, which follows the session's playback instead of asking
+    /// Spotify for it
+    #[cfg(feature = "cast")]
+    fn follows_session(&self) -> bool {
+        self.relay.is_some()
+    }
+
+    #[cfg(not(feature = "cast"))]
+    #[allow(clippy::unused_self)]
+    fn follows_session(&self) -> bool {
+        false
     }
 
     /// Initialize the application's playback upon creating a new session or during startup.
@@ -314,17 +368,6 @@ impl AppClient {
             self.initialize_playback(state, was_playing);
         }
 
-        Ok(())
-    }
-
-    /// Create a new session if the current one is no longer valid, outside the app
-    pub async fn renew_session_if_invalid(&self) -> Result<()> {
-        if self.spotify.session().await.is_invalid() {
-            tracing::info!("Client's current session is invalid, creating a new session...");
-            self.new_session(None, false)
-                .await
-                .context("create new client session")?;
-        }
         Ok(())
     }
 
@@ -552,6 +595,10 @@ impl AppClient {
             ClientRequest::GetCurrentPlayback => {
                 self.retrieve_current_playback(state, true).await?;
             }
+            #[cfg(feature = "cast")]
+            ClientRequest::FollowSessionPlayback(playback) => {
+                self.follow_session_playback(state, *playback).await?;
+            }
             ClientRequest::GetDevices => {
                 #[allow(unused_mut)]
                 let mut devices: Vec<Device> = self
@@ -712,9 +759,15 @@ impl AppClient {
             ClientRequest::DeleteFromLibrary(id) => {
                 self.delete_from_library(state, id).await?;
             }
+            // a PC's queue comes with the session's playback
+            ClientRequest::GetCurrentUserQueue if self.follows_session() => {}
             ClientRequest::GetCurrentUserQueue => {
                 let queue = self.current_user_queue().await?;
                 state.player.write().queue = Some(queue);
+                #[cfg(feature = "streaming")]
+                if state.is_session {
+                    state.playback_changed.notify_one();
+                }
             }
             ClientRequest::ReorderPlaylistItems {
                 playlist_id,
@@ -769,6 +822,16 @@ impl AppClient {
 
     /// Get lyrics of a given track, return None if no lyrics is available
     pub async fn lyrics(&self, track_id: TrackId<'static>) -> Result<Option<Lyrics>> {
+        #[cfg(feature = "cast")]
+        if let Some(relay) = &self.relay {
+            let lines = relay.lyrics(track_id.id()).await?;
+            return Ok(lines.map(|lines| Lyrics {
+                lines: lines
+                    .into_iter()
+                    .map(|(at, line)| (chrono::Duration::milliseconds(at), line))
+                    .collect(),
+            }));
+        }
         let session = self.spotify.session().await;
         let uri = SpotifyUri::from_uri(&track_id.uri())?;
         match uri {
@@ -796,6 +859,9 @@ impl AppClient {
     /// After handling a request changing the player's playback,
     /// update the playback state **in a non-blocking manner**.
     pub fn update_playback_non_blocking(&self, state: &SharedState) {
+        if self.follows_session() {
+            return;
+        }
         // Q: Why do we need more than one request to update the playback?
         // A: It might take a while for Spotify server to reflect the new change,
         // making additional requests can help ensure that the playback state is always up-to-date.
@@ -1135,6 +1201,7 @@ impl AppClient {
     }
 
     /// The URIs of a playlist's items, in order
+    #[cfg(feature = "streaming")]
     pub async fn playlist_item_uris(&self, playlist_id: PlaylistId<'_>) -> Result<Vec<String>> {
         let items = self
             .all_paging_items::<rspotify::model::PlaylistItem>(
@@ -1420,6 +1487,15 @@ impl AppClient {
             tracks: Vec<TrackData>,
         }
 
+        #[cfg(feature = "cast")]
+        if let Some(relay) = &self.relay {
+            return relay
+                .radio(seed_uri)
+                .await?
+                .iter()
+                .map(|id| Ok(TrackId::from_id(id)?.into_static()))
+                .collect();
+        }
         let session = self.spotify.session().await;
 
         // Get an autoplay URI from the seed URI.
@@ -2009,63 +2085,87 @@ impl AppClient {
         state: &SharedState,
         reset_buffered_playback: bool,
     ) -> Result<()> {
-        let new_playback = {
-            // update the playback state
-            let playback = self.current_playback2().await?;
-            let mut player = state.player.write();
-
-            let prev_item = player.currently_playing();
-
-            let prev_name = match prev_item {
-                Some(rspotify::model::PlayableItem::Track(track)) => track.name.clone(),
-                Some(rspotify::model::PlayableItem::Episode(episode)) => episode.name.clone(),
-                Some(rspotify::model::PlayableItem::Unknown(_)) | None => String::new(),
-            };
-
-            player.playback = playback;
-            player.playback_last_updated_time = Some(std::time::Instant::now());
-
-            let curr_item = player.currently_playing();
-
-            let curr_name = match curr_item {
-                Some(rspotify::model::PlayableItem::Track(track)) => track.name.clone(),
-                Some(rspotify::model::PlayableItem::Episode(episode)) => episode.name.clone(),
-                Some(rspotify::model::PlayableItem::Unknown(_)) | None => String::new(),
-            };
-
-            let new_playback = prev_name != curr_name && !curr_name.is_empty();
-            // check if we need to update the buffered playback
-            let needs_update = match (&player.buffered_playback, &player.playback) {
-                (Some(bp), Some(p)) => bp.device_id != p.device.id || new_playback,
-                (None, None) => false,
-                _ => true,
-            };
-
-            if reset_buffered_playback || needs_update {
-                player.buffered_playback = player.playback.as_ref().map(|p| {
-                    let mut playback = PlaybackMetadata::from_playback(p);
-
-                    // handle additional data from the previous buffered state
-                    // that is not available in a standard Spotify playback's state
-                    if let Some(bp) = &player.buffered_playback {
-                        if let Some(volume) = bp.mute_state {
-                            playback.volume = Some(volume);
-                        }
-                        playback.mute_state = bp.mute_state;
-                    }
-                    playback
-                });
-            }
-
-            new_playback
-        };
-
-        if !new_playback {
+        if self.follows_session() {
             return Ok(());
         }
-        self.handle_new_playback_event(state).await?;
-
+        let playback = self.current_playback2().await?;
+        let new_playback = Self::apply_playback(state, playback, reset_buffered_playback);
+        #[cfg(feature = "streaming")]
+        if state.is_session {
+            state.playback_changed.notify_one();
+        }
+        if new_playback {
+            self.handle_new_playback_event(state).await?;
+        }
         Ok(())
+    }
+
+    /// Show the session's playback on a PC
+    #[cfg(feature = "cast")]
+    async fn follow_session_playback(
+        &self,
+        state: &SharedState,
+        playback: crate::screen::SessionPlayback,
+    ) -> Result<()> {
+        state.player.write().queue = playback.queue;
+        if Self::apply_playback(state, playback.playback, true) {
+            self.handle_new_playback_event(state).await?;
+        }
+        Ok(())
+    }
+
+    /// Store a new playback; whether it plays something new
+    fn apply_playback(
+        state: &SharedState,
+        playback: Option<rspotify::model::CurrentPlaybackContext>,
+        reset_buffered_playback: bool,
+    ) -> bool {
+        let mut player = state.player.write();
+
+        let prev_item = player.currently_playing();
+
+        let prev_name = match prev_item {
+            Some(rspotify::model::PlayableItem::Track(track)) => track.name.clone(),
+            Some(rspotify::model::PlayableItem::Episode(episode)) => episode.name.clone(),
+            Some(rspotify::model::PlayableItem::Unknown(_)) | None => String::new(),
+        };
+
+        player.playback = playback;
+        player.playback_last_updated_time = Some(std::time::Instant::now());
+
+        let curr_item = player.currently_playing();
+
+        let curr_name = match curr_item {
+            Some(rspotify::model::PlayableItem::Track(track)) => track.name.clone(),
+            Some(rspotify::model::PlayableItem::Episode(episode)) => episode.name.clone(),
+            Some(rspotify::model::PlayableItem::Unknown(_)) | None => String::new(),
+        };
+
+        let new_playback = prev_name != curr_name && !curr_name.is_empty();
+        // check if we need to update the buffered playback
+        let needs_update = match (&player.buffered_playback, &player.playback) {
+            (Some(bp), Some(p)) => bp.device_id != p.device.id || new_playback,
+            (None, None) => false,
+            _ => true,
+        };
+
+        if reset_buffered_playback || needs_update {
+            player.buffered_playback = player.playback.as_ref().map(|p| {
+                let mut playback = PlaybackMetadata::from_playback(p);
+
+                // handle additional data from the previous buffered state
+                // that is not available in a standard Spotify playback's state
+                if let Some(bp) = &player.buffered_playback {
+                    if let Some(volume) = bp.mute_state {
+                        playback.volume = Some(volume);
+                    }
+                    playback.mute_state = bp.mute_state;
+                }
+                playback
+            });
+        }
+
+        new_playback
     }
 
     // Handle new track event
@@ -2323,14 +2423,7 @@ impl AppClient {
 
         tracing::info!("Retrieving image from url: {url}");
 
-        let bytes = self
-            .http
-            .get(url)
-            .send()
-            .await
-            .with_context(|| format!("get image from url {url}"))?
-            .bytes()
-            .await?;
+        let bytes = self.fetch_image(url).await?;
 
         if saved {
             tracing::info!("Saving the retrieved image into {}", path.display());
@@ -2338,7 +2431,24 @@ impl AppClient {
             file.write_all(&bytes)?;
         }
 
-        Ok(bytes.to_vec())
+        Ok(bytes)
+    }
+
+    /// Download an image; a PC's goes through the session's relay
+    pub async fn fetch_image(&self, url: &str) -> Result<Vec<u8>> {
+        #[cfg(feature = "cast")]
+        if let Some(relay) = &self.relay {
+            return relay.image(url).await;
+        }
+        Ok(self
+            .http
+            .get(url)
+            .send()
+            .await
+            .with_context(|| format!("get image from url {url}"))?
+            .bytes()
+            .await?
+            .to_vec())
     }
 
     #[cfg(feature = "pixelate")]

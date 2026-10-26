@@ -49,6 +49,16 @@ impl Configs {
             cache_folder: cache_folder.to_path_buf(),
         })
     }
+
+    /// The folder of the saved session, where the instances sharing it keep what else they share
+    #[cfg(any(feature = "cast", feature = "streaming"))]
+    pub fn session_folder(&self) -> &std::path::Path {
+        self.app_config
+            .session_file
+            .as_deref()
+            .and_then(std::path::Path::parent)
+            .unwrap_or(&self.cache_folder)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, ConfigParse)]
@@ -69,7 +79,7 @@ pub struct AppConfig {
     /// The saved playback session, shared by the instances that point at the same file
     pub session_file: Option<PathBuf>,
 
-    /// Playlists `spotify_player keep` keeps: played songs removed, radios refilled
+    /// Playlists the session keeps: played songs removed, radios refilled
     pub kept_playlists: Vec<KeptPlaylist>,
 
     pub player_event_hook_command: Option<Command>,

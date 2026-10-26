@@ -1,7 +1,7 @@
 //! The shared screen: every PC shows the same page, popup and visualization. The session on the
 //! NAS keeps what the screen shows and passes it to every PC. One PC at a time is in control and
 //! changes the screen; the others show it locked until space takes control. The session also
-//! lists the PCs playing its audio, and mutes one when another asks.
+//! passes on its playback, lists the PCs playing its audio, and mutes one when another asks.
 
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +36,15 @@ pub struct Pc {
     pub muted: bool,
 }
 
+/// What the session plays, which the PCs show instead of asking Spotify
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SessionPlayback {
+    pub playback: Option<rspotify::model::CurrentPlaybackContext>,
+    pub queue: Option<rspotify::model::CurrentUserQueue>,
+    /// When the playback's progress was read, in milliseconds since the Unix epoch
+    pub at_ms: i64,
+}
+
 /// From the session to every PC, one JSON object per line, sent whenever any of it changes
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct FromSession {
@@ -44,13 +53,17 @@ struct FromSession {
     screen: Option<serde_json::Value>,
     #[serde(default)]
     pcs: Vec<Pc>,
+    /// A [`SessionPlayback`]
+    #[serde(default)]
+    playback: Option<serde_json::Value>,
 }
 
 /// The session's side: keeps the screen, saved to `path` so a restart keeps it, and passes it on.
 /// The screen is opaque here, so the session needs no update when its contents change.
 #[cfg(feature = "streaming")]
 pub mod session {
-    use super::{FromSession, Pc, ToSession, PORT};
+    use super::{FromSession, Pc, SessionPlayback, ToSession, PORT};
+    use crate::state::SharedState;
     use anyhow::Context as _;
     use std::path::{Path, PathBuf};
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -58,11 +71,13 @@ pub mod session {
 
     /// Of the session's two slots, the one that gets the port serves the screen; the other waits
     /// for it to exit.
-    pub async fn serve(path: PathBuf) {
+    pub async fn serve(path: PathBuf, state: SharedState) {
         let mut logged = false;
         loop {
             match tokio::net::TcpListener::bind(("0.0.0.0", PORT)).await {
-                Ok(listener) => return relay(listener, path, crate::listeners::pcs()).await,
+                Ok(listener) => {
+                    return relay(listener, path, crate::listeners::pcs(), playback(state)).await
+                }
                 Err(err) if !logged => {
                     tracing::info!("Waiting for port {PORT} for the shared screen: {err:#}");
                     logged = true;
@@ -73,10 +88,38 @@ pub mod session {
         }
     }
 
+    /// The session's playback, kept current as it changes
+    fn playback(state: SharedState) -> watch::Receiver<Option<serde_json::Value>> {
+        let (sender, receiver) = watch::channel(snapshot(&state));
+        tokio::spawn(async move {
+            loop {
+                state.playback_changed.notified().await;
+                if sender.send(snapshot(&state)).is_err() {
+                    return;
+                }
+            }
+        });
+        receiver
+    }
+
+    fn snapshot(state: &SharedState) -> Option<serde_json::Value> {
+        let player = state.player.read();
+        let playback = SessionPlayback {
+            playback: player.current_playback(),
+            queue: player.queue.clone(),
+            at_ms: chrono::Utc::now().timestamp_millis(),
+        };
+        drop(player);
+        serde_json::to_value(playback)
+            .inspect_err(|err| tracing::error!("Failed to serialize the playback: {err:#}"))
+            .ok()
+    }
+
     async fn relay(
         listener: tokio::net::TcpListener,
         path: PathBuf,
         mut pcs: watch::Receiver<Vec<Pc>>,
+        mut playback: watch::Receiver<Option<serde_json::Value>>,
     ) {
         let screen = std::fs::read_to_string(&path)
             .ok()
@@ -85,13 +128,28 @@ pub mod session {
             controller: None,
             screen,
             pcs: pcs.borrow_and_update().clone(),
+            playback: playback.borrow_and_update().clone(),
         });
         tokio::spawn({
             let shared = shared.clone();
             async move {
-                while pcs.changed().await.is_ok() {
-                    let now = pcs.borrow_and_update().clone();
-                    shared.send_modify(|shared| shared.pcs = now);
+                loop {
+                    tokio::select! {
+                        changed = pcs.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let now = pcs.borrow_and_update().clone();
+                            shared.send_modify(|shared| shared.pcs = now);
+                        }
+                        changed = playback.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let now = playback.borrow_and_update().clone();
+                            shared.send_modify(|shared| shared.playback = now);
+                        }
+                    }
                 }
             }
         });
@@ -207,13 +265,14 @@ pub mod session {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
             let (pcs, pcs_rx) = watch::channel(Vec::new());
-            tokio::spawn(relay(listener, path.clone(), pcs_rx));
+            let (playback, playback_rx) = watch::channel(None);
+            tokio::spawn(relay(listener, path.clone(), pcs_rx, playback_rx));
 
             let (mut a_in, mut a_out) = pc(addr).await;
             let (mut b_in, mut b_out) = pc(addr).await;
             assert_eq!(
                 next(&mut a_in).await,
-                serde_json::json!({"controller": null, "screen": null, "pcs": []})
+                serde_json::json!({"controller": null, "screen": null, "pcs": [], "playback": null})
             );
             next(&mut b_in).await;
 
@@ -241,7 +300,7 @@ pub mod session {
                 .unwrap();
             assert_eq!(
                 next(&mut b_in).await,
-                serde_json::json!({"controller": "a", "screen": "library", "pcs": []})
+                serde_json::json!({"controller": "a", "screen": "library", "pcs": [], "playback": null})
             );
             assert_eq!(std::fs::read_to_string(&path).unwrap(), "\"library\"");
 
@@ -260,6 +319,10 @@ pub mod session {
                 next(&mut c_in).await["pcs"],
                 serde_json::json!([{"id": "upstairspc", "name": "upstairspc", "muted": true}])
             );
+
+            // and of what the session plays
+            playback.send(Some(serde_json::json!("playing"))).unwrap();
+            assert_eq!(next(&mut c_in).await["playback"], "playing");
             std::fs::remove_dir_all(&dir).unwrap();
         }
     }
@@ -269,7 +332,7 @@ pub mod session {
 /// With the session out of reach, the PC is its own screen.
 #[cfg(feature = "cast")]
 pub mod pc {
-    use super::{FromSession, Pc, ToSession, PORT};
+    use super::{FromSession, Pc, SessionPlayback, ToSession, PORT};
     use crate::client::ClientRequest;
     use crate::config;
     use crate::state::{
@@ -492,10 +555,15 @@ pub mod pc {
         link.connected.store(true, Ordering::Relaxed);
         tracing::info!("Shared screen: connected to {server}:{PORT}");
         let mut last = None;
+        let mut last_playback = None;
         for line in BufReader::new(stream).lines() {
             let mut message: FromSession =
                 serde_json::from_str(&line?).context("parse the session's message")?;
             *link.pcs.lock() = std::mem::take(&mut message.pcs);
+            if message.playback != last_playback {
+                last_playback.clone_from(&message.playback);
+                follow_playback(client_pub, message.playback.take());
+            }
             // a change to the PCs alone leaves the screen as it is
             let shown = Some((message.controller.clone(), message.screen.clone()));
             if shown == last {
@@ -522,6 +590,30 @@ pub mod pc {
             show(state, client_pub, screen);
         }
         anyhow::bail!("the session closed the connection")
+    }
+
+    /// Show the session's playback here, as it is now
+    fn follow_playback(
+        client_pub: &flume::Sender<ClientRequest>,
+        playback: Option<serde_json::Value>,
+    ) {
+        let Some(playback) = playback else {
+            return;
+        };
+        let mut playback: SessionPlayback = match serde_json::from_value(playback) {
+            Ok(playback) => playback,
+            Err(err) => {
+                tracing::warn!("Failed to parse the session's playback: {err:#}");
+                return;
+            }
+        };
+        if let Some(current) = playback.playback.as_mut().filter(|p| p.is_playing) {
+            let elapsed = chrono::Utc::now().timestamp_millis() - playback.at_ms;
+            current.progress = current
+                .progress
+                .map(|progress| progress + chrono::Duration::milliseconds(elapsed.max(0)));
+        }
+        let _ = client_pub.send(ClientRequest::FollowSessionPlayback(Box::new(playback)));
     }
 
     /// Show another PC's screen here, and fetch what its page shows

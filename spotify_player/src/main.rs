@@ -12,6 +12,7 @@ mod fzt;
 mod handover;
 #[cfg(any(feature = "cast", feature = "streaming"))]
 mod home_auth;
+#[cfg(feature = "streaming")]
 mod keeper;
 mod key;
 #[cfg(feature = "streaming")]
@@ -22,6 +23,8 @@ mod media_control;
 #[cfg(feature = "streaming")]
 mod play_report;
 mod playlist_folders;
+#[cfg(any(feature = "cast", feature = "streaming"))]
+mod relay;
 #[cfg(any(feature = "cast", feature = "streaming"))]
 mod screen;
 mod state;
@@ -103,14 +106,25 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     // client channels
     let (client_pub, client_sub) = flume::unbounded::<client::ClientRequest>();
 
-    // create a Spotify API client
+    // create a Spotify API client: a PC's goes through the session and never signs in
+    #[cfg(feature = "cast")]
+    let client = if state.follows_session() {
+        client::AppClient::relayed().context("construct the relayed client")?
+    } else {
+        client::AppClient::new()
+            .await
+            .context("construct app client")?
+    };
+    #[cfg(not(feature = "cast"))]
     let client = client::AppClient::new()
         .await
         .context("construct app client")?;
-    client
-        .new_session(Some(state), true)
-        .await
-        .context("initialize new Spotify session")?;
+    if !state.follows_session() {
+        client
+            .new_session(Some(state), true)
+            .await
+            .context("initialize new Spotify session")?;
+    }
 
     // request user data
     client_pub.send(client::ClientRequest::GetCurrentUser)?;
@@ -142,29 +156,26 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
 
     // background task that detects an invalidated session and reconnects,
     // independent of any incoming client request
-    tokio::task::spawn({
-        let state = state.clone();
-        let client = client.clone();
-        async move {
-            client::start_session_watcher(state, client).await;
-        }
-    });
+    if !state.follows_session() {
+        tokio::task::spawn({
+            let state = state.clone();
+            let client = client.clone();
+            async move {
+                client::start_session_watcher(state, client).await;
+            }
+        });
+    }
 
     #[cfg(feature = "streaming")]
     if state.is_session {
         tokio::task::spawn(listeners::watch(client.clone()));
         tokio::task::spawn(handover::watch_while_idle(client.clone(), state.clone()));
         // beside the shared session, so both slots keep the same screen
-        let configs = config::get_config();
         tokio::task::spawn(screen::session::serve(
-            configs
-                .app_config
-                .session_file
-                .as_deref()
-                .and_then(std::path::Path::parent)
-                .unwrap_or(&configs.cache_folder)
-                .join("screen.json"),
+            config::get_config().session_folder().join("screen.json"),
+            state.clone(),
         ));
+        tokio::task::spawn(relay::session::serve(client.clone()));
     }
 
     // player event watcher task
@@ -314,11 +325,6 @@ fn main() -> Result<()> {
     }
 
     match args.subcommand() {
-        Some(("keep", _)) => {
-            init_logging(log_folder(), Arc::default())
-                .context("failed to initialize application's logging")?;
-            keeper::run()
-        }
         None => run_app(false, init_app_logging()?),
         #[cfg(feature = "streaming")]
         Some(("session", args)) => {
