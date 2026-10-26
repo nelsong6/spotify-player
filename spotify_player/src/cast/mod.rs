@@ -27,8 +27,10 @@ use protocol::Message;
 const STREAM_PORT: u16 = 1704;
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(2);
 const TIME_SYNC_INTERVAL: Duration = Duration::from_secs(1);
-/// Time requests sent quickly after connecting, so the clock is right before the first chunk
+/// Time requests sent back to back after connecting, so the clock is right before the first chunk
 const QUICK_SYNCS: u32 = 50;
+/// How long to wait for a time response before asking again
+const TIME_TIMEOUT: Duration = Duration::from_secs(2);
 /// No audio for this long means nothing is playing
 const SILENCE: Duration = Duration::from_millis(300);
 
@@ -136,33 +138,35 @@ fn connect(
     clock.reset();
     shared.lock().stream.clear();
 
-    let connected = Arc::new(AtomicBool::new(true));
+    let (answered, answers) = flume::bounded(1);
     std::thread::Builder::new()
         .name("cast-time-sync".to_string())
-        .spawn({
-            let connected = Arc::clone(&connected);
-            move || sync_time(&mut writer, &connected)
-        })?;
-    let result = receive(&mut BufReader::new(socket), shared, clock);
-    connected.store(false, Ordering::Relaxed);
-    result
+        .spawn(move || sync_time(&mut writer, &answers))?;
+    // dropping `answered` when the connection ends stops the time sync
+    receive(&mut BufReader::new(socket), shared, clock, &answered)
 }
 
-/// Send time requests for as long as the connection lasts
-fn sync_time(writer: &mut TcpStream, connected: &AtomicBool) {
+/// Send time requests for as long as the connection lasts. Like snapclient, each one waits for the
+/// answer to the one before, and the first for the server to answer the hello: a request that
+/// waits in a queue on the server measures the queue, not the clocks.
+fn sync_time(writer: &mut TcpStream, answers: &flume::Receiver<()>) {
     static NEXT_ID: AtomicU16 = AtomicU16::new(1);
+    if answers.recv().is_err() {
+        return;
+    }
     let mut sent = 0u32;
-    while connected.load(Ordering::Relaxed) {
+    loop {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         if protocol::send(writer, &protocol::time_request(id, clock::now())).is_err() {
             return;
         }
         sent += 1;
-        std::thread::sleep(if sent < QUICK_SYNCS {
-            Duration::from_millis(20)
-        } else {
-            TIME_SYNC_INTERVAL
-        });
+        if let Err(flume::RecvTimeoutError::Disconnected) = answers.recv_timeout(TIME_TIMEOUT) {
+            return;
+        }
+        if sent >= QUICK_SYNCS {
+            std::thread::sleep(TIME_SYNC_INTERVAL);
+        }
     }
 }
 
@@ -170,6 +174,7 @@ fn receive(
     reader: &mut BufReader<TcpStream>,
     shared: &Arc<Mutex<Shared>>,
     clock: &Arc<Clock>,
+    answered: &flume::Sender<()>,
 ) -> anyhow::Result<()> {
     loop {
         let (header, message) = protocol::read(reader, clock::now)?;
@@ -179,6 +184,7 @@ fn receive(
                 shared
                     .lock()
                     .set_buffer((settings.buffer_ms - settings.latency) * 1000);
+                let _ = answered.try_send(());
             }
             Message::CodecHeader(format) => {
                 tracing::info!("Cast stream format: {format:?}");
@@ -194,7 +200,10 @@ fn receive(
                     shared.lock().push_chunk(timestamp, &payload, now);
                 }
             }
-            Message::Time { latency } => clock.add(latency, header.received - header.sent),
+            Message::Time { latency } => {
+                clock.add(latency, header.received - header.sent);
+                let _ = answered.try_send(());
+            }
             Message::Error(err) => anyhow::bail!("the cast server refused: {err}"),
             Message::Other(kind) => tracing::debug!("Ignoring a cast message of type {kind}"),
         }

@@ -45,7 +45,14 @@ impl Clock {
         inner.diffs.push_back((c2s - s2c) / 2);
         let mut sorted: Vec<_> = inner.diffs.iter().copied().collect();
         sorted.sort_unstable();
-        inner.median = sorted[sorted.len() / 2];
+        let median = sorted[sorted.len() / 2];
+        if (median - inner.median).abs() > 1_000 {
+            tracing::debug!(
+                "Cast: the server's clock is {median} us off this PC's ({} samples)",
+                sorted.len()
+            );
+        }
+        inner.median = median;
     }
 
     /// Whether any time response has come in

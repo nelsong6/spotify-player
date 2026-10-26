@@ -716,6 +716,9 @@ fn render_transport(
     if !ui.mouse_capture {
         fields.push(("mouse", "off (select text)".to_string()));
     }
+    if !crate::cast::is_listening() {
+        fields.push(("here", "muted".to_string()));
+    }
     let mut right = vec![Span::styled(
         format!(" {}", format_duration(&duration)),
         quiet,

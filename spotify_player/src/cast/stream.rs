@@ -197,7 +197,8 @@ impl Stream {
         self.since_correction = 0;
     }
 
-    fn start_hard_sync(&mut self) {
+    fn start_hard_sync(&mut self, why: &str) {
+        tracing::debug!("Cast: lining up again ({why})");
         self.hard_sync = true;
         self.hard_syncs += 1;
     }
@@ -215,7 +216,7 @@ impl Stream {
             // a gap (the session paused or the network stalled): line up again on what comes next
             out.fill(0.0);
             if !self.hard_sync {
-                self.start_hard_sync();
+                self.start_hard_sync("the queue ran dry");
             }
             return false;
         };
@@ -271,7 +272,7 @@ impl Stream {
         }
         self.scratch = scratch;
         if !complete {
-            self.start_hard_sync();
+            self.start_hard_sync("the queue ran dry mid-buffer");
             return true;
         }
 
@@ -282,7 +283,12 @@ impl Stream {
             || (self.mini.is_full() && self.mini.median().abs() > 50_000 && age.abs() > 500)
             || age.abs() > 500_000
         {
-            self.start_hard_sync();
+            self.start_hard_sync(&format!(
+                "age {age} us, medians {} / {} / {} us",
+                self.mini.median(),
+                self.short_median,
+                self.long_median
+            ));
         } else if self.short.is_full() {
             let mini = self.mini.median();
             // like snapclient: up to 0.05% faster or slower, more the further off
@@ -302,7 +308,7 @@ impl Stream {
             self.long_median = self.long.median();
             self.short_median = self.short.median();
             tracing::debug!(
-                "Cast sync: age {age} us, medians {} / {} / {} us, correcting every {} frames,                  {} hard syncs, dac {dac} us",
+                "Cast sync: age {age} us, medians {} / {} / {} us, correcting every {} frames, {} hard syncs, dac {dac} us",
                 self.mini.median(),
                 self.short_median,
                 self.long_median,
