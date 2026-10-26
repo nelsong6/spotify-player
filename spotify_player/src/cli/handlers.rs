@@ -381,8 +381,9 @@ macro_rules! print_feature {
 fn print_features() {
     println!("Compile-time features:");
 
-    print_feature!("daemon");
     print_feature!("streaming");
+    print_feature!("cast");
+    print_feature!("ascii-cover");
     print_feature!("media-control");
     print_feature!("image");
     print_feature!("ratatui-image");
@@ -390,12 +391,4 @@ fn print_features() {
     print_feature!("pixelate");
     print_feature!("notify");
     print_feature!("fzf");
-
-    // Audio backends
-    print_feature!("pulseaudio-backend");
-    print_feature!("alsa-backend");
-    print_feature!("rodio-backend");
-    print_feature!("jackaudio-backend");
-    print_feature!("sdl-backend");
-    print_feature!("gstreamer-backend");
 }

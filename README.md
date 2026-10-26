@@ -14,13 +14,12 @@
   - [Command palette](#command-palette)
   - [Kept playlists](#kept-playlists)
   - [Spotify Connect](#spotify-connect)
-  - [Streaming](#streaming)
+  - [Home cast](#home-cast)
   - [Audio Visualization](#audio-visualization)
   - [Media Control](#media-control)
   - [Image](#image)
   - [Notify](#notify)
   - [Mouse support](#mouse-support)
-  - [Daemon](#daemon)
   - [Fuzzy search](#fuzzy-search)
   - [CLI commands](#cli-commands)
 - [Commands](#commands)
@@ -39,13 +38,12 @@
 - Highly [configurable](https://github.com/aome510/spotify-player/blob/master/docs/config.md)
 - Feature parity with the official Spotify application.
 - Support remote control with [Spotify Connect](#spotify-connect).
-- Support [streaming](#streaming) songs directly from the terminal.
+- A [home cast](#home-cast): one session plays on every PC that has the app open, in sync.
 - Support [audio visualization](#audio-visualization).
 - Support synced lyrics.
 - Support [cross-platform media control](#media-control).
 - Support [image rendering](#image).
 - Support [desktop notification](#notify).
-- Support running the application as [a daemon](#daemon)
 - Offer a wide range of [CLI commands](#cli-commands)
 
 ## Examples
@@ -92,22 +90,16 @@ A Spotify Premium account is **required**.
 
 ##### Termux (Android)
 
-- Two default components require a JVM context that Termux processes don't have:
-  the default TLS backend (`rustls-platform-verifier`, panics during the auth
-  token exchange) and the rodio audio backend (cpal's AAudio host, panics when
-  streaming starts). Build with the `native-tls` feature and the pulseaudio
-  backend instead:
+- The default TLS backend (`rustls-platform-verifier`) requires a JVM context that
+  Termux processes don't have and panics during the auth token exchange. Build with
+  the `native-tls` feature instead, and without the cast:
 
   ```shell
-  pkg install rust openssl pulseaudio
-  cargo install spotify_player --no-default-features --features pulseaudio-backend,media-control,native-tls
+  pkg install rust openssl
+  cargo install spotify_player --no-default-features --features media-control,native-tls
   ```
 
-  This makes authentication, the Web API, and remote device control work. Integrated
-  streaming additionally requires patching librespot's compile-time OS identity
-  (`librespot-core`'s `config::OS`) to `"linux"` via `[patch.crates-io]`, because
-  librespot built for `target_os = "android"` presents the Android-app identity, which
-  Spotify rejects for keymaster-minted credentials.
+  This makes authentication, the Web API, and remote device control work.
 
 ### Binaries
 
@@ -139,7 +131,7 @@ Install via Arch Linux:
 pacman -S spotify-player
 ```
 
-**Note**: Defaults to PulseAudio/Pipewire. For a different backend, modify the [official PKGBUILD](https://gitlab.archlinux.org/archlinux/packaging/packages/spotify-player) and rebuild manually. See [Audio Backends](#audio-backend).
+**Note**: The Arch package is built from upstream `spotify-player`, not this fork.
 
 ### Void Linux
 
@@ -275,47 +267,21 @@ The palette is fzt itself, loaded from `fzt.dll` (from [fzt-terminal](https://gi
 
 Control Spotify remotely with [Spotify Connect](https://support.spotify.com/us/article/spotify-connect/). Press **D** to list devices, then **enter** to connect.
 
-A radio, liked songs or other track list played by `spotify_player` can't be transferred the usual way, because Spotify's own apps drop it. Moving one starts the same list on the chosen device at the same song and position instead, which works when that device is another `spotify_player`. To run `spotify_player` on several machines, give each its own device name (`name = "spotify-player {hostname}"` under `[device]`) and point them at one `session_file` on shared storage: the instance that is playing records the session there, and the instance that takes over picks up its tracks, radio and continue mode.
+A radio, liked songs or other track list played by `spotify_player` can't be transferred the usual way, because Spotify's own apps drop it. Moving one starts the same list on the chosen device at the same song and position instead, which works when that device is the [home cast's](#home-cast) session.
 
-### Streaming
+### Home cast
 
-Stream music directly from the terminal. The streaming feature is enabled by default and uses the `rodio-backend` audio backend unless otherwise specified.
+One session, running on an always-on machine, plays the music; every PC with `spotify_player` open plays it aloud, in sync with the others, and controls it. Which PC you sit at doesn't matter: close the app in one room and open it in the next, and the same queue keeps playing.
 
-The app uses [librespot](https://github.com/librespot-org/librespot) to create an integrated Spotify client, registering a `spotify-player` device accessible via Spotify Connect. It reports what it plays to Spotify, as Spotify's own apps do, so its plays show in your listening history.
-
-#### Audio backend
-
-Default audio backend is [rodio](https://github.com/RustAudio/rodio). Available backends:
-
-- `alsa-backend`
-- `pulseaudio-backend`
-- `rodio-backend`
-- `portaudio-backend`
-- `jackaudio-backend`
-- `rodiojack-backend`
-- `sdl-backend`
-- `gstreamer-backend`
-
-To use a different audio backend, specify the `--features` option when building. For example:
-
-```shell
-cargo install spotify_player --no-default-features --features pulseaudio-backend
-```
-
-**Notes**:
-
-- Use `--no-default-features` to disable the default `rodio-backend`.
-- Additional dependencies may be required for some backends. See [Librespot documentation](https://github.com/librespot-org/librespot/wiki/Compiling#general-dependencies).
-
-To disable streaming, build with:
-
-```shell
-cargo install spotify_player --no-default-features
-```
+- **The session** is `spotify_player session`, built with the `streaming` feature. It runs the [librespot](https://github.com/librespot-org/librespot) player, the one Spotify Connect device for the house, named by `name` under `[device]`. It reports what it plays to Spotify, as Spotify's own apps do, so its plays show in your listening history. It writes its audio to stdout for [Snapcast](https://github.com/badaix/snapcast)'s server, which runs it as a `process` source (`codec=pcm`, `sampleformat=44100:16:2`) and streams it to the PCs. [`nas/spt-session`](nas/spt-session) runs both in a container on a Synology NAS, deployed with `nas/deploy.sh`.
+- **A PC** runs `spotify_player` built with the `cast` feature (on by default). It attaches to the Snapcast server named by `cast_server`, plays the session's audio on the system's default output (on Windows it follows a change of default output), and controls the session through Spotify like any Connect device. It never starts a player of its own and never picks another device to play on.
+- **Muting**: `ToggleListening` (`H`) switches between playing the session aloud here and only showing it; the playback window shows `muted here` while muted, and the visualization's transport line `here muted`. A muted PC still draws the [audio visualization](#audio-visualization).
+- **Pausing**: when no PC is left playing the session aloud (every PC closed or muted), the session pauses, and it pauses again any playback started while nobody listens. Resume from any PC.
+- The PCs share the saved session through `session_file` on shared storage, so the radio and continue mode set on one PC are what the session continues with.
 
 ### Audio Visualization
 
-Real-time audio visualization replaces the page and the playback window with ASCII frequency bars (64 log-scale bands from bass (left) to treble (right)) while music is streamed locally via the integrated [librespot](https://github.com/librespot-org/librespot) player. A transport line beneath the bars shows the play state, the elapsed time on a progress line you can click to seek, the duration, then the volume, device and what plays next. The page and the playback window come back when playback is on an external Spotify Connect device or when the playback is not playing.
+Real-time audio visualization replaces the page and the playback window with ASCII frequency bars (64 log-scale bands from bass (left) to treble (right)) while the [home cast](#home-cast) plays, drawn from the audio as it reaches this PC's speakers. A transport line beneath the bars shows the play state, the elapsed time on a progress line you can click to seek, the duration, then the volume, device and what plays next. The page and the playback window come back when no cast audio is playing.
 
 Set `enable_audio_visualization` to `true` in your config to enable this feature, or toggle it while the app runs with `V`. Each bar thins from `@` at its base toward `.`, its top follows its neighbours as `^ / \ _ - ~`, and a `'` marks its recent peak. The bars are colored by height in a gradient drawn from the album cover's colors (or a violet → rose → gold one when there's no cover), unless the active theme sets the `visualization` component style (`low`/`mid`/`high` colors); see [config docs](https://github.com/aome510/spotify-player/blob/master/docs/config.md).
 
@@ -391,26 +357,6 @@ cargo install spotify_player --features notify
 
 Mouse support: You can seek to a position in the playback by left-clicking the progress bar.
 
-### Daemon
-
-To enable daemon mode, build with the `daemon` feature (disabled by default):
-
-```shell
-cargo install spotify_player --features daemon
-```
-
-Run as a daemon with `-d` or `--daemon`: `spotify_player -d`.
-
-**Notes**:
-
-- Daemon mode is not supported on Windows.
-- Daemon mode requires streaming and an audio backend.
-- On macOS, daemon mode does not work with media control (enabled by default). To use daemon mode on macOS, disable media control:
-
-  ```shell
-  cargo install spotify_player --no-default-features --features daemon,rodio-backend
-  ```
-
 ### Fuzzy search
 
 To enable [fuzzy search](https://en.wikipedia.org/wiki/Approximate_string_matching), build with the `fzf` feature (disabled by default).
@@ -427,6 +373,7 @@ To enable [fuzzy search](https://en.wikipedia.org/wiki/Approximate_string_matchi
 - `authenticate`: Authenticate the application
 - `playlist`: Playlist editing (new, delete, import, fork, etc)
 - `keep`: Keep the config's [kept playlists](#kept-playlists), until stopped
+- `session`: Run the [home cast's](#home-cast) session (`streaming` feature only)
 
 For more details, run `spotify_player -h` or `spotify_player {command} -h`.
 
@@ -454,7 +401,6 @@ Press `?` or `C-h` to open the shortcut help page (default for `OpenCommandHelp`
 
 - Use the command palette's "filter" (the `Search` command) to search in the shortcut help page and other pages.
 - `RefreshPlayback` manually updates playback status.
-- On Windows the integrated player follows the system's default output device. Elsewhere, `RestartIntegratedClient` moves it to a new default without restarting the app.
 
 List of supported commands:
 
@@ -481,7 +427,6 @@ List of supported commands:
 | `SelectLastOrScrollToBottom`    | select the last item in a list/table or scroll to the bottom                                       | `G`, `end`         |
 | `ChooseSelected`                | choose the selected item                                                                           | `enter`            |
 | `RefreshPlayback`               | manually refresh the current playback                                                              | `r`                |
-| `RestartIntegratedClient`       | restart the integrated client (`streaming` feature only)                                           | `R`                |
 | `ShowActionsOnSelectedItem`     | open a popup showing actions on a selected item                                                    | `g a`, `C-space`   |
 | `ShowActionsOnCurrentTrack`     | open a popup showing actions on the current track                                                  | `a`                |
 | `ShowActionsOnCurrentContext`   | open a popup showing actions on the current context                                                | `A`                |
@@ -509,6 +454,7 @@ List of supported commands:
 | `OpenLogs`                      | go the the application logs page                                                                   | `g o`              |
 | `ToggleMouseCapture`            | toggle mouse capture (off: the terminal can select text again)                                     | `M`                |
 | `CycleAsciiCover`               | cycle the ASCII cover beside the audio visualization (pulse, still, off)                           | `I`                |
+| `ToggleListening`               | play the [home cast](#home-cast) aloud on this PC, or only show it (`cast` feature only)           | `H`                |
 | `OpenSpotifyLinkFromClipboard`  | open a Spotify link from clipboard                                                                 | `O`                |
 | `SortTrackByTitle`              | sort the track table (if any) by track's title                                                     | `s t`              |
 | `SortTrackByArtists`            | sort the track table (if any) by track's artists                                                   | `s a`              |

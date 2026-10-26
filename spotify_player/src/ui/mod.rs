@@ -33,7 +33,7 @@ mod palette;
 mod playback;
 mod popup;
 pub mod single_line_input;
-#[cfg(feature = "streaming")]
+#[cfg(feature = "cast")]
 pub mod streaming;
 pub mod utils;
 
@@ -195,9 +195,9 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
 }
 
 fn visualization_shown(state: &SharedState) -> bool {
-    #[cfg(feature = "streaming")]
+    #[cfg(feature = "cast")]
     return state.is_visualization_shown();
-    #[cfg(not(feature = "streaming"))]
+    #[cfg(not(feature = "cast"))]
     {
         let _ = state;
         false
@@ -212,7 +212,7 @@ fn render_main_layout(
     ui: &mut UIStateGuard,
     rect: Rect,
 ) {
-    #[cfg(feature = "streaming")]
+    #[cfg(feature = "cast")]
     if visualization_shown(state) {
         streaming::render_visualization_page(frame, state, ui, rect);
         return;

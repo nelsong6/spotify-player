@@ -186,7 +186,10 @@ pub fn init_cli() -> anyhow::Result<clap::Command> {
         .subcommand(commands::init_print_features_command())
         .subcommand(commands::init_lyrics_command())
         .subcommand(commands::init_quit_command())
-        .subcommand(commands::init_keep_command())
+        .subcommand(commands::init_keep_command());
+    #[cfg(feature = "streaming")]
+    let cmd = cmd.subcommand(commands::init_session_command());
+    let cmd = cmd
         .arg(
             clap::Arg::new("theme")
                 .short('t')
@@ -218,15 +221,6 @@ pub fn init_cli() -> anyhow::Result<clap::Command> {
                 .action(clap::ArgAction::Append)
                 .help("Override a config option (e.g. -o device.volume=80 -o theme=dracula)"),
         );
-
-    #[cfg(feature = "daemon")]
-    let cmd = cmd.arg(
-        clap::Arg::new("daemon")
-            .short('d')
-            .long("daemon")
-            .action(clap::ArgAction::SetTrue)
-            .help("Running the application as a daemon"),
-    );
 
     Ok(cmd)
 }

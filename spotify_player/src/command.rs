@@ -15,17 +15,11 @@ pub enum Command {
     PlayRandom,
     Repeat,
     Shuffle,
-    VolumeChange {
-        offset: i32,
-    },
+    VolumeChange { offset: i32 },
     Mute,
     SeekStart,
-    SeekForward {
-        duration: Option<u16>,
-    },
-    SeekBackward {
-        duration: Option<u16>,
-    },
+    SeekForward { duration: Option<u16> },
+    SeekBackward { duration: Option<u16> },
 
     Quit,
     OpenCommandHelp,
@@ -42,9 +36,6 @@ pub enum Command {
     ChooseSelected,
 
     RefreshPlayback,
-
-    #[cfg(feature = "streaming")]
-    RestartIntegratedClient,
 
     FocusNextWindow,
     FocusPreviousWindow,
@@ -94,6 +85,7 @@ pub enum Command {
     CycleContinueMode,
     ToggleVisualization,
     CycleAsciiCover,
+    ToggleListening,
     OpenCommandPalette,
 }
 
@@ -324,8 +316,6 @@ impl Command {
             Self::SeekBackward { duration } => { return format!("seek backward by {}s", duration.unwrap_or(5)) },
             Self::Quit => "quit the application",
             Self::ClosePopup => "close a popup",
-            #[cfg(feature = "streaming")]
-            Self::RestartIntegratedClient => "restart the integrated client",
             Self::SelectNextOrScrollDown => "select the next item in a list/table or scroll down (supports vim-style count: 5j)",
             Self::SelectPreviousOrScrollUp => {
                 "select the previous item in a list/table or scroll up (supports vim-style count: 10k)"
@@ -389,6 +379,9 @@ impl Command {
                 "toggle mouse capture (off: the terminal can select text again)"
             }
             Self::ToggleVisualization => "show or hide the audio visualization",
+            Self::ToggleListening => {
+                "play the session aloud on this PC, or only show it (the session pauses when no PC plays it aloud)"
+            }
             Self::OpenCommandPalette => "open the command palette: search and run what's in the menu",
             Self::CycleAsciiCover => {
                 "cycle the ASCII cover beside the audio visualization (pulse, still, off)"

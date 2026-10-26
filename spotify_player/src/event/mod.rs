@@ -659,11 +659,15 @@ fn handle_global_command(
         Command::OpenCommandPalette => palette::open(ui),
         Command::ToggleVisualization =>
         {
-            #[cfg(feature = "streaming")]
+            #[cfg(feature = "cast")]
             if let Some(bands) = &state.vis_bands {
                 let mut bands = bands.lock();
                 bands.enabled = !bands.enabled;
             }
+        }
+        Command::ToggleListening => {
+            #[cfg(feature = "cast")]
+            crate::cast::toggle_listening();
         }
         Command::CycleAsciiCover => {
             #[cfg(feature = "ascii-cover")]
@@ -871,10 +875,6 @@ fn handle_global_command(
             }
 
             ui.popup = Some(PopupState::ThemeList(themes, ListState::default()));
-        }
-        #[cfg(feature = "streaming")]
-        Command::RestartIntegratedClient => {
-            client_pub.send(ClientRequest::RestartIntegratedClient)?;
         }
         Command::FocusNextWindow => {
             if !ui.has_focused_popup() {

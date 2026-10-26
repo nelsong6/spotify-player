@@ -405,6 +405,10 @@ fn construct_playback_text(
                 if !ui.mouse_capture {
                     parts.push("mouse: off (select text)".to_string());
                 }
+                #[cfg(feature = "cast")]
+                if !crate::cast::is_listening() {
+                    parts.push("muted here".to_string());
+                }
 
                 let metadata_str = parts.join(" | ");
                 (metadata_str, ui.theme.playback_metadata())

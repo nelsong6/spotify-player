@@ -91,6 +91,13 @@ pub fn init_quit_command() -> Command {
     Command::new("quit").about("Quit the running application")
 }
 
+#[cfg(feature = "streaming")]
+pub fn init_session_command() -> Command {
+    Command::new("session").about(
+        "Run the home cast's session: the player, headless, with its audio on stdout for Snapcast",
+    )
+}
+
 pub fn init_keep_command() -> Command {
     Command::new("keep").about(
         "Keep the config's kept_playlists: remove played songs and refill radios, until stopped",

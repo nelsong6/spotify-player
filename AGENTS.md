@@ -34,10 +34,12 @@ This file guides coding agents when working in this repository.
 | `ui/palette.rs`               | Draws the command palette over the page from fzt's rows                     |
 | `fzt.rs`                      | Loads fzt (`fzt.dll`, fzt-terminal's `cmd/fztlib`) and wraps its JSON calls |
 | `keeper.rs`                   | `spotify_player keep`: trims played songs, refills radio playlists          |
-| `play_report.rs`              | Reports integrated-player plays to Spotify (feature-gated)                  |
-| `ui/streaming.rs`             | FFT audio visualizer: `VisualizationSink`, `VisBands`, visualization page   |
+| `play_report.rs`              | Reports the session's plays to Spotify (feature-gated)                      |
+| `ui/streaming.rs`             | FFT audio visualizer: `Analyzer`, `VisBands`, visualization page            |
 | `ui/ascii_cover.rs`           | ASCII album cover beside the bars, pulsing with the bass (feature-gated)    |
-| `streaming.rs`                | librespot connection + audio backend setup (feature-gated)                  |
+| `streaming.rs`                | The session's librespot player, its audio on stdout (feature-gated)         |
+| `listeners.rs`                | Pauses the session when no PC plays it aloud (Snapcast's client list)       |
+| `cast/`                       | A PC's side of the home cast: Snapcast client, clock sync, synced output    |
 | `cli/`                        | Unix socket server and client for inter-process CLI commands                |
 | `auth.rs`                     | OAuth scopes and librespot credential/session building                      |
 | `media_control.rs`            | OS media key integration via `souvlaki` (feature-gated)                     |
@@ -51,6 +53,8 @@ Multiple OS threads communicate via `flume` channels and `Arc<State>`:
 - **Tokio runtime** — async tasks: client handler, socket listener, streaming
 - **Player-event watcher** — polls librespot playback state, sends `ClientRequest`s
 - **Media-control thread** — OS media key events (feature-gated)
+- **Cast threads** (a PC) — the Snapcast connection, its time sync, the sound card's callback,
+  and the visualization's analyzer
 
 Event/UI threads never call async functions directly. They send a `ClientRequest` over a `flume` channel; the async handler updates `Arc<State>`.
 
@@ -58,19 +62,17 @@ Event/UI threads never call async functions directly. They send a `ClientRequest
 
 | Feature                                                                                                                                 | Effect                                                   |
 | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `streaming`                                                                                                                             | librespot playback, Spotify Connect, audio visualization |
-| `rodio-backend`                                                                                                                         | Default audio sink (rodio)                               |
-| `alsa-backend`, `pulseaudio-backend`, `portaudio-backend`, `jackaudio-backend`, `rodiojack-backend`, `sdl-backend`, `gstreamer-backend` | Alternative audio sinks                                  |
+| `streaming`                                                                                                                             | The session: librespot player, `spotify_player session`  |
+| `cast`                                                                                                                                  | A PC: plays the session from Snapcast, visualization     |
 | `media-control`                                                                                                                         | OS media key integration                                 |
 | `image`                                                                                                                                 | Album art rendering                                      |
 | `ascii-cover`                                                                                                                           | ASCII album cover in the visualization (default)         |
 | `sixel`                                                                                                                                 | Sixel terminal image protocol (extends `image`)          |
 | `pixelate`                                                                                                                              | Pixelated image rendering fallback (extends `image`)     |
 | `notify`                                                                                                                                | Desktop notifications                                    |
-| `daemon`                                                                                                                                | Daemonize mode (implies `streaming`)                     |
 | `fzf`                                                                                                                                   | Fuzzy search                                             |
 
-Default: `rodio-backend` + `media-control` + `ascii-cover`. Gate feature-specific code with `#[cfg(feature = "...")]`.
+Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the NAS's Linux build is `rustls-tls` + `streaming`. Gate feature-specific code with `#[cfg(feature = "...")]`.
 
 ## Verifying changes
 
@@ -78,12 +80,12 @@ CI treats all warnings as errors. Before committing, run what CI runs:
 
 ```sh
 cargo fmt --all                      # CI checks: cargo fmt --all -- --check
-cargo test --no-default-features --features rodio-backend,media-control,image,notify,fzf
-cargo clippy --no-default-features --features rodio-backend,media-control,image,notify,fzf -- -D warnings
+cargo test --no-default-features --features streaming,cast,media-control,image,notify,fzf
+cargo clippy --no-default-features --features streaming,cast,media-control,image,notify,fzf -- -D warnings
 cargo clippy --no-default-features -- -D warnings   # core paths, no features
 ```
 
-When fixing no-feature clippy warnings, you may need `#[allow(dead_code)]` / `#[allow(unused_variables)]` on items only used in feature-gated paths. If you touch `daemon`/`streaming` code, add `daemon` to the feature list above to lint those paths too.
+When fixing no-feature clippy warnings, you may need `#[allow(dead_code)]` / `#[allow(unused_variables)]` on items only used in feature-gated paths. Lint the session's build on its own too: `cargo clippy --no-default-features --features rustls-tls,streaming -- -D warnings`.
 
 ## Conventions
 
@@ -170,20 +172,30 @@ Working on the fork:
 
 - `publish.ps1` publishes CI's build of the pushed commit to `\NelsonNAS\tools\spt`:
   the Windows exe plus `fzt.dll` (pinned in `fzt.lock`, from fzt-terminal releases) and the
-  Linux binary `nas/` runs for `spotify_player keep`. CI's `windows-build` and `linux-build`
+  Linux binary `nas/` runs for `spotify_player keep` and the session, then restarts both
+  containers. CI's `windows-build` and `linux-build`
   jobs run on PRs and on master, alongside the checks rather than after them;
   `publish.ps1` takes them only from a run that passed in full. For a squash merge whose
   tree matches its PR's last commit it takes the PR run's build instead of waiting for the
   run on master. With `Swatinem/rust-cache`
   warm, push to publishable binary measured 3m11s (19 min uncached and chained; 12.5 min on
   a cold cache).
-- On Windows the integrated player follows the system's default output through Windows'
-  default-device notice (`IMMNotificationClient`, in `audio_output.rs`). cpal 0.16 only
+- On Windows the cast's output follows the system's default output through Windows'
+  default-device notice (`IMMNotificationClient`, in `cast/output.rs`). cpal 0.16 only
   opens a fixed device, never a stream that follows the default. Polling the default was
-  rejected by Nelson; so was replacing cpal/rodio with a hand-written WASAPI sink.
+  rejected by Nelson; so was a hand-written WASAPI sink.
+- The home cast (decided 2026-10-25, OpenProject #71): spt on a PC has one mode. It never
+  plays on its own; it attaches to the one session on the NAS (`nas/spt-session`), plays its
+  audio in sync through Snapcast, and controls it through Spotify. Only a PC with spt open
+  is an output, and the session pauses when none plays it aloud. Kept playlists are a
+  separate feature, and phones play only those.
+- The PCs' sync is snapclient's algorithm (`cast/stream.rs`), timed from cpal's callback
+  timestamps (when the buffer reaches the speaker). WASAPI shared mode takes only the
+  device's rate, so the 44.1 kHz stream is resampled to it on arrival (`cast/resample.rs`).
 - To see the UI without touching the desktop, run a test instance (its own `-c`/`-C`
-  folders, its own `client_port`, streaming off unless needed) in a detached tmux session on
-  its own server (`tmux -L <name> new-session -d -x <cols> -y <rows> <command>`), read it
+  folders, its own `client_port`, `cast_server` pointing nowhere unless needed) in a
+  detached tmux session on its own server
+  (`tmux -L <name> new-session -d -x <cols> -y <rows> <command>`), read it
   with `capture-pane -p` (`-e` keeps the colors) and send keys with `send-keys`. Launch it
   through a `.cmd` file holding the full command line: quoted Windows paths passed straight
   to `new-session` were dropped, and the instance silently used the real cache. A test with

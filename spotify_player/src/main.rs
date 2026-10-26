@@ -1,6 +1,6 @@
-#[cfg(feature = "rodio-backend")]
-mod audio_output;
 mod auth;
+#[cfg(feature = "cast")]
+mod cast;
 mod cli;
 mod client;
 mod command;
@@ -10,6 +10,8 @@ mod event;
 mod fzt;
 mod keeper;
 mod key;
+#[cfg(feature = "streaming")]
+mod listeners;
 mod log_layer;
 #[cfg(feature = "media-control")]
 mod media_control;
@@ -95,33 +97,6 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     // client channels
     let (client_pub, client_sub) = flume::unbounded::<client::ClientRequest>();
 
-    #[cfg(feature = "pulseaudio-backend")]
-    {
-        // set environment variables for PulseAudio
-        if std::env::var("PULSE_PROP_application.name").is_err() {
-            std::env::set_var("PULSE_PROP_application.name", "spotify-player");
-        }
-        if std::env::var("PULSE_PROP_application.icon_name").is_err() {
-            std::env::set_var("PULSE_PROP_application.icon_name", "spotify");
-        }
-        if std::env::var("PULSE_PROP_stream.description").is_err() {
-            let configs = config::get_config();
-            std::env::set_var(
-                "PULSE_PROP_stream.description",
-                format!(
-                    "Spotify Connect endpoint ({})",
-                    configs.app_config.device.name
-                ),
-            );
-        }
-        if std::env::var("PULSE_PROP_media.software").is_err() {
-            std::env::set_var("PULSE_PROP_media.software", "Spotify");
-        }
-        if std::env::var("PULSE_PROP_media.role").is_err() {
-            std::env::set_var("PULSE_PROP_media.role", "music");
-        }
-    }
-
     // create a Spotify API client
     let client = client::AppClient::new()
         .await
@@ -169,6 +144,11 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
         }
     });
 
+    #[cfg(feature = "streaming")]
+    if state.is_session {
+        tokio::task::spawn(listeners::watch(client.clone()));
+    }
+
     // player event watcher task
     std::thread::Builder::new()
         .name("player-event-watcher".to_string())
@@ -180,7 +160,10 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
             }
         })?;
 
-    if !state.is_daemon {
+    if !state.is_session {
+        #[cfg(feature = "cast")]
+        cast::start(state.vis_bands.clone()).context("attach to the session")?;
+
         #[cfg(feature = "image")]
         ui::init_image_picker(state).context("initialize image picker")?;
         let terminal = ui::init_terminal().context("initialize terminal")?;
@@ -239,6 +222,22 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     }
 }
 
+/// Run the TUI, or with `is_session` the home cast's headless session
+fn run_app(is_session: bool) -> Result<()> {
+    let log_buffer: Arc<Mutex<VecDeque<String>>> =
+        Arc::new(Mutex::new(VecDeque::with_capacity(1000)));
+
+    init_logging(log_folder(), log_buffer.clone())
+        .context("failed to initialize application's logging")?;
+
+    // log the application's configurations
+    tracing::info!("Configurations: {:?}", config::get_config());
+
+    let state = std::sync::Arc::new(state::State::new(is_session, log_buffer));
+    client::show_saved_radio_page(&state);
+    start_app(&state)
+}
+
 fn main() -> Result<()> {
     // librespot depends on hyper-rustls which requires a crypto provider to be set up.
     // TODO: see if this can be fixed upstream
@@ -287,12 +286,6 @@ fn main() -> Result<()> {
                 apply_config_override(&mut configs.app_config, key, value)?;
             }
         }
-        // lets one shared config name each machine's device differently
-        configs.app_config.device.name = configs
-            .app_config
-            .device
-            .name
-            .replace("{hostname}", &gethostname::gethostname().to_string_lossy());
         config::set_config(configs);
     }
 
@@ -302,44 +295,9 @@ fn main() -> Result<()> {
                 .context("failed to initialize application's logging")?;
             keeper::run()
         }
-        None => {
-            let log_buffer: Arc<Mutex<VecDeque<String>>> =
-                Arc::new(Mutex::new(VecDeque::with_capacity(1000)));
-
-            init_logging(log_folder(), log_buffer.clone())
-                .context("failed to initialize application's logging")?;
-
-            // log the application's configurations
-            tracing::info!("Configurations: {:?}", config::get_config());
-
-            let is_daemon;
-
-            #[cfg(feature = "daemon")]
-            {
-                is_daemon = args.get_flag("daemon");
-                if is_daemon {
-                    if cfg!(any(target_os = "macos", target_os = "windows"))
-                        && cfg!(feature = "media-control")
-                    {
-                        eprintln!("Running the application as a daemon on windows/macos with `media-control` feature enabled is not supported!");
-                        std::process::exit(1);
-                    }
-
-                    tracing::info!("Starting the application as a daemon...");
-                    let daemonize = daemonize::Daemonize::new();
-                    daemonize.start()?;
-                }
-            }
-
-            #[cfg(not(feature = "daemon"))]
-            {
-                is_daemon = false;
-            }
-
-            let state = std::sync::Arc::new(state::State::new(is_daemon, log_buffer));
-            client::show_saved_radio_page(&state);
-            start_app(&state)
-        }
+        None => run_app(false),
+        #[cfg(feature = "streaming")]
+        Some(("session", _)) => run_app(true),
         Some((cmd, args)) => cli::handle_cli_subcommand(cmd, args),
     }
 }

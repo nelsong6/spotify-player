@@ -23,7 +23,7 @@ use keymap::KeymapConfig;
 use theme::ThemeConfig;
 
 pub use theme::Theme;
-#[cfg(feature = "streaming")]
+#[cfg(feature = "cast")]
 pub use theme::VisualizationColors;
 
 use crate::auth::{NCSPOT_CLIENT_ID, SPOTIFY_CLIENT_ID};
@@ -125,9 +125,10 @@ pub struct AppConfig {
     #[cfg(feature = "media-control")]
     pub enable_media_control: bool,
 
-    pub enable_streaming: StreamingType,
+    /// The Snapcast server the home cast's audio comes from, where the session runs
+    pub cast_server: String,
 
-    #[cfg(feature = "streaming")]
+    #[cfg(feature = "cast")]
     pub enable_audio_visualization: bool,
     #[cfg(feature = "ascii-cover")]
     pub ascii_cover: AsciiCoverMode,
@@ -138,9 +139,6 @@ pub struct AppConfig {
     pub enable_cover_image_cache: bool,
 
     pub device: DeviceConfig,
-
-    #[cfg(all(feature = "streaming", feature = "notify"))]
-    pub notify_streaming_only: bool,
 
     pub seek_duration_secs: u16,
 
@@ -156,10 +154,10 @@ pub struct AppConfig {
 
     pub enable_relative_line_number: bool,
 
-    /// Start the application with playback paused instead of resuming the
-    /// previous session. Requires streaming. When the integrated client
-    /// connects on startup, Spotify may restore and auto-resume the last
-    /// playing track; enabling this pauses that auto-started playback once.
+    /// Start the session with playback paused instead of resuming the previous
+    /// one. When the session's player connects on startup, Spotify may restore
+    /// and auto-resume the last playing track; enabling this pauses that
+    /// auto-started playback once.
     #[cfg(feature = "streaming")]
     pub pause_on_startup: bool,
 }
@@ -296,44 +294,6 @@ pub struct LibraryLayoutConfig {
     pub album_percent: u16,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-#[serde(from = "StreamingTypeOrBool")]
-pub enum StreamingType {
-    Always,
-    DaemonOnly,
-    Never,
-}
-config_parser_impl!(StreamingType);
-
-// For backward compatibility, to accept booleans for enable_streaming
-#[derive(Deserialize)]
-enum RawStreamingType {
-    Always,
-    DaemonOnly,
-    Never,
-}
-
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum StreamingTypeOrBool {
-    Bool(bool),
-    Type(RawStreamingType),
-}
-
-impl From<StreamingTypeOrBool> for StreamingType {
-    fn from(v: StreamingTypeOrBool) -> Self {
-        match v {
-            StreamingTypeOrBool::Bool(true)
-            | StreamingTypeOrBool::Type(RawStreamingType::Always) => StreamingType::Always,
-            StreamingTypeOrBool::Bool(false)
-            | StreamingTypeOrBool::Type(RawStreamingType::Never) => StreamingType::Never,
-            StreamingTypeOrBool::Type(RawStreamingType::DaemonOnly) => StreamingType::DaemonOnly,
-        }
-    }
-}
-
 impl Command {
     pub fn new<C, A>(command: C, args: &[A]) -> Self
     where
@@ -438,9 +398,9 @@ impl Default for AppConfig {
             #[cfg(all(unix, not(target_os = "macos")))]
             enable_media_control: true,
 
-            enable_streaming: StreamingType::Always,
+            cast_server: "nas".to_string(),
 
-            #[cfg(feature = "streaming")]
+            #[cfg(feature = "cast")]
             enable_audio_visualization: false,
             #[cfg(feature = "ascii-cover")]
             ascii_cover: AsciiCoverMode::Pulse,
@@ -451,9 +411,6 @@ impl Default for AppConfig {
             enable_cover_image_cache: true,
 
             device: DeviceConfig::default(),
-
-            #[cfg(all(feature = "streaming", feature = "notify"))]
-            notify_streaming_only: false,
 
             seek_duration_secs: 5,
 
