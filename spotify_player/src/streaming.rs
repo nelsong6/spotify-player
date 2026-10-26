@@ -176,6 +176,9 @@ pub async fn new_connection(
         session.device_id()
     );
     state.session.lock().own_device = Some(session.device_id().to_string());
+    if let Err(err) = crate::handover::connected(session.device_id()) {
+        tracing::error!("Failed to ask the session to hand over: {err:#}");
+    }
 
     let player = player::Player::new(
         player_config,
@@ -263,6 +266,14 @@ pub async fn new_connection(
                                 let state = state.clone();
                                 let ended_uri = playable_id.uri();
                                 tokio::task::spawn(async move {
+                                    // between songs: where a new release takes over
+                                    if let Some(device_id) = crate::handover::pending(&state) {
+                                        crate::handover::hand_over(
+                                            &client, &state, &device_id, true,
+                                        )
+                                        .await;
+                                        return;
+                                    }
                                     if let Err(err) =
                                         client.continue_after_end(&state, ended_uri).await
                                     {

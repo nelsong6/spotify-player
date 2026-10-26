@@ -56,7 +56,7 @@ spotify_player -o device.volume=80 -o theme=dracula
 | `api_rate_limit_retries`          | Number of times to retry an ncspot GET request after Spotify returns `429 Too Many Requests`.       | `2`                                                                    |
 | `page_size_in_rows`               | Number of rows per page for navigation.                                                             | `20`                                                                   |
 | `enable_media_control`            | Enable media control support (requires `media-control` feature).                                    | `true` (Linux), `false` (macOS/Windows)                                |
-| `cast_server`                     | The Snapcast server the [home cast](../README.md#home-cast) plays from (requires `cast` feature).   | `nas`                                                                  |
+| `cast_server`                     | The Snapcast server the [home cast](../README.md#home-cast) plays from, `host` or `host:port` (`cast`). | `nas`                                                                  |
 | `enable_audio_visualization`      | Show ASCII frequency bars in place of the page (requires `cast` feature).                           | `false`                                                                |
 | `ascii_cover`                     | ASCII album cover beside the visualization: `Pulse`, `Still` or `Off` (`ascii-cover` feature).      | `Pulse`                                                                |
 | `enable_notify`                   | Enable notifications (requires `notify` feature).                                                   | `true`                                                                 |

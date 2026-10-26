@@ -42,9 +42,10 @@ foreach ($artifact in 'spotify_player-windows', 'spotify_player-linux') {
 publish-tool -Name spt -Version $version -Path $dir `
     -Entry spotify_player.exe -Repo https://github.com/nelsong6/spotify-player -Commit $commit
 
-# the NAS's containers run the current release from their start; restart them onto this one
-# (before the first `nas/deploy.sh` there are none to restart)
-foreach ($name in 'spt-keep', 'spt-session') {
-    $restarted = ssh nas "sudo /usr/local/bin/docker inspect $name >/dev/null 2>&1 && sudo /usr/local/bin/docker restart $name >/dev/null && echo yes || true"
-    if ($restarted -eq 'yes') { Write-Host "restarted $name on the NAS" }
-}
+# spt-keep runs the current release from its start; restart it onto this one (before the first
+# `nas/deploy.sh` there is none to restart)
+$restarted = ssh nas 'sudo /usr/local/bin/docker inspect spt-keep >/dev/null 2>&1 && sudo /usr/local/bin/docker restart spt-keep >/dev/null && echo yes || true'
+if ($restarted -eq 'yes') { Write-Host 'restarted spt-keep on the NAS' }
+# the session isn't restarted: its waiting slot starts again on this release and takes the
+# session over at the next song change or pause, so the music doesn't stop
+ssh nas 'sudo /usr/local/bin/docker exec spt-session /upgrade.sh 2>/dev/null || true'

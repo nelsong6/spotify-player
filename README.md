@@ -278,6 +278,7 @@ One session, running on an always-on machine, plays the music; every PC with `sp
 - **Muting**: `ToggleListening` (`H`) switches between playing the session aloud here and only showing it; the playback window shows `muted here` while muted, and the visualization's transport line `here muted`. A muted PC still draws the [audio visualization](#audio-visualization).
 - **Pausing**: when no PC is left playing the session aloud (every PC closed or muted), the session pauses, and it pauses again any playback started while nobody listens. Resume from any PC.
 - The PCs share the saved session through `session_file` on shared storage, so the radio and continue mode set on one PC are what the session continues with.
+- **Upgrades don't stop the music**: `spotify_player session --slots <folder> --release <version>` runs as one of two slots, which Snapcast's `meta` source joins as one stream. The slot that isn't the session waits; started on a newer release, it connects beside the session and takes the playback over at the next song change, or right away while paused. `nas/spt-session` runs both slots, and publishing a release restarts only the waiting one.
 
 ### Audio Visualization
 
