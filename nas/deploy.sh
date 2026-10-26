@@ -28,7 +28,7 @@ for name in spt-keep spt-session; do
     if [ -d $d ]; then /usr/syno/bin/synoacltool -del $d >/dev/null 2>&1 || true; fi
   done
   cp "$T/$name"/* $K/
-  chmod 755 $K/run.sh
+  chmod 755 $K/*.sh
 done
 if [ -f /tmp/spt-keep-auth.tar ]; then
   tar xf /tmp/spt-keep-auth.tar -C /volume1/docker/spt-keep/cache; rm /tmp/spt-keep-auth.tar

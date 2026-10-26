@@ -38,12 +38,20 @@ pub mod session {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::sync::watch;
 
+    /// Of the session's two slots, the one that gets the port serves the screen; the other waits
+    /// for it to exit.
     pub async fn serve(path: PathBuf) {
-        match tokio::net::TcpListener::bind(("0.0.0.0", PORT)).await {
-            Ok(listener) => relay(listener, path).await,
-            Err(err) => {
-                tracing::error!("Failed to listen for the shared screen on port {PORT}: {err:#}");
+        let mut logged = false;
+        loop {
+            match tokio::net::TcpListener::bind(("0.0.0.0", PORT)).await {
+                Ok(listener) => return relay(listener, path).await,
+                Err(err) if !logged => {
+                    tracing::info!("Waiting for port {PORT} for the shared screen: {err:#}");
+                    logged = true;
+                }
+                Err(_) => {}
             }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     }
 
@@ -271,6 +279,11 @@ pub mod pc {
         client_pub: &flume::Sender<ClientRequest>,
     ) -> anyhow::Result<()> {
         let server = config::get_config().app_config.cast_server.clone();
+        // `cast_server`'s port is Snapcast's
+        let server = match server.rsplit_once(':') {
+            Some((host, _)) => host.to_string(),
+            None => server,
+        };
         let (wake, woken) = flume::bounded(1);
         let link = LINK.get_or_init(|| Link {
             pc: format!(

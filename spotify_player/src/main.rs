@@ -8,6 +8,8 @@ mod config;
 mod event;
 #[allow(unsafe_code)] // loads fzt's C library
 mod fzt;
+#[cfg(feature = "streaming")]
+mod handover;
 mod keeper;
 mod key;
 #[cfg(feature = "streaming")]
@@ -149,8 +151,17 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     #[cfg(feature = "streaming")]
     if state.is_session {
         tokio::task::spawn(listeners::watch(client.clone()));
+        tokio::task::spawn(handover::watch_while_idle(client.clone(), state.clone()));
+        // beside the shared session, so both slots keep the same screen
+        let configs = config::get_config();
         tokio::task::spawn(screen::session::serve(
-            config::get_config().cache_folder.join("screen.json"),
+            configs
+                .app_config
+                .session_file
+                .as_deref()
+                .and_then(std::path::Path::parent)
+                .unwrap_or(&configs.cache_folder)
+                .join("screen.json"),
         ));
     }
 
@@ -229,8 +240,8 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     }
 }
 
-/// Run the TUI, or with `is_session` the home cast's headless session
-fn run_app(is_session: bool) -> Result<()> {
+/// Start logging for the TUI or the session, keeping recent lines for the logs page
+fn init_app_logging() -> Result<Arc<Mutex<VecDeque<String>>>> {
     let log_buffer: Arc<Mutex<VecDeque<String>>> =
         Arc::new(Mutex::new(VecDeque::with_capacity(1000)));
 
@@ -239,7 +250,11 @@ fn run_app(is_session: bool) -> Result<()> {
 
     // log the application's configurations
     tracing::info!("Configurations: {:?}", config::get_config());
+    Ok(log_buffer)
+}
 
+/// Run the TUI, or with `is_session` the home cast's headless session
+fn run_app(is_session: bool, log_buffer: Arc<Mutex<VecDeque<String>>>) -> Result<()> {
     let state = std::sync::Arc::new(state::State::new(is_session, log_buffer));
     client::show_saved_radio_page(&state);
     start_app(&state)
@@ -302,9 +317,18 @@ fn main() -> Result<()> {
                 .context("failed to initialize application's logging")?;
             keeper::run()
         }
-        None => run_app(false),
+        None => run_app(false, init_app_logging()?),
         #[cfg(feature = "streaming")]
-        Some(("session", _)) => run_app(true),
+        Some(("session", args)) => {
+            let log_buffer = init_app_logging()?;
+            if let Some(slots) = args.get_one::<String>("slots") {
+                let release = args
+                    .get_one::<String>("release")
+                    .expect("required with --slots");
+                handover::claim(std::path::Path::new(slots), release)?;
+            }
+            run_app(true, log_buffer)
+        }
         Some((cmd, args)) => cli::handle_cli_subcommand(cmd, args),
     }
 }

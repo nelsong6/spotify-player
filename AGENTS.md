@@ -175,8 +175,9 @@ Working on the fork:
 
 - `publish.ps1` publishes CI's build of the pushed commit to `\NelsonNAS\tools\spt`:
   the Windows exe plus `fzt.dll` (pinned in `fzt.lock`, from fzt-terminal releases) and the
-  Linux binary `nas/` runs for `spotify_player keep` and the session, then restarts both
-  containers. CI's `windows-build` and `linux-build`
+  Linux binary `nas/` runs for `spotify_player keep` and the session, then restarts
+  `spt-keep` and only the session's waiting slot, which takes over between songs
+  (`handover.rs`, OpenProject #78). CI's `windows-build` and `linux-build`
   jobs run on PRs and on master, alongside the checks rather than after them;
   `publish.ps1` takes them only from a run that passed in full. For a squash merge whose
   tree matches its PR's last commit it takes the PR run's build instead of waiting for the
