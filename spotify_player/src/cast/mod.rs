@@ -23,7 +23,7 @@ use clock::Clock;
 use output::Shared;
 use protocol::Message;
 
-/// Snapcast's port for audio clients
+/// Snapcast's port for audio clients, unless `cast_server` names another
 const STREAM_PORT: u16 = 1704;
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(2);
 const TIME_SYNC_INTERVAL: Duration = Duration::from_secs(1);
@@ -116,7 +116,11 @@ fn connect(
     shared: &Arc<Mutex<Shared>>,
     clock: &Arc<Clock>,
 ) -> anyhow::Result<()> {
-    let addr = (server, STREAM_PORT)
+    let (host, port) = match server.rsplit_once(':') {
+        Some((host, port)) => (host, port.parse().context("cast_server's port")?),
+        None => (server, STREAM_PORT),
+    };
+    let addr = (host, port)
         .to_socket_addrs()
         .with_context(|| format!("resolve {server}"))?
         .next()

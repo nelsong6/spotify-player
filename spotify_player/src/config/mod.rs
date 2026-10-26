@@ -125,7 +125,8 @@ pub struct AppConfig {
     #[cfg(feature = "media-control")]
     pub enable_media_control: bool,
 
-    /// The Snapcast server the home cast's audio comes from, where the session runs
+    /// The Snapcast server the home cast's audio comes from, where the session runs: `host` or
+    /// `host:port`
     pub cast_server: String,
 
     #[cfg(feature = "cast")]

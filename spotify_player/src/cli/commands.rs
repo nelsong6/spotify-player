@@ -93,9 +93,23 @@ pub fn init_quit_command() -> Command {
 
 #[cfg(feature = "streaming")]
 pub fn init_session_command() -> Command {
-    Command::new("session").about(
-        "Run the home cast's session: the player, headless, with its audio on stdout for Snapcast",
-    )
+    Command::new("session")
+        .about(
+            "Run the home cast's session: the player, headless, with its audio on stdout for Snapcast",
+        )
+        .arg(
+            Arg::new("slots")
+                .long("slots")
+                .value_name("FOLDER")
+                .requires("release")
+                .help("Folder shared by the session's slots, for handing over to a new release"),
+        )
+        .arg(
+            Arg::new("release")
+                .long("release")
+                .value_name("VERSION")
+                .help("The release this slot runs"),
+        )
 }
 
 pub fn init_keep_command() -> Command {

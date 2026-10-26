@@ -12,5 +12,5 @@ RUN apt-get update \
     && rm /tmp/snapserver.deb \
     && rm -rf /var/lib/apt/lists/*
 COPY snapserver.conf /etc/snapserver.conf
-COPY run.sh /run.sh
+COPY run.sh upgrade.sh /
 ENTRYPOINT ["snapserver", "--config", "/etc/snapserver.conf"]
