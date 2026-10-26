@@ -20,15 +20,16 @@ ssh nas "sudo bash -s" <<'REMOTE'
 set -euo pipefail
 D=/usr/local/bin/docker
 T=$(mktemp -d); tar xf /tmp/spt-deploy.tar -C "$T"; rm /tmp/spt-deploy.tar
+mkdir -p /volume1/docker/spt-session/data
 for name in spt-keep spt-session; do
   K=/volume1/docker/$name
   mkdir -p $K/cache
-  /usr/syno/bin/synoacltool -del $K >/dev/null 2>&1 || true
-  /usr/syno/bin/synoacltool -del $K/cache >/dev/null 2>&1 || true
+  for d in $K $K/cache $K/data; do
+    if [ -d $d ]; then /usr/syno/bin/synoacltool -del $d >/dev/null 2>&1 || true; fi
+  done
   cp "$T/$name"/* $K/
   chmod 755 $K/run.sh
 done
-mkdir -p /volume1/docker/spt-session/data
 if [ -f /tmp/spt-keep-auth.tar ]; then
   tar xf /tmp/spt-keep-auth.tar -C /volume1/docker/spt-keep/cache; rm /tmp/spt-keep-auth.tar
 fi
