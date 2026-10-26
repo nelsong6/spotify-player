@@ -193,8 +193,9 @@ Working on the fork:
   timestamps (when the buffer reaches the speaker). WASAPI shared mode takes only the
   device's rate, so the 44.1 kHz stream is resampled to it on arrival (`cast/resample.rs`).
 - To see the UI without touching the desktop, run a test instance (its own `-c`/`-C`
-  folders, its own `client_port`, `cast_server` pointing nowhere unless needed) in a detached tmux session on
-  its own server (`tmux -L <name> new-session -d -x <cols> -y <rows> <command>`), read it
+  folders, its own `client_port`, `cast_server` pointing nowhere unless needed) in a
+  detached tmux session on its own server
+  (`tmux -L <name> new-session -d -x <cols> -y <rows> <command>`), read it
   with `capture-pane -p` (`-e` keeps the colors) and send keys with `send-keys`. Launch it
   through a `.cmd` file holding the full command line: quoted Windows paths passed straight
   to `new-session` were dropped, and the instance silently used the real cache. A test with
