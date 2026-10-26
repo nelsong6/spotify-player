@@ -886,6 +886,9 @@ fn handle_global_command(
                 }
             }
         }
+        Command::MutePc => {
+            ui.popup = Some(PopupState::PcList(ListState::default()));
+        }
         Command::SwitchDevice => {
             ui.popup = Some(PopupState::DeviceList(ListState::default()));
             client_pub.send(ClientRequest::GetDevices)?;

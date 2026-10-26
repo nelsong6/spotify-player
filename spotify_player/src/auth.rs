@@ -246,7 +246,11 @@ fn listen_for_auth_code(addr: SocketAddr) -> Result<String> {
     let listener =
         TcpListener::bind(addr).with_context(|| format!("bind OAuth callback server to {addr}"))?;
     tracing::info!("OAuth callback server listening on {addr}");
+    wait_for_auth_code(&listener)
+}
 
+/// Answer requests on `listener` until one carries the OAuth redirect's auth `code`
+pub fn wait_for_auth_code(listener: &TcpListener) -> Result<String> {
     for stream in listener.incoming() {
         let mut stream = match stream {
             Ok(stream) => stream,
@@ -387,13 +391,13 @@ fn exchange_code_for_token(
 }
 
 /// A PKCE code verifier/challenge pair (RFC 7636).
-struct Pkce {
-    verifier: String,
-    challenge: String,
+pub struct Pkce {
+    pub verifier: String,
+    pub challenge: String,
 }
 
 impl Pkce {
-    fn new_random() -> Self {
+    pub fn new_random() -> Self {
         let verifier = random_url_safe(32);
         let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .encode(Sha256::digest(verifier.as_bytes()));
@@ -405,7 +409,7 @@ impl Pkce {
 }
 
 /// Generate a random URL-safe (base64url, no padding) string from `n` random bytes.
-fn random_url_safe(n: usize) -> String {
+pub fn random_url_safe(n: usize) -> String {
     let mut bytes = vec![0u8; n];
     rand::fill(bytes.as_mut_slice());
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)

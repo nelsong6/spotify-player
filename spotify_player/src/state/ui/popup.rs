@@ -25,6 +25,8 @@ pub enum PopupState {
     UserFollowedArtistList(ListState),
     UserSavedAlbumList(ListState),
     DeviceList(ListState),
+    /// The PCs playing the home cast, to mute or unmute one
+    PcList(ListState),
     ArtistList(ArtistPopupAction, Vec<Artist>, ListState),
     /// Not shared with the other PCs, since a theme is applied to one PC only
     #[serde(skip)]
@@ -119,6 +121,7 @@ impl PopupState {
     pub fn list_state(&self) -> Option<&ListState> {
         match self {
             Self::DeviceList(list_state)
+            | Self::PcList(list_state)
             | Self::UserPlaylistList(.., list_state)
             | Self::UserFollowedArtistList(list_state)
             | Self::UserSavedAlbumList(list_state)
@@ -136,6 +139,7 @@ impl PopupState {
     pub fn list_state_mut(&mut self) -> Option<&mut ListState> {
         match self {
             Self::DeviceList(list_state)
+            | Self::PcList(list_state)
             | Self::UserPlaylistList(.., list_state)
             | Self::UserFollowedArtistList(list_state)
             | Self::UserSavedAlbumList(list_state)

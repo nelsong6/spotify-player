@@ -298,6 +298,29 @@ pub fn handle_key_sequence_for_popup(
                 },
             )
         }
+        #[cfg(feature = "cast")]
+        PopupState::PcList(_) => {
+            let pcs = crate::screen::pc::pcs();
+
+            handle_command_for_list_popup(
+                command,
+                ui,
+                pcs.len(),
+                |_, _| {},
+                |_, id: usize| -> Result<()> {
+                    crate::screen::pc::set_muted(&pcs[id], !pcs[id].muted);
+                    Ok(())
+                },
+                |ui: &mut UIStateGuard| {
+                    ui.popup = None;
+                },
+            )
+        }
+        #[cfg(not(feature = "cast"))]
+        PopupState::PcList(_) => {
+            ui.popup = None;
+            Ok(true)
+        }
         PopupState::DeviceList(_) => {
             let player = state.player.read();
 

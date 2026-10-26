@@ -86,6 +86,7 @@ pub enum Command {
     ToggleVisualization,
     CycleAsciiCover,
     ToggleListening,
+    MutePc,
     OpenCommandPalette,
 }
 
@@ -382,6 +383,7 @@ impl Command {
             Self::ToggleListening => {
                 "play the session aloud on this PC, or only show it (the session pauses when no PC plays it aloud)"
             }
+            Self::MutePc => "open a popup for muting or unmuting each PC playing the session",
             Self::OpenCommandPalette => "open the command palette: search and run what's in the menu",
             Self::CycleAsciiCover => {
                 "cycle the ASCII cover beside the audio visualization (pulse, still, off)"

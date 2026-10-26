@@ -40,6 +40,7 @@
   children:
     - {name: "send", description: "Move playback to another device", action: "SwitchDevice"}
     - {name: "listen here", description: "Play the music aloud on this PC, or only show it here", action: "ToggleListening"}
+    - {name: "mute a PC", description: "Mute or unmute any PC playing the music", action: "MutePc"}
 - name: "library"
   description: "Your playlists, artists, albums and liked songs"
   children:
