@@ -181,6 +181,12 @@ pub async fn hand_over(client: &AppClient, state: &SharedState, device_id: &str,
         tracing::error!("Failed to hand the session over: {err:#}");
         return;
     }
+    // the paused state moves with the playback, whatever the transfer asks for
+    if play {
+        if let Err(err) = client.resume_playback(Some(device_id), None).await {
+            tracing::error!("Failed to start the playback on the new release: {err:#}");
+        }
+    }
     tracing::info!("Handed the session over; exiting");
     std::process::exit(0);
 }
