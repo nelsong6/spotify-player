@@ -161,6 +161,10 @@ Spotify behaviors this fork depends on, each verified live (2026-10-23 to 10-25)
 - **One broken playlist empties `/me/playlists`**: a page containing a playlist Spotify
   answers 502 for comes back with no items, so the library shows no playlists.
 - **Recently played** keeps the last 50 plays, each with its context; skipped songs count.
+- **ncspot's client ID accepts only `/ncspot_login`** as its redirect path (any loopback
+  port); `/login` gets "redirect_uri: no matching configuration". Upstream still sends
+  `/login` for the fallback client, which only shows on a first sign-in, since refreshing a
+  cached token never checks the redirect URI.
 
 Working on the fork:
 
@@ -180,4 +184,9 @@ Working on the fork:
 - To see the UI without touching the desktop, run a test instance (its own `-c`/`-C`
   folders, its own `client_port`, streaming off unless needed) in a detached tmux session on
   its own server (`tmux -L <name> new-session -d -x <cols> -y <rows> <command>`), read it
-  with `capture-pane -p` (`-e` keeps the colors) and send keys with `send-keys`.
+  with `capture-pane -p` (`-e` keeps the colors) and send keys with `send-keys`. Launch it
+  through a `.cmd` file holding the full command line: quoted Windows paths passed straight
+  to `new-session` were dropped, and the instance silently used the real cache. A test with
+  an empty `-C` folder runs every first-time sign-in.
+- No Actions run on a PR, not even a queued one: GitHub may have disabled workflows on
+  this fork (its Actions page says so and has the button to re-enable them).
