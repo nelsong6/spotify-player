@@ -93,7 +93,7 @@ pub fn handle_key_sequence(
         anyhow::bail!("expect a command palette");
     };
     let CommandPalette::Open { session, frame } = palette.as_mut() else {
-        // only says why it couldn't open; any key closes it
+        // only says why it couldn't open, or shows another PC's palette; any key closes it
         ui.popup = None;
         return Ok(true);
     };

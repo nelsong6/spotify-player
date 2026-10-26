@@ -27,7 +27,9 @@ pub fn render(frame: &mut Frame, ui: &UIStateGuard, rect: Rect) {
             Paragraph::new(format!("{err}\n\nPress any key to close.")).wrap(Wrap { trim: false }),
             inner,
         ),
-        CommandPalette::Open { frame: fzt, .. } => render_open(frame, ui, fzt, inner),
+        CommandPalette::Open { frame: fzt, .. } | CommandPalette::Shown(fzt) => {
+            render_open(frame, ui, fzt, inner);
+        }
     }
 }
 

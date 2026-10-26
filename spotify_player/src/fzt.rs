@@ -123,7 +123,7 @@ pub struct Prompt {
 }
 
 /// What to draw, and what the user picked once they have
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Frame {
     #[serde(default)]
     pub rows: Vec<Row>,
@@ -131,7 +131,7 @@ pub struct Frame {
     pub result: Option<Pick>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Row {
     pub name: String,
@@ -145,7 +145,7 @@ pub struct Row {
     pub desc_match_indices: Option<Vec<usize>>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PromptState {
     #[serde(default)]
@@ -157,7 +157,7 @@ pub struct PromptState {
 
 /// What the user picked: `select` (a menu entry, with its action), `prompt` (with the typed
 /// text), `command` (one of the app's commands from the `:` palette) or `cancel`
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Pick {
     pub kind: String,
     #[serde(default)]

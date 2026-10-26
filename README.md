@@ -278,6 +278,7 @@ One session, running on an always-on machine, plays the music; every PC with `sp
 - **Muting**: `ToggleListening` (`H`) switches between playing the session aloud here and only showing it; the playback window shows `muted here` while muted, and the visualization's transport line `here muted`. A muted PC still draws the [audio visualization](#audio-visualization).
 - **Pausing**: when no PC is left playing the session aloud (every PC closed or muted), the session pauses, and it pauses again any playback started while nobody listens. Resume from any PC.
 - The PCs share the saved session through `session_file` on shared storage, so the radio and continue mode set on one PC are what the session continues with.
+- **One screen**: every PC shows the same screen: the page and what's selected on it, popups and the command palette, whether the [audio visualization](#audio-visualization) is shown, and the ASCII cover's mode. The session keeps it (on port 1706 of `cast_server`, saved in its cache folder), so a PC opens on whatever was last on screen, or on the visualization the first time. One PC at a time is in control; the others show `locked: space to take control` at the top right and ignore every other key and the mouse. Space takes control there. A theme picked on one PC stays on that PC. A PC that can't reach the session is its own screen.
 
 ### Audio Visualization
 

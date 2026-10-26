@@ -45,13 +45,13 @@ pub enum Context {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TracksId {
     pub uri: String,
     pub kind: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 /// A context Id
 pub enum ContextId {
     Playlist(PlaylistId<'static>),
@@ -104,7 +104,7 @@ pub enum Item {
     Show(Show),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ItemId {
     Track(TrackId<'static>),
     Album(AlbumId<'static>),
@@ -229,7 +229,7 @@ pub struct PlaylistFolderNode {
     pub children: Vec<PlaylistFolderNode>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// A Spotify category
 pub struct Category {
     pub id: String,

@@ -9,6 +9,8 @@ services:
       - "101"
     ports:
       - "1704:1704"
+      # the shared screen (src/screen.rs)
+      - "1706:1706"
     volumes:
       - /volume1/tools/spt:/tools/spt:ro
       - /volume1/docker/spt-session/cache:/cache

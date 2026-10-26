@@ -8,14 +8,15 @@ use crate::{
 };
 use ratatui::widgets::ListState;
 use rspotify::model::PlaylistId;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PlaylistCreateCurrentField {
     Name,
     Desc,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum PopupState {
     Search {
         query: String,
@@ -25,6 +26,8 @@ pub enum PopupState {
     UserSavedAlbumList(ListState),
     DeviceList(ListState),
     ArtistList(ArtistPopupAction, Vec<Artist>, ListState),
+    /// Not shared with the other PCs, since a theme is applied to one PC only
+    #[serde(skip)]
     ThemeList(Vec<crate::config::Theme>, ListState),
     ActionList(Box<ActionListItem>, ListState),
     PlaylistCreate {
@@ -40,16 +43,33 @@ pub enum PopupState {
 }
 
 /// The command palette: an fzt session over the menu, or why it couldn't open
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub enum CommandPalette {
+    #[serde(skip)]
     Open {
         session: crate::fzt::Session,
         frame: crate::fzt::Frame,
     },
+    /// Another PC's palette, as it draws it
+    Shown(crate::fzt::Frame),
     Failed(String),
 }
 
-#[derive(Debug, Clone)]
+/// The menu session stays on the PC that opened it; the other PCs get what it draws.
+impl Serialize for CommandPalette {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Open { frame, .. } | Self::Shown(frame) => {
+                serializer.serialize_newtype_variant("CommandPalette", 1, "Shown", frame)
+            }
+            Self::Failed(err) => {
+                serializer.serialize_newtype_variant("CommandPalette", 2, "Failed", err)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ConfirmableAction {
     DeleteTrackFromPlaylist {
         playlist_id: PlaylistId<'static>,
@@ -58,7 +78,7 @@ pub enum ConfirmableAction {
     DeleteFromLibrary(ItemId),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ActionListItem {
     Track(Track, Vec<command::Action>),
     Artist(Artist, Vec<command::Action>),
@@ -69,7 +89,7 @@ pub enum ActionListItem {
 }
 
 /// An action on an item in a playlist popup list
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum PlaylistPopupAction {
     Browse {
         folder_id: usize,
@@ -88,7 +108,7 @@ pub enum PlaylistPopupAction {
 }
 
 /// An action on an item in an artist popup list
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum ArtistPopupAction {
     Browse,
     ShowActions,

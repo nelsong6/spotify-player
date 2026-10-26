@@ -18,6 +18,8 @@ mod media_control;
 #[cfg(feature = "streaming")]
 mod play_report;
 mod playlist_folders;
+#[cfg(any(feature = "cast", feature = "streaming"))]
+mod screen;
 mod state;
 #[cfg(feature = "streaming")]
 mod streaming;
@@ -147,6 +149,9 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     #[cfg(feature = "streaming")]
     if state.is_session {
         tokio::task::spawn(listeners::watch(client.clone()));
+        tokio::task::spawn(screen::session::serve(
+            config::get_config().cache_folder.join("screen.json"),
+        ));
     }
 
     // player event watcher task
@@ -163,6 +168,8 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     if !state.is_session {
         #[cfg(feature = "cast")]
         cast::start(state.vis_bands.clone()).context("attach to the session")?;
+        #[cfg(feature = "cast")]
+        screen::pc::start(state, &client_pub).context("follow the shared screen")?;
 
         #[cfg(feature = "image")]
         ui::init_image_picker(state).context("initialize image picker")?;

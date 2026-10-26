@@ -3,8 +3,9 @@ use crate::{
     ui::single_line_input::LineInput,
 };
 use ratatui::widgets::{ListState, TableState};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PageState {
     Library {
         state: LibraryPageUIState,
@@ -50,7 +51,7 @@ pub enum PageType {
     Logs,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LibraryPageUIState {
     pub playlist_list: ListState,
     pub saved_album_list: ListState,
@@ -59,7 +60,7 @@ pub struct LibraryPageUIState {
     pub playlist_folder_id: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SearchPageUIState {
     pub track_list: ListState,
     pub album_list: ListState,
@@ -70,13 +71,13 @@ pub struct SearchPageUIState {
     pub focus: SearchFocusState,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ContextPageType {
     CurrentPlaying,
     Browsing(ContextId),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ContextPageUIState {
     Playlist {
         track_table: TableState,
@@ -99,14 +100,14 @@ pub enum ContextPageUIState {
     },
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LibraryFocusState {
     Playlists,
     SavedAlbums,
     FollowedArtists,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ArtistFocusState {
     TopTracks,
     Albums,
@@ -114,7 +115,7 @@ pub enum ArtistFocusState {
     LikedSongs,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SearchFocusState {
     Input,
     Tracks,
@@ -125,7 +126,7 @@ pub enum SearchFocusState {
     Episodes,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum BrowsePageUIState {
     CategoryList {
         state: ListState,

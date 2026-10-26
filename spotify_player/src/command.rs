@@ -2,7 +2,7 @@ use crate::state::{
     Album, Artist, DataReadGuard, Episode, Playlist, PlaylistFolder, PlaylistFolderItem, Show,
     Track,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 /// Application's command
@@ -89,7 +89,7 @@ pub enum Command {
     OpenCommandPalette,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Action {
     GoToArtist,
     GoToAlbum,
