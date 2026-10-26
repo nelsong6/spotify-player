@@ -281,7 +281,7 @@ One session, running on an always-on machine, plays the music; every PC with `sp
 
 ### Audio Visualization
 
-Real-time audio visualization replaces the page and the playback window with ASCII frequency bars (64 log-scale bands from bass (left) to treble (right)) while the [home cast](#home-cast) plays, drawn from the audio as it reaches this PC's speakers. A transport line beneath the bars shows the play state, the elapsed time on a progress line you can click to seek, the duration, then the volume, device and what plays next. The page and the playback window come back when no cast audio is playing.
+Real-time audio visualization replaces the page and the playback window with ASCII frequency bars (64 log-scale bands from bass (left) to treble (right)), drawn from the [home cast](#home-cast)'s audio as it reaches this PC's speakers. A transport line beneath the bars shows the play state, the elapsed time on a progress line you can click to seek, the duration, then the volume, device and what plays next. It stays up while playback is paused, with the bars flat, until you toggle it off.
 
 Set `enable_audio_visualization` to `true` in your config to enable this feature, or toggle it while the app runs with `V`. Each bar thins from `@` at its base toward `.`, its top follows its neighbours as `^ / \ _ - ~`, and a `'` marks its recent peak. The bars are colored by height in a gradient drawn from the album cover's colors (or a violet → rose → gold one when there's no cover), unless the active theme sets the `visualization` component style (`low`/`mid`/`high` colors); see [config docs](https://github.com/aome510/spotify-player/blob/master/docs/config.md).
 

@@ -86,12 +86,12 @@ impl State {
         self.is_session && config::get_config().app_config.custom_queue
     }
 
-    /// Whether the audio visualization is switched on and has audio to show
+    /// Whether the audio visualization is switched on. It stays up while nothing plays, with its
+    /// bars flat.
     #[cfg(feature = "cast")]
     pub fn is_visualization_shown(&self) -> bool {
-        self.vis_bands.as_ref().is_some_and(|bands| {
-            let bands = bands.lock();
-            bands.enabled && bands.is_active
-        })
+        self.vis_bands
+            .as_ref()
+            .is_some_and(|bands| bands.lock().enabled)
     }
 }

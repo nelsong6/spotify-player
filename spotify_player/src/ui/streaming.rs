@@ -52,9 +52,8 @@ pub struct VisBands {
     /// Kept separate from per-band values so quiet passages look genuinely
     /// quieter — the VU «breathes» with the music.
     pub peak_envelope: f32,
-    /// Set while audio plays here and cleared by `Analyzer::stop()`. The UI uses
-    /// this flag to skip rendering (and reclaim the screen space) when no audio
-    /// is playing.
+    /// Set while audio plays here and cleared by `Analyzer::stop()`. The UI draws no
+    /// bars while it is unset.
     pub is_active: bool,
     /// Whether the visualization is shown, toggled while the app runs. When off, the
     /// analyzer skips the FFT.
