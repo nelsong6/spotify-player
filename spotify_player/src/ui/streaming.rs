@@ -848,7 +848,7 @@ fn render_ascii_cover(
 /// The track (or episode), its artists (or publisher) and its album (or show).
 #[cfg(feature = "ascii-cover")]
 fn cover_caption(item: &rspotify::model::PlayableItem) -> Option<[String; 3]> {
-    use super::utils::to_bidi_string;
+    use crate::utils::to_bidi_string;
     use rspotify::model::PlayableItem;
 
     #[allow(deprecated)]

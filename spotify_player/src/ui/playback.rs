@@ -5,10 +5,7 @@ use super::{
 };
 #[cfg(feature = "image")]
 use crate::state::ImageRenderInfo;
-use crate::{
-    state::Track,
-    ui::utils::{format_genres, to_bidi_string},
-};
+use crate::{state::Track, ui::utils::format_genres, utils::to_bidi_string};
 use rspotify::model::Id;
 
 /// Render a playback window showing information about the current playback, which includes

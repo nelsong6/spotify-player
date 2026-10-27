@@ -1,7 +1,6 @@
 use crate::{
     config::{self, Theme},
     key,
-    ui::{self, Orientation},
     utils::filtered_items_from_query,
 };
 
@@ -12,9 +11,11 @@ use ratatui_image::picker::Picker;
 
 pub type UIStateGuard<'a> = parking_lot::MutexGuard<'a, UIState>;
 
+mod line_input;
 mod page;
 mod popup;
 
+pub use line_input::*;
 pub use page::*;
 pub use popup::*;
 
@@ -46,7 +47,7 @@ pub struct UIState {
     pub mouse_capture: bool,
     pub theme: config::Theme,
     pub input_key_sequence: key::KeySequence,
-    pub orientation: ui::Orientation,
+    pub orientation: Orientation,
 
     pub history: Vec<PageState>,
     pub popup: Option<PopupState>,
@@ -65,7 +66,7 @@ pub struct UIState {
     pub picker: Picker,
 
     #[cfg(feature = "ascii-cover")]
-    pub ascii_cover: ui::ascii_cover::AsciiCover,
+    pub ascii_cover: crate::ui::ascii_cover::AsciiCover,
 }
 
 impl UIState {
@@ -123,7 +124,7 @@ impl Default for UIState {
             theme: Theme::default(),
             input_key_sequence: key::KeySequence { keys: vec![] },
             orientation: match crossterm::terminal::size() {
-                Ok((columns, rows)) => ui::Orientation::from_size(columns, rows),
+                Ok((columns, rows)) => Orientation::from_size(columns, rows),
                 Err(err) => {
                     tracing::warn!("Unable to get terminal size, error: {err:#}");
                     Orientation::default()
@@ -147,7 +148,39 @@ impl Default for UIState {
             picker: Picker::halfblocks(),
 
             #[cfg(feature = "ascii-cover")]
-            ascii_cover: ui::ascii_cover::AsciiCover::new(),
+            ascii_cover: crate::ui::ascii_cover::AsciiCover::new(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Orientation {
+    Vertical,
+    #[default]
+    Horizontal,
+}
+
+impl Orientation {
+    /// Construct screen orientation based on the terminal's size
+    pub fn from_size(columns: u16, rows: u16) -> Self {
+        let ratio = f64::from(columns) / f64::from(rows);
+
+        // a larger ratio has to be used since terminal cells aren't square
+        if ratio > 2.3 {
+            Self::Horizontal
+        } else {
+            Self::Vertical
+        }
+    }
+
+    pub fn layout<I>(self, constraints: I) -> ratatui::layout::Layout
+    where
+        I: IntoIterator,
+        I::Item: Into<ratatui::layout::Constraint>,
+    {
+        match self {
+            Self::Vertical => ratatui::layout::Layout::vertical(constraints),
+            Self::Horizontal => ratatui::layout::Layout::horizontal(constraints),
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::config;
-use crate::ui::utils::to_bidi_string;
 use crate::utils::map_join;
+use crate::utils::to_bidi_string;
 use html_escape::decode_html_entities;
 pub use rspotify::model::{
     AlbumId, ArtistId, EpisodeId, Id, PlayableId, PlaylistId, ShowId, TrackId, UserId,

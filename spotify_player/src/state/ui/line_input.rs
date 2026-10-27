@@ -1,8 +1,12 @@
 use crossterm::event::KeyCode;
 use ratatui::widgets::Widget;
 
-use super::{Line, Modifier, Paragraph, Span, Style};
 use crate::key::Key;
+use ratatui::{
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::Paragraph,
+};
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LineInput {

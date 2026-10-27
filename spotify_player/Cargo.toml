@@ -112,10 +112,13 @@ optional = true
 [features]
 # the home cast's session (`spotify_player session`): the player, its audio on stdout for Snapcast
 streaming = ["librespot-playback", "librespot-connect", "librespot-protocol", "protobuf", "dep:jsonwebtoken", "dep:hyper", "dep:hyper-util", "dep:http-body-util"]
+# the terminal UI: pages, popups, keys and the command palette. The session has no screen, so
+# its build leaves this out.
+tui = []
 # a PC attached to the session: plays its audio from Snapcast and draws the visualization
-cast = ["dep:cpal", "rustfft", "dep:gethostname", "windows", "dep:windows-core"]
+cast = ["tui", "dep:cpal", "rustfft", "dep:gethostname", "windows", "dep:windows-core"]
 media-control = ["souvlaki", "winit", "windows"]
-image = ["ratatui-image", "dep:image"]
+image = ["tui", "ratatui-image", "dep:image"]
 ascii-cover = ["cast", "dep:image"]
 sixel = ["image"]
 pixelate = ["image"]
