@@ -34,8 +34,26 @@ const TIME_TIMEOUT: Duration = Duration::from_secs(2);
 /// No audio for this long means nothing is playing
 const SILENCE: Duration = Duration::from_millis(300);
 
+/// Whether this PC's output is silent
+#[derive(Default)]
+pub(crate) struct Mute {
+    /// Muted here, as the cast server records it
+    muted: AtomicBool,
+    /// The session follows something playing elsewhere, which stays silent here unless asked for
+    following: AtomicBool,
+    play_followed: AtomicBool,
+}
+
+impl Mute {
+    pub(crate) fn silent(&self) -> bool {
+        self.muted.load(Ordering::Relaxed)
+            || (self.following.load(Ordering::Relaxed)
+                && !self.play_followed.load(Ordering::Relaxed))
+    }
+}
+
 struct Cast {
-    muted: Arc<AtomicBool>,
+    mute: Arc<Mute>,
     /// The connection's writing half, when connected
     writer: Mutex<Option<TcpStream>>,
 }
@@ -46,7 +64,7 @@ static CAST: OnceLock<Cast> = OnceLock::new();
 pub fn start(bands: Option<Arc<Mutex<VisBands>>>) -> anyhow::Result<()> {
     let server = config::get_config().app_config.cast_server.clone();
     let cast = CAST.get_or_init(|| Cast {
-        muted: Arc::new(AtomicBool::new(false)),
+        mute: Arc::new(Mute::default()),
         writer: Mutex::new(None),
     });
     let shared = Arc::new(Mutex::new(Shared::default()));
@@ -67,8 +85,8 @@ pub fn start(bands: Option<Arc<Mutex<VisBands>>>) -> anyhow::Result<()> {
         .spawn({
             let shared = Arc::clone(&shared);
             let clock = Arc::clone(&clock);
-            let muted = Arc::clone(&cast.muted);
-            move || output::run(&shared, &clock, &muted, played.as_ref())
+            let mute = Arc::clone(&cast.mute);
+            move || output::run(&shared, &clock, &mute, played.as_ref())
         })?;
     std::thread::Builder::new()
         .name("cast-connection".to_string())
@@ -84,22 +102,56 @@ pub fn start(bands: Option<Arc<Mutex<VisBands>>>) -> anyhow::Result<()> {
 
 /// Whether this PC plays the session's audio aloud (rather than only showing it)
 pub fn is_listening() -> bool {
-    CAST.get()
-        .is_some_and(|cast| !cast.muted.load(Ordering::Relaxed))
+    CAST.get().is_some_and(|cast| !cast.mute.silent())
 }
 
 /// Switch between playing the session aloud here and only showing it. The session pauses when no
-/// PC is left playing it aloud.
+/// PC is left playing it aloud. While the session follows something playing elsewhere, this
+/// switches playing that here.
 pub fn toggle_listening() {
     let Some(cast) = CAST.get() else {
         return;
     };
-    let muted = !cast.muted.fetch_xor(true, Ordering::Relaxed);
+    if cast.mute.following.load(Ordering::Relaxed) {
+        let play = !cast.mute.play_followed.fetch_xor(true, Ordering::Relaxed);
+        tracing::info!(
+            "Cast: {} what the session follows",
+            if play {
+                "playing here"
+            } else {
+                "silent here for"
+            }
+        );
+        if play && cast.mute.muted.load(Ordering::Relaxed) {
+            set_muted(false);
+        }
+        return;
+    }
+    set_muted(!cast.mute.muted.load(Ordering::Relaxed));
+}
+
+/// Mute or unmute this PC
+pub fn set_muted(muted: bool) {
+    let Some(cast) = CAST.get() else {
+        return;
+    };
+    cast.mute.muted.store(muted, Ordering::Relaxed);
     tracing::info!(
         "Cast: {}",
         if muted { "muted here" } else { "playing here" }
     );
     send_client_info(cast, muted);
+}
+
+/// Whether the session follows something playing elsewhere; that plays silently here until asked
+/// for, each time following starts
+pub fn set_following(following: bool) {
+    let Some(cast) = CAST.get() else {
+        return;
+    };
+    if !cast.mute.following.swap(following, Ordering::Relaxed) && following {
+        cast.mute.play_followed.store(false, Ordering::Relaxed);
+    }
 }
 
 fn send_client_info(cast: &Cast, muted: bool) {
@@ -136,7 +188,7 @@ fn connect(
     // this PC's choice to play aloud or not outlasts reconnects; the server's stored one doesn't
     protocol::send(
         &mut writer,
-        &protocol::client_info(cast.muted.load(Ordering::Relaxed), clock::now()),
+        &protocol::client_info(cast.mute.muted.load(Ordering::Relaxed), clock::now()),
     )?;
     *cast.writer.lock() = Some(writer.try_clone()?);
     clock.reset();
@@ -190,7 +242,7 @@ fn receive(
             Message::ServerSettings(settings) => {
                 tracing::info!("Cast server settings: {settings:?}");
                 if hello_answered {
-                    cast.muted.store(settings.muted, Ordering::Relaxed);
+                    cast.mute.muted.store(settings.muted, Ordering::Relaxed);
                 }
                 hello_answered = true;
                 shared

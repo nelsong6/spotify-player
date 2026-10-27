@@ -53,6 +53,7 @@ impl AppClient {
         state: &SharedState,
         playback: crate::screen::SessionPlayback,
     ) -> Result<()> {
+        crate::cast::set_following(playback.following);
         state.player.write().queue = playback.queue;
         let new_playback = Self::apply_playback(state, playback.playback, true);
         if playback.left_off || playback.following {

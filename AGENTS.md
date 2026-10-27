@@ -229,7 +229,10 @@ Working on the fork:
   reads Spotify's connect-state pushes (`hm://connect-state/v1/cluster`, the dealer stream
   librespot's own spirc reads), so following costs no Web API calls, and the PCs show what
   Spotify plays while the radio stays put. Play takes control back. While following, Spotify
-  playing inside the radio's playlist moves the radio's saved place (the catch-up). The keeper
+  playing inside the radio's playlist moves the radio's saved place (the catch-up). While
+  following, a second player in the session (not a Connect device, so it never takes over;
+  verified live 2026-10-26 against a playing phone) plays along with the followed device, so the
+  PCs visualize it; it's silent on a PC until play here is switched on there. The keeper
   takes the radio's position from the session and never removes the radio's song: it had
   trimmed a half-played one by Spotify's listening history, leaving the saved place on nothing.
 - The PCs' sync is snapclient's algorithm (`cast/stream.rs`), timed from cpal's callback
