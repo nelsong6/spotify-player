@@ -234,7 +234,10 @@ Working on the fork:
   (`client/budget.rs`), and sends every request under its own budget; a playlist edited on a phone
   shows in spt after a refresh. Don't make the library live again.
 - Drive and follow (decided 2026-10-26, OpenProject #86): spt drives the session by default.
-  When something else drives Spotify (a phone, a Jam), the session follows (`follow.rs`): it
+  The session follows on purpose (`F`), or when something else plays on its own speaker (a Jam),
+  never because another device is active: on 10-27 Spotify's desktop app sitting paused on
+  nelsonpc knocked the session into following after a handover, and `H` stopped meaning play
+  here (`follow.rs`): it
   reads Spotify's connect-state pushes (`hm://connect-state/v1/cluster`, the dealer stream
   librespot's own spirc reads), so following costs no Web API calls, and the PCs show what
   Spotify plays while the radio stays put. Play takes control back. While following, Spotify
