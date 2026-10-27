@@ -125,10 +125,14 @@ async fn left_off(
     client: &AppClient,
     track: &mut Option<FullTrack>,
 ) -> Option<CurrentPlaybackContext> {
-    let (saved, device_id) = {
+    let (saved, device_id, volume) = {
         let mut session = state.session.lock();
         session.sync();
-        (session.session.clone(), session.own_device.clone())
+        (
+            session.session.clone(),
+            session.own_device.clone(),
+            session.own_volume,
+        )
     };
     let song = song(client, track, saved.current_uri.as_deref()?).await?;
     Some(shown_playback(Shown {
@@ -137,7 +141,7 @@ async fn left_off(
         progress_ms: saved.progress_ms,
         device_id,
         device_name: crate::config::get_config().app_config.device.name.clone(),
-        volume: None,
+        volume,
         is_playing: false,
     }))
 }
