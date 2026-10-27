@@ -380,6 +380,22 @@ pub async fn new_connection(
     Ok(spirc)
 }
 
+/// Keep the radio's place in the saved session while the session's player plays it. A pause or
+/// resume is saved at once, so play picks up where it paused.
+pub async fn keep_place(state: SharedState) {
+    let mut ticks = tokio::time::interval(std::time::Duration::from_secs(1));
+    let mut was_playing = None;
+    loop {
+        ticks.tick().await;
+        let mut session = state.session.lock();
+        let player = state.player.read();
+        let playing = player.playback.as_ref().map(|playback| playback.is_playing);
+        let toggled = was_playing.is_some() && playing != was_playing;
+        was_playing = playing;
+        session.record_progress(&player, toggled);
+    }
+}
+
 fn volume_percent(volume: u16) -> u32 {
     u32::from(volume) * 100 / 65535
 }

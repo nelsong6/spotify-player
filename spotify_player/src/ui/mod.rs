@@ -48,19 +48,9 @@ pub fn run(state: &SharedState, mut terminal: Terminal) -> Result<()> {
         {
             let mut ui = state.ui.lock();
             if !ui.is_running {
-                state
-                    .session
-                    .lock()
-                    .record_progress(&state.player.read(), true);
                 clean_up(terminal).context("clean up UI resources")?;
                 std::process::exit(0);
             }
-            // saved on each tick but written to disk only when the item changes or every few
-            // seconds, so that closing the window without quitting still keeps the session
-            state
-                .session
-                .lock()
-                .record_progress(&state.player.read(), false);
 
             if ui.mouse_capture != mouse_captured {
                 mouse_captured = ui.mouse_capture;

@@ -179,6 +179,7 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     #[cfg(feature = "streaming")]
     if state.is_session {
         tokio::task::spawn(listeners::watch(client.clone()));
+        tokio::task::spawn(streaming::keep_place(state.clone()));
         tokio::task::spawn(handover::watch_while_idle(client.clone(), state.clone()));
         // beside the shared session, so both slots keep the same screen
         tokio::task::spawn(screen::session::serve(
