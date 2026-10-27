@@ -49,6 +49,31 @@ struct Slots {
 static SLOTS: OnceLock<Slots> = OnceLock::new();
 /// Set when this slot started beside an older release's session, to take over from it
 static TAKING_OVER: AtomicBool = AtomicBool::new(false);
+/// Whether this slot is the session yet, and whether it became it by taking over
+static BECAME: std::sync::LazyLock<tokio::sync::watch::Sender<Option<Became>>> =
+    std::sync::LazyLock::new(|| tokio::sync::watch::channel(None).0);
+
+/// How this slot became the session
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Became {
+    /// It started as the session, with nothing to take over
+    Started,
+    /// It took the session over from another slot, which moved the playback to it
+    TookOver,
+}
+
+/// Wait until this slot is the session. Without slots, it always is.
+pub async fn until_session() -> Became {
+    if SLOTS.get().is_none() {
+        return Became::Started;
+    }
+    let mut became = BECAME.subscribe();
+    let result = match became.wait_for(Option::is_some).await {
+        Ok(became) => became.unwrap_or(Became::Started),
+        Err(_) => Became::Started,
+    };
+    result
+}
 
 /// What this slot does on start
 pub enum Start {
@@ -86,7 +111,10 @@ pub fn claim(dir: &Path, release: &str) -> anyhow::Result<Start> {
         }
     };
     match start {
-        Start::Session => slots.record_active()?,
+        Start::Session => {
+            slots.record_active()?;
+            BECAME.send_replace(Some(Became::Started));
+        }
         Start::TakeOver => TAKING_OVER.store(true, Ordering::SeqCst),
     }
     let _ = SLOTS.set(slots);
@@ -153,6 +181,7 @@ pub fn connected(device_id: &str) -> anyhow::Result<()> {
                     if let Err(err) = slots.record_active() {
                         tracing::error!("Failed to record this slot as the session: {err:#}");
                     }
+                    BECAME.send_replace(Some(Became::TookOver));
                 }
                 Err(err) => tracing::error!("Failed to wait for the session's lock: {err:#}"),
             }
