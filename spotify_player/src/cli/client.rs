@@ -143,41 +143,6 @@ async fn handle_socket_request(
             handle_playback_request(client, state, command).await?;
             Ok(Vec::new())
         }
-        Request::Connect(data) => {
-            let id = match data {
-                IdOrName::Id(id) => id,
-                IdOrName::Name(name) => {
-                    let devices = client.available_devices().await?;
-                    match devices
-                        .into_iter()
-                        .find(|d| d.name == name)
-                        .and_then(|d| d.id)
-                    {
-                        Some(id) => id,
-                        None => {
-                            anyhow::bail!("No device with name={name} found");
-                        }
-                    }
-                }
-            };
-
-            let handed_off = match state {
-                Some(state) => {
-                    let play = state
-                        .player
-                        .read()
-                        .playback
-                        .as_ref()
-                        .is_some_and(|p| p.is_playing);
-                    client.hand_off_track_list(state, &id, play).await?
-                }
-                None => false,
-            };
-            if !handed_off {
-                client.transfer_playback(&id, None).await?;
-            }
-            Ok(Vec::new())
-        }
         Request::Like { unlike } => {
             let playback = current_playback(client, state).await?;
 

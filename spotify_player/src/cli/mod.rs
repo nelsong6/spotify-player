@@ -132,7 +132,6 @@ pub enum Command {
 pub enum Request {
     Get(GetRequest),
     Playback(Command),
-    Connect(IdOrName),
     Like { unlike: bool },
     Playlist(PlaylistCommand),
     Search { query: String },
@@ -177,7 +176,6 @@ pub fn init_cli() -> anyhow::Result<clap::Command> {
         .author(env!("CARGO_PKG_AUTHORS"))
         .subcommand(commands::init_get_subcommand())
         .subcommand(commands::init_playback_subcommand())
-        .subcommand(commands::init_connect_subcommand())
         .subcommand(commands::init_like_command())
         .subcommand(commands::init_authenticate_command())
         .subcommand(commands::init_playlist_subcommand())

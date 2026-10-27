@@ -5,10 +5,6 @@ use crate::cli::EditAction;
 
 use super::{ContextType, ItemType, Key};
 
-pub fn init_connect_subcommand() -> Command {
-    add_id_or_name_group(Command::new("connect").about("Connect to a Spotify device"))
-}
-
 pub fn init_get_subcommand() -> Command {
     Command::new("get")
         .about("Get Spotify data")

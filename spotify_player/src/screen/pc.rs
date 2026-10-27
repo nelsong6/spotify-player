@@ -287,7 +287,7 @@ fn show(state: &SharedState, client_pub: &flume::Sender<ClientRequest>, screen: 
     }
     ui.history = screen.history;
     ui.popup = screen.popup;
-    let requests = data_requests(state, ui.current_page(), ui.popup.as_ref());
+    let requests = data_requests(state, ui.current_page());
     drop(ui);
     for request in requests {
         let _ = client_pub.send(request);
@@ -296,11 +296,7 @@ fn show(state: &SharedState, client_pub: &flume::Sender<ClientRequest>, screen: 
 
 /// What this PC hasn't loaded of a page another PC opened. Context pages and lyrics load on
 /// their own once shown.
-fn data_requests(
-    state: &SharedState,
-    page: &PageState,
-    popup: Option<&PopupState>,
-) -> Vec<ClientRequest> {
+fn data_requests(state: &SharedState, page: &PageState) -> Vec<ClientRequest> {
     let mut requests = Vec::new();
     let mut data = state.data.write();
     match page {
@@ -327,9 +323,6 @@ fn data_requests(
             requests.push(ClientRequest::GetContext(ContextId::Tracks(id.clone())));
         }
         _ => {}
-    }
-    if matches!(popup, Some(PopupState::DeviceList(_))) {
-        requests.push(ClientRequest::GetDevices);
     }
     requests
 }

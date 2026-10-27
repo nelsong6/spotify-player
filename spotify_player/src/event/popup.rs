@@ -321,28 +321,6 @@ pub fn handle_key_sequence_for_popup(
             ui.popup = None;
             Ok(true)
         }
-        PopupState::DeviceList(_) => {
-            let player = state.player.read();
-
-            handle_command_for_list_popup(
-                command,
-                ui,
-                player.devices.len(),
-                |_, _| {},
-                |ui: &mut UIStateGuard, id: usize| -> Result<()> {
-                    let is_playing = player.playback.as_ref().is_some_and(|p| p.is_playing);
-                    client_pub.send(ClientRequest::Player(PlayerRequest::TransferPlayback(
-                        player.devices[id].id.clone(),
-                        is_playing,
-                    )))?;
-                    ui.popup = None;
-                    Ok(())
-                },
-                |ui: &mut UIStateGuard| {
-                    ui.popup = None;
-                },
-            )
-        }
     }
 }
 

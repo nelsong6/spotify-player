@@ -24,7 +24,6 @@ pub enum PopupState {
     UserPlaylistList(PlaylistPopupAction, ListState),
     UserFollowedArtistList(ListState),
     UserSavedAlbumList(ListState),
-    DeviceList(ListState),
     /// The PCs playing the home cast, to mute or unmute one
     PcList(ListState),
     ArtistList(ArtistPopupAction, Vec<Artist>, ListState),
@@ -123,8 +122,7 @@ impl PopupState {
     /// gets the (immutable) list state of a (list) popup
     pub fn list_state(&self) -> Option<&ListState> {
         match self {
-            Self::DeviceList(list_state)
-            | Self::PcList(list_state)
+            Self::PcList(list_state)
             | Self::UserPlaylistList(.., list_state)
             | Self::UserFollowedArtistList(list_state)
             | Self::UserSavedAlbumList(list_state)
@@ -139,8 +137,7 @@ impl PopupState {
     /// gets the (mutable) list state of a (list) popup
     pub fn list_state_mut(&mut self) -> Option<&mut ListState> {
         match self {
-            Self::DeviceList(list_state)
-            | Self::PcList(list_state)
+            Self::PcList(list_state)
             | Self::UserPlaylistList(.., list_state)
             | Self::UserFollowedArtistList(list_state)
             | Self::UserSavedAlbumList(list_state)

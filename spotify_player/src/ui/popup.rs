@@ -87,31 +87,6 @@ pub fn render_popup(
                 );
                 (rect, false)
             }
-            PopupState::DeviceList { .. } => {
-                let player = state.player.read();
-
-                let current_device_id = match player.playback {
-                    Some(ref playback) => playback.device.id.as_deref().unwrap_or_default(),
-                    None => "",
-                };
-                let items = player
-                    .devices
-                    .iter()
-                    .map(|d| {
-                        // Mark the integrated device of this running instance to distinguish it
-                        // from other `spotify-player` instances running elsewhere.
-                        let name = if d.is_integrated {
-                            format!("{} (integrated)", d.name)
-                        } else {
-                            d.name.clone()
-                        };
-                        (format!("{name} | {}", d.id), current_device_id == d.id)
-                    })
-                    .collect();
-
-                let rect = render_list_popup(frame, rect, "Devices", items, 5, ui);
-                (rect, false)
-            }
             PopupState::PcList(_) => {
                 #[cfg(feature = "cast")]
                 let items = {
@@ -119,8 +94,11 @@ pub fn render_popup(
                     crate::screen::pc::pcs()
                         .iter()
                         .map(|pc| {
-                            let muted = if pc.muted { "muted" } else { "playing aloud" };
-                            (format!("{} | {muted}", pc.name), pc.id == here)
+                            let play_here = if pc.muted { "off" } else { "on" };
+                            (
+                                format!("{} | play here: {play_here}", pc.name),
+                                pc.id == here,
+                            )
                         })
                         .collect()
                 };

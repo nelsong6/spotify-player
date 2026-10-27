@@ -1,13 +1,9 @@
-use super::model::{
-    AlbumId, ArtistId, ContextId, Device, PlaybackMetadata, PlaylistId, ShowId, TracksId,
-};
+use super::model::{AlbumId, ArtistId, ContextId, PlaybackMetadata, PlaylistId, ShowId, TracksId};
 use super::queue::CustomQueue;
 
 /// Player state
 #[derive(Default, Debug)]
 pub struct PlayerState {
-    pub devices: Vec<Device>,
-
     pub playback: Option<rspotify::model::CurrentPlaybackContext>,
     pub playback_last_updated_time: Option<std::time::Instant>,
     /// A buffered state to speedup the feedback of playback metadata update to user

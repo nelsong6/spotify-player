@@ -13,7 +13,6 @@
 - [Features](#features)
   - [Command palette](#command-palette)
   - [Kept playlists](#kept-playlists)
-  - [Spotify Connect](#spotify-connect)
   - [Home cast](#home-cast)
   - [Audio Visualization](#audio-visualization)
   - [Media Control](#media-control)
@@ -37,7 +36,6 @@
 - Minimalist UI with an intuitive paging and popup system.
 - Highly [configurable](https://github.com/aome510/spotify-player/blob/master/docs/config.md)
 - Feature parity with the official Spotify application.
-- Support remote control with [Spotify Connect](#spotify-connect).
 - A [home cast](#home-cast): one session plays on every PC that has the app open, in sync.
 - Support [audio visualization](#audio-visualization).
 - Support synced lyrics.
@@ -257,12 +255,6 @@ The palette is fzt itself, loaded from `fzt.dll` (from [fzt-terminal](https://gi
 
 The [home cast's](#home-cast) session keeps the playlists listed as `kept_playlists` in the config, so playing one from its top always picks up where you left off, on any device. Every 10 minutes for the playlist that's playing and every hour for the others, it removes the songs Spotify's listening history shows were played from the playlist, and, while it plays, the songs before the playing one. A playlist with `radio_from` is a rolling radio: it's also refilled with radios seeded by random songs of that playlist, so `buffer` songs (default 200) stay ahead. See [config docs](docs/config.md#kept-playlists).
 
-### Spotify Connect
-
-Control Spotify remotely with [Spotify Connect](https://support.spotify.com/us/article/spotify-connect/). Press **D** to list devices, then **enter** to connect.
-
-A radio, liked songs or other track list played by `spotify_player` can't be transferred the usual way, because Spotify's own apps drop it. Moving one starts the same list on the chosen device at the same song and position instead, which works when that device is the [home cast's](#home-cast) session.
-
 ### Home cast
 
 One session, running on an always-on machine, plays the music; every PC with `spotify_player` open plays it aloud, in sync with the others, and controls it. Which PC you sit at doesn't matter: close the app in one room and open it in the next, and the same queue keeps playing.
@@ -270,9 +262,9 @@ One session, running on an always-on machine, plays the music; every PC with `sp
 - **The session** is `spotify_player session`, built with the `streaming` feature and without `tui` (the terminal UI), since it has no screen. It runs the [librespot](https://github.com/librespot-org/librespot) player, the one Spotify Connect device for the house, named by `name` under `[device]`. It reports what it plays to Spotify, as Spotify's own apps do, so its plays show in your listening history. It writes its audio to stdout for [Snapcast](https://github.com/badaix/snapcast)'s server, which runs it as a `process` source (`codec=pcm`, `sampleformat=44100:16:2`) and streams it to the PCs. [`nas/spt-session`](nas/spt-session) runs both in a container on a Synology NAS, deployed with `nas/deploy.sh`.
 - **A PC** runs `spotify_player` built with the `cast` feature (on by default). It attaches to the Snapcast server named by `cast_server`, plays the session's audio on the system's default output (on Windows it follows a change of default output), and controls the session like any Connect device. It never starts a player of its own and never picks another device to play on.
 - **One Spotify sign-in**: only the session signs in to Spotify. A PC sends every Spotify request (the library, search, play, lyrics, covers) to the session's relay, on port 1707 of the `cast_server` host, which sends it on with the session's sign-in, merges identical requests and holds the whole house to Spotify's waits. The session doesn't poll what it plays: it asks Spotify when its player reports a change, and passes the playback to every PC with the [shared screen](#home-cast). The relay takes only requests carrying the key the session keeps beside `session_file` (`relay.key`), so a PC needs read access to that folder and nothing else; deleting the key revokes it, and the session makes a new one.
-- **Muting**: `ToggleListening` (`H`) switches between playing the session aloud here and only showing it; the playback window shows `muted here` while muted, and the visualization's transport line `here muted`. A muted PC still draws the [audio visualization](#audio-visualization).
+- **Play here**: the session is the one output device, and the music keeps playing there. Each PC chooses whether it plays it here: `PlayHere` (`H`) turns play here on or off. With it off, the PC still shows and controls the radio, and the other rooms play on; the playback window shows `play here: off`, and so does the visualization's transport line. A PC with play here off still draws the [audio visualization](#audio-visualization).
 - **Drive and follow**: spt drives the session: the radio, and where it is (the session's saved session). When something else drives Spotify (a phone, a Jam, any remote), the session notices from Spotify's own connect-state pushes and follows it: every PC shows what Spotify plays, on which device, and the radio stays where it was. `FollowSpotify` (`F`) follows on purpose. Play takes control back and resumes the radio; if Spotify kept playing inside the radio's playlist while the session followed, the radio picks up from where Spotify got to.
-- **Muting another PC**: `MutePc` (`P`) lists the PCs playing the session and whether each is muted; **enter** mutes or unmutes the selected one. The request goes to the session's relay with the relay key, like every other request, and the session passes it to Snapcast.
+- **Play here on another PC**: `PlayHereOnPc` (`P`) lists the PCs playing the session and whether play here is on for each; **enter** turns it on or off for the selected one. The request goes to the session's relay with the relay key, like every other request, and the session passes it to Snapcast.
 - **Pausing**: when no PC is left playing the session aloud (every PC closed or muted), the session pauses, and it pauses again any playback started while nobody listens. Resume from any PC.
 - The PCs share the saved session through `session_file` on shared storage, so the radio and continue mode set on one PC are what the session continues with.
 - **One screen**: every PC shows the same screen: the page and what's selected on it, popups and the command palette, whether the [audio visualization](#audio-visualization) is shown, and the ASCII cover's mode. The session keeps it (on port 1706 of the `cast_server` host, saved beside `session_file`), so a PC opens on whatever was last on screen, or on the visualization the first time. One PC at a time is in control; the others show `locked: space to take control` at the top right and ignore every other key and the mouse. Space takes control there. A theme picked on one PC stays on that PC. A PC that can't reach the session is its own screen.
@@ -367,7 +359,6 @@ To enable [fuzzy search](https://en.wikipedia.org/wiki/Approximate_string_matchi
 - `get`: Get Spotify data (playlist/album/artist data, user's data, etc)
 - `playback`: Interact with the playback (start a playback, play-pause, next, etc)
 - `search`: Search spotify
-- `connect`: Connect to a Spotify device
 - `like`: Like currently playing track
 - `authenticate`: Authenticate the application
 - `playlist`: Playlist editing (new, delete, import, fork, etc)
@@ -434,7 +425,6 @@ List of supported commands:
 | `FocusNextWindow`               | focus the next focusable window (if any)                                                           | `tab`              |
 | `FocusPreviousWindow`           | focus the previous focusable window (if any)                                                       | `backtab`          |
 | `SwitchTheme`                   | open a popup for switching theme                                                                   | `T`                |
-| `SwitchDevice`                  | open a popup for switching device                                                                  | `D`                |
 | `OpenCommandPalette`            | open the command palette: search and run what's in the menu                                        | `/`                |
 | `Search`                        | open a popup for searching in the current page                                                     |                    |
 | `BrowseUserPlaylists`           | open a popup for browsing user's playlists                                                         | `u p`              |
@@ -454,8 +444,8 @@ List of supported commands:
 | `OpenLogs`                      | go the the application logs page                                                                   | `g o`              |
 | `ToggleMouseCapture`            | toggle mouse capture (off: the terminal can select text again)                                     | `M`                |
 | `CycleAsciiCover`               | cycle the ASCII cover beside the audio visualization (pulse, still, off)                           | `I`                |
-| `ToggleListening`               | play the [home cast](#home-cast) aloud on this PC, or only show it (`cast` feature only)           | `H`                |
-| `MutePc`                        | mute or unmute any PC playing the [home cast](#home-cast) (`cast` feature only)                    | `P`                |
+| `PlayHere`                      | turn play here on or off: play the [home cast](#home-cast) on this PC, or only show it (`cast` feature only) | `H`                |
+| `PlayHereOnPc`                  | turn play here on or off for any PC playing the [home cast](#home-cast) (`cast` feature only) | `P`                |
 | `FollowSpotify`                 | follow what Spotify plays, wherever it's driven from, until play takes control back (`cast` only)  | `F`                |
 | `OpenSpotifyLinkFromClipboard`  | open a Spotify link from clipboard                                                                 | `O`                |
 | `SortTrackByTitle`              | sort the track table (if any) by track's title                                                     | `s t`              |

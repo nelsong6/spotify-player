@@ -138,7 +138,11 @@ pub fn set_muted(muted: bool) {
     cast.mute.muted.store(muted, Ordering::Relaxed);
     tracing::info!(
         "Cast: {}",
-        if muted { "muted here" } else { "playing here" }
+        if muted {
+            "play here off"
+        } else {
+            "play here on"
+        }
     );
     send_client_info(cast, muted);
 }

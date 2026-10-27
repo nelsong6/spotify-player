@@ -148,10 +148,6 @@ impl Default for KeymapConfig {
                     command: Command::SwitchTheme,
                 },
                 Keymap {
-                    key_sequence: "D".into(),
-                    command: Command::SwitchDevice,
-                },
-                Keymap {
                     key_sequence: "u p".into(),
                     command: Command::BrowseUserPlaylists,
                 },
@@ -353,11 +349,11 @@ impl Default for KeymapConfig {
                 },
                 Keymap {
                     key_sequence: "H".into(),
-                    command: Command::ToggleListening,
+                    command: Command::PlayHere,
                 },
                 Keymap {
                     key_sequence: "P".into(),
-                    command: Command::MutePc,
+                    command: Command::PlayHereOnPc,
                 },
                 Keymap {
                     key_sequence: "F".into(),
