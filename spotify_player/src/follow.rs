@@ -19,6 +19,8 @@ pub struct Remote {
     pub position_ms: i64,
     pub at_ms: i64,
     pub is_playing: bool,
+    /// The device's volume, in percent
+    pub volume: Option<u32>,
 }
 
 #[derive(Debug, Default)]
@@ -67,11 +69,10 @@ fn handle(state: &SharedState, update: ClusterUpdate) {
     if active.is_empty() {
         return;
     }
-    let device = cluster
-        .device
-        .get(active)
-        .map(|device| device.name.clone())
-        .unwrap_or_default();
+    let info = cluster.device.get(active);
+    let device = info.map(|device| device.name.clone()).unwrap_or_default();
+    // Spotify's connect state carries volume from 0 to 65535
+    let volume = info.map(|device| (u64::from(device.volume) * 100 / 65535) as u32);
     // either of the session's slots, which share the name
     let ours = device == config::get_config().app_config.device.name;
     let Some(player) = cluster.player_state.into_option() else {
@@ -99,6 +100,7 @@ fn handle(state: &SharedState, update: ClusterUpdate) {
         position_ms,
         at_ms: now,
         is_playing,
+        volume,
     };
 
     let mut session = state.session.lock();

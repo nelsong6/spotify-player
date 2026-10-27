@@ -138,6 +138,7 @@ async fn left_off(
         progress_ms: saved.progress_ms,
         device_id,
         device_name: crate::config::get_config().app_config.device.name.clone(),
+        volume: None,
         is_playing: false,
     }))
 }
@@ -160,6 +161,7 @@ async fn followed_playback(
         progress_ms: remote.position_ms + elapsed.max(0),
         device_id: None,
         device_name: remote.device.clone(),
+        volume: remote.volume,
         is_playing: remote.is_playing,
     }))
 }
@@ -185,6 +187,7 @@ struct Shown {
     progress_ms: i64,
     device_id: Option<String>,
     device_name: String,
+    volume: Option<u32>,
     is_playing: bool,
 }
 
@@ -206,7 +209,7 @@ fn shown_playback(shown: Shown) -> CurrentPlaybackContext {
             is_restricted: false,
             name: shown.device_name,
             _type: DeviceType::Speaker,
-            volume_percent: None,
+            volume_percent: shown.volume,
         },
         repeat_state: RepeatState::Off,
         shuffle_state: false,
