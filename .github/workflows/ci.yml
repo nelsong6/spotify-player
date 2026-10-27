@@ -134,8 +134,8 @@ jobs:
       # publish.ps1 moves the session to a release only when one of them changed
       - name: List the session's sources
         run: >-
-          tr ' ' '\n' < target/release/spotify_player.d
-          | sed -n "s|^$GITHUB_WORKSPACE/||p" | grep -v '^target/' | sort -u
+          tr ' ' '\n' < target/release/spotify_player.d | grep "^$GITHUB_WORKSPACE/"
+          | xargs realpath -m --relative-to="$GITHUB_WORKSPACE" | grep -v '^target/' | sort -u
           > target/release/session-sources.txt
 
       - name: Upload
