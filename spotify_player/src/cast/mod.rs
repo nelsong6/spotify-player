@@ -39,7 +39,8 @@ const SILENCE: Duration = Duration::from_millis(300);
 pub(crate) struct Mute {
     /// Muted here, as the cast server records it
     muted: AtomicBool,
-    /// The session follows something playing elsewhere, which stays silent here unless asked for
+    /// The session follows something playing on another device, which stays silent here unless
+    /// asked for
     following: AtomicBool,
     play_followed: AtomicBool,
 }
@@ -143,8 +144,8 @@ pub fn set_muted(muted: bool) {
     send_client_info(cast, muted);
 }
 
-/// Whether the session follows something playing elsewhere; that plays silently here until asked
-/// for, each time following starts
+/// Whether the session follows something playing on another device; that plays silently here
+/// until asked for, each time following starts
 pub fn set_following(following: bool) {
     let Some(cast) = CAST.get() else {
         return;

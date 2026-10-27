@@ -53,7 +53,15 @@ impl AppClient {
         state: &SharedState,
         playback: crate::screen::SessionPlayback,
     ) -> Result<()> {
-        crate::cast::set_following(playback.following);
+        // what's followed on the session's own speaker is its own player, nothing played along
+        let ours = &config::get_config().app_config.device.name;
+        crate::cast::set_following(
+            playback.following
+                && !playback
+                    .playback
+                    .as_ref()
+                    .is_some_and(|shown| &shown.device.name == ours),
+        );
         state.player.write().queue = playback.queue;
         let new_playback = Self::apply_playback(state, playback.playback, true);
         if playback.left_off || playback.following {
