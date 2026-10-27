@@ -90,6 +90,18 @@ fn handle(state: &SharedState, update: ClusterUpdate) {
     };
     let now = chrono::Utc::now().timestamp_millis();
     let is_playing = player.is_playing && !player.is_paused;
+    // temporary (OpenProject #89): which of Spotify's position fields stays current for a phone
+    tracing::info!(
+        "Connect state from {device}: track={track_uri} playing={is_playing} \
+         position={} position_as_of_timestamp={} timestamp={} duration={} \
+         server_timestamp_ms={} changed_timestamp_ms={} now={now}",
+        player.position,
+        player.position_as_of_timestamp,
+        player.timestamp,
+        player.duration,
+        cluster.server_timestamp_ms,
+        cluster.changed_timestamp_ms,
+    );
     let reported = Report {
         position_ms: player.position_as_of_timestamp,
         at: player.timestamp,
