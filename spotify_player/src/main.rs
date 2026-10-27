@@ -174,6 +174,7 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
         tokio::task::spawn(screen::session::serve(
             config::get_config().session_folder().join("screen.json"),
             state.clone(),
+            client.clone(),
         ));
         tokio::task::spawn(relay::session::serve(client.clone()));
     }

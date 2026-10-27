@@ -43,6 +43,10 @@ pub struct SessionPlayback {
     pub queue: Option<rspotify::model::CurrentUserQueue>,
     /// When the playback's progress was read, in milliseconds since the Unix epoch
     pub at_ms: i64,
+    /// `playback` is where the session left off, which play resumes, because Spotify has
+    /// forgotten the idle device's own
+    #[serde(default)]
+    pub left_off: bool,
 }
 
 /// From the session to every PC, one JSON object per line, sent whenever any of it changes
@@ -63,20 +67,27 @@ struct FromSession {
 #[cfg(feature = "streaming")]
 pub mod session {
     use super::{FromSession, Pc, SessionPlayback, ToSession, PORT};
+    use crate::client::AppClient;
     use crate::state::SharedState;
     use anyhow::Context as _;
+    use rspotify::model::{
+        Actions, Context, CurrentPlaybackContext, CurrentlyPlayingType, Device, DeviceType,
+        FullTrack, PlayableItem, RepeatState, TrackId,
+    };
+    use rspotify::prelude::*;
     use std::path::{Path, PathBuf};
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::sync::watch;
 
     /// Of the session's two slots, the one that gets the port serves the screen; the other waits
     /// for it to exit.
-    pub async fn serve(path: PathBuf, state: SharedState) {
+    pub async fn serve(path: PathBuf, state: SharedState, client: AppClient) {
         let mut logged = false;
         loop {
             match tokio::net::TcpListener::bind(("0.0.0.0", PORT)).await {
                 Ok(listener) => {
-                    return relay(listener, path, crate::listeners::pcs(), playback(state)).await
+                    let playback = playback(state, client);
+                    return relay(listener, path, crate::listeners::pcs(), playback).await;
                 }
                 Err(err) if !logged => {
                     tracing::info!("Waiting for port {PORT} for the shared screen: {err:#}");
@@ -89,30 +100,107 @@ pub mod session {
     }
 
     /// The session's playback, kept current as it changes
-    fn playback(state: SharedState) -> watch::Receiver<Option<serde_json::Value>> {
-        let (sender, receiver) = watch::channel(snapshot(&state));
+    fn playback(
+        state: SharedState,
+        client: AppClient,
+    ) -> watch::Receiver<Option<serde_json::Value>> {
+        let (sender, receiver) = watch::channel(None);
         tokio::spawn(async move {
+            let mut track = None;
             loop {
-                state.playback_changed.notified().await;
-                if sender.send(snapshot(&state)).is_err() {
+                if sender
+                    .send(snapshot(&state, &client, &mut track).await)
+                    .is_err()
+                {
                     return;
                 }
+                state.playback_changed.notified().await;
             }
         });
         receiver
     }
 
-    fn snapshot(state: &SharedState) -> Option<serde_json::Value> {
-        let player = state.player.read();
-        let playback = SessionPlayback {
-            playback: player.current_playback(),
-            queue: player.queue.clone(),
-            at_ms: chrono::Utc::now().timestamp_millis(),
+    /// `track` keeps the saved song, so an idle session asks Spotify for it once
+    async fn snapshot(
+        state: &SharedState,
+        client: &AppClient,
+        track: &mut Option<FullTrack>,
+    ) -> Option<serde_json::Value> {
+        let (playback, queue) = {
+            let player = state.player.read();
+            (player.current_playback(), player.queue.clone())
         };
-        drop(player);
+        let playback = match playback {
+            Some(playback) => SessionPlayback {
+                playback: Some(playback),
+                queue,
+                at_ms: chrono::Utc::now().timestamp_millis(),
+                left_off: false,
+            },
+            None => SessionPlayback {
+                playback: left_off(state, client, track).await,
+                queue: None,
+                at_ms: chrono::Utc::now().timestamp_millis(),
+                left_off: true,
+            },
+        };
         serde_json::to_value(playback)
             .inspect_err(|err| tracing::error!("Failed to serialize the playback: {err:#}"))
             .ok()
+    }
+
+    /// The saved session's song, paused where it was left, as a playback the PCs can show
+    async fn left_off(
+        state: &SharedState,
+        client: &AppClient,
+        track: &mut Option<FullTrack>,
+    ) -> Option<CurrentPlaybackContext> {
+        let (saved, device_id) = {
+            let mut session = state.session.lock();
+            session.sync();
+            (session.session.clone(), session.own_device.clone())
+        };
+        let id = TrackId::from_uri(saved.current_uri.as_deref()?)
+            .ok()?
+            .into_static();
+        if track.as_ref().and_then(|t| t.id.as_ref()) != Some(&id) {
+            match BaseClient::track(&**client, id, None).await {
+                Ok(saved_track) => *track = Some(saved_track),
+                Err(err) => {
+                    tracing::warn!("Failed to get the song the session left off on: {err:#}");
+                    return None;
+                }
+            }
+        }
+        let context = saved.context_uri.and_then(|uri| {
+            let kind = uri.split(':').nth(1)?.to_string();
+            Some(Context {
+                _type: serde_json::from_value(serde_json::Value::String(kind)).ok()?,
+                uri,
+                href: String::new(),
+                external_urls: std::collections::HashMap::new(),
+            })
+        });
+        Some(CurrentPlaybackContext {
+            device: Device {
+                id: device_id,
+                is_active: false,
+                is_private_session: false,
+                is_restricted: false,
+                name: crate::config::get_config().app_config.device.name.clone(),
+                _type: DeviceType::Speaker,
+                volume_percent: None,
+            },
+            repeat_state: RepeatState::Off,
+            shuffle_state: false,
+            context,
+            timestamp: chrono::Utc::now(),
+            progress: Some(chrono::Duration::milliseconds(saved.progress_ms)),
+            is_playing: false,
+            item: track.clone().map(PlayableItem::Track),
+            currently_playing_type: CurrentlyPlayingType::Track,
+            actions: Actions::default(),
+        })
     }
 
     async fn relay(

@@ -2108,7 +2108,12 @@ impl AppClient {
         playback: crate::screen::SessionPlayback,
     ) -> Result<()> {
         state.player.write().queue = playback.queue;
-        if Self::apply_playback(state, playback.playback, true) {
+        let new_playback = Self::apply_playback(state, playback.playback, true);
+        if playback.left_off {
+            // nothing is loaded on Spotify, so play resumes the saved session
+            state.player.write().buffered_playback = None;
+        }
+        if new_playback {
             self.handle_new_playback_event(state).await?;
         }
         Ok(())
