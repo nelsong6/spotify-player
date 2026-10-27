@@ -87,6 +87,10 @@ pub enum Command {
     CycleAsciiCover,
     PlayHere,
     PlayHereOnPc,
+    PlayHereEverywhere,
+    PlayHereNowhere,
+    PlayHereOnlyHere,
+    PlayHereAllButHere,
     FollowSpotify,
     OpenCommandPalette,
 }
@@ -384,7 +388,11 @@ impl Command {
             Self::PlayHere => {
                 "turn play here on or off: play the session's audio on this PC, or only show it (the session pauses when no PC plays it here)"
             }
-            Self::PlayHereOnPc => "open a popup to turn play here on or off for each PC",
+            Self::PlayHereOnPc => "open a popup to turn play here on or off for each PC, or for all at once",
+            Self::PlayHereEverywhere => "turn play here on for every PC",
+            Self::PlayHereNowhere => "turn play here off for every PC (the session pauses)",
+            Self::PlayHereOnlyHere => "turn play here on for this PC and off for every other",
+            Self::PlayHereAllButHere => "turn play here off for this PC and on for every other",
             Self::FollowSpotify => {
                 "follow what Spotify plays, wherever it's driven from, until play takes control back"
             }

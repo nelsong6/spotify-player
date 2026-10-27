@@ -91,21 +91,22 @@ pub fn render_popup(
                 #[cfg(feature = "cast")]
                 let items = {
                     let here = gethostname::gethostname().to_string_lossy().into_owned();
-                    crate::screen::pc::pcs()
+                    let groups = crate::screen::pc::Group::ALL
                         .iter()
-                        .map(|pc| {
-                            let play_here = if pc.muted { "off" } else { "on" };
-                            (
-                                format!("{} | play here: {play_here}", pc.name),
-                                pc.id == here,
-                            )
-                        })
-                        .collect()
+                        .map(|group| (group.label().to_string(), false));
+                    let pcs = crate::screen::pc::pcs().into_iter().map(|pc| {
+                        let play_here = if pc.muted { "off" } else { "on" };
+                        (
+                            format!("{} | play here: {play_here}", pc.name),
+                            pc.id == here,
+                        )
+                    });
+                    groups.chain(pcs).collect()
                 };
                 #[cfg(not(feature = "cast"))]
                 let items = Vec::new();
 
-                let rect = render_list_popup(frame, rect, "PCs", items, 5, ui);
+                let rect = render_list_popup(frame, rect, "PCs", items, 9, ui);
                 (rect, false)
             }
             PopupState::ThemeList(themes, ..) => {
