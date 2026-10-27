@@ -120,6 +120,8 @@ async fn handle(
     } else if path_and_query == "/spt/refresh" && method == Method::POST {
         crate::client::refresh_library();
         Ok(Vec::new())
+    } else if path_and_query == "/spt/mute" && method == Method::POST {
+        mute(&body).await
     } else if path_and_query == "/spt/resume" && method == Method::POST {
         crate::client::until_accepted("resume the radio", || client.resume_saved_session(state))
             .await
@@ -134,6 +136,19 @@ async fn handle(
             reply(StatusCode::BAD_GATEWAY, format!("{err:#}"))
         }
     }
+}
+
+/// Mute or unmute a PC, from `{"pc": <its cast id>, "muted": <bool>}`
+async fn mute(body: &[u8]) -> anyhow::Result<Vec<u8>> {
+    #[derive(serde::Deserialize)]
+    struct Mute {
+        pc: String,
+        muted: bool,
+    }
+    let Mute { pc, muted } = serde_json::from_slice(body).context("parse the request")?;
+    crate::listeners::set_muted(&pc, muted).await?;
+    tracing::info!("{} {pc}", if muted { "Muted" } else { "Unmuted" });
+    Ok(Vec::new())
 }
 
 /// Send a PC's Web API request to Spotify as the session's own

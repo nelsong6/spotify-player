@@ -1,6 +1,6 @@
 //! The session pauses when no PC is left playing it aloud. The Snapcast server that runs it tells
 //! it, over the server's control port, which clients are connected and which are muted. A PC
-//! mutes another through the session, over the same port.
+//! mutes another through the session's relay, which passes it on over the same port.
 
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::LazyLock;

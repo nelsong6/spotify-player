@@ -18,8 +18,6 @@ mod follow;
 mod fzt;
 #[cfg(feature = "streaming")]
 mod handover;
-#[cfg(any(feature = "cast", feature = "streaming"))]
-mod home_auth;
 #[cfg(feature = "streaming")]
 mod keeper;
 mod key;

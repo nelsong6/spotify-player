@@ -321,27 +321,11 @@ async fn serve_pc(
                         }
                         shared.send_modify(|shared| shared.screen = Some(screen));
                     }
-                    ToSession::Mute { pc, muted, token } => {
-                        tokio::spawn(async move {
-                            if let Err(err) = mute(&pc, muted, &token).await {
-                                tracing::warn!("Failed to mute {pc}: {err:#}");
-                            }
-                        });
-                    }
                     ToSession::Follow => follow(),
                 }
             }
         }
     }
-}
-
-async fn mute(pc: &str, muted: bool, token: &str) -> anyhow::Result<()> {
-    crate::home_auth::session::check(token)
-        .await
-        .context("refuse the request")?;
-    crate::listeners::set_muted(pc, muted).await?;
-    tracing::info!("{} {pc}", if muted { "Muted" } else { "Unmuted" });
-    Ok(())
 }
 
 #[cfg(test)]

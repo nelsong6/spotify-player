@@ -189,6 +189,23 @@ impl Relay {
         Ok(())
     }
 
+    /// Have the session mute or unmute a PC, by its cast id
+    pub async fn mute(&self, pc: &str, muted: bool) -> anyhow::Result<()> {
+        let response = self
+            .http
+            .post(format!("{}/spt/mute", self.base))
+            .json(&serde_json::json!({ "pc": pc, "muted": muted }))
+            .send()
+            .await?;
+        let status = response.status();
+        anyhow::ensure!(
+            status.is_success(),
+            "the relay answered {status}: {}",
+            response.text().await.unwrap_or_default()
+        );
+        Ok(())
+    }
+
     /// Have the session load the library from Spotify again
     pub async fn refresh(&self) -> anyhow::Result<()> {
         let response = self
