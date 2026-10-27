@@ -7,12 +7,20 @@ Nelson is the only user. The house is the NAS and the PCs (nelsonpc, upstairspc,
 
 ## The parts
 
-- **The session** (on the NAS) is the radio. It is the only player and the only thing signed in
-  to Spotify. It holds the radio's place, keeps the kept playlists, and stays within its own
-  request budget.
-- **A PC** is a speaker and a screen. It plays the session's audio in sync with the other PCs,
-  and controls the session. It never plays on its own and never talks to Spotify.
+- **The session** (on the NAS) is the radio and its one output device. The music plays there
+  and keeps playing there; only a deliberate act moves it. It is the only player and the only
+  thing signed in to Spotify. It holds the radio's place, keeps the kept playlists, and stays
+  within its own request budget.
+- **A PC** is a client of the session: it shows the radio, controls it, and plays it *here*
+  (aloud, in sync with the other PCs) when play here is on. It never plays on its own and never
+  talks to Spotify.
 - **The screen** is one screen, shown on every PC. One PC at a time controls it.
+
+## Play here
+
+Every spt client chooses whether it plays the session's audio here. Play here off, the client
+still shows the radio and controls it, and the music goes on in the other rooms. The session's
+audio is the same everywhere; only whether a room hears it differs.
 
 ## Features
 
@@ -58,8 +66,8 @@ Every feature spt has, what it does today, and whether it is part of the radio. 
 
 | Feature | Key | What it does today | Radio |
 | --- | --- | --- | --- |
-| Mute this PC | `H` | This PC's speakers go quiet; the screen stays and the other rooms play on. | In |
-| Mute another PC | `P` | The same, for any PC playing the radio. | In |
+| Play here | `H` | Turns play here on or off for this client. | In |
+| Play here on another PC | `P` | Turns play here on or off for any other client, with the relay key every PC holds. | In |
 | This PC's output | none | Plays on Windows' default output and follows a change of it; Windows chooses it, not spt. | In |
 | Another PC's output | none | Nothing; each PC's Windows chooses its own. | Out for now; may change |
 | Spotify devices | `D` | Lists Spotify's devices and moves playback to one, which stops the radio on Home. The radio has no sense of sending its playback elsewhere: every PC is just a client of the session. | Out |
