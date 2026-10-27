@@ -80,6 +80,10 @@ pub struct SessionState {
     last_saved: Option<Instant>,
     /// This instance's integrated player, the only device whose playback it records
     pub own_device: Option<String>,
+    /// In the session, the song a start of the saved session should load; another loaded in its
+    /// place (the song left the playlist) mustn't keep the saved position
+    #[cfg(feature = "streaming")]
+    pub expected: Option<String>,
     /// The session file's modified time when this instance last wrote or read it
     seen: Option<SystemTime>,
 }
@@ -92,13 +96,22 @@ impl SavedSession {
     /// Whether `playback` is this session's: its context, or one of its tracks. Anything else
     /// on the session's player is Spotify's own, such as what it loads when the player connects.
     pub fn holds(&self, playback: &rspotify::model::CurrentPlaybackContext) -> bool {
+        let track = playback
+            .item
+            .as_ref()
+            .and_then(rspotify::model::PlayableItem::id)
+            .map(|id| id.uri());
+        self.holds_uris(
+            playback.context.as_ref().map(|c| c.uri.as_str()),
+            track.as_deref().unwrap_or_default(),
+        )
+    }
+
+    /// [`Self::holds`], for a playback known by its context's and track's URIs
+    pub fn holds_uris(&self, context_uri: Option<&str>, track_uri: &str) -> bool {
         match &self.context_uri {
-            Some(uri) => playback.context.as_ref().is_some_and(|c| &c.uri == uri),
-            None => playback
-                .item
-                .as_ref()
-                .and_then(rspotify::model::PlayableItem::id)
-                .is_some_and(|id| self.uris.contains(&id.uri())),
+            Some(uri) => context_uri == Some(uri.as_str()),
+            None => self.uris.iter().any(|uri| uri == track_uri),
         }
     }
 
@@ -242,6 +255,16 @@ impl SessionState {
         let Some((current_uri, progress_ms)) = playing_item(player) else {
             return;
         };
+        self.record(current_uri, progress_ms, force);
+    }
+
+    /// Record where the radio is, from Spotify playing inside it while the session follows
+    #[cfg(feature = "streaming")]
+    pub fn record_position(&mut self, current_uri: &str, progress_ms: i64) {
+        self.record(current_uri.to_string(), progress_ms, false);
+    }
+
+    fn record(&mut self, current_uri: String, progress_ms: i64, force: bool) {
         let item_changed = self.session.current_uri.as_deref() != Some(current_uri.as_str());
         let due = self.last_saved.is_none_or(|t| t.elapsed() >= SAVE_INTERVAL);
         if !(force || item_changed || due) {

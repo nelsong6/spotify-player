@@ -889,6 +889,10 @@ fn handle_global_command(
         Command::MutePc => {
             ui.popup = Some(PopupState::PcList(ListState::default()));
         }
+        Command::FollowSpotify => {
+            #[cfg(feature = "cast")]
+            crate::screen::pc::follow_spotify();
+        }
         Command::SwitchDevice => {
             ui.popup = Some(PopupState::DeviceList(ListState::default()));
             client_pub.send(ClientRequest::GetDevices)?;

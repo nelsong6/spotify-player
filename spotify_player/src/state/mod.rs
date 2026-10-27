@@ -43,6 +43,10 @@ pub struct State {
     #[cfg(feature = "streaming")]
     pub playback_changed: tokio::sync::Notify,
 
+    /// In the session, whether it follows Spotify rather than driving it
+    #[cfg(feature = "streaming")]
+    pub follow: Mutex<crate::follow::Follow>,
+
     pub logs: Arc<Mutex<VecDeque<String>>>,
 
     /// Text of the last frame drawn, for `get key app`
@@ -75,6 +79,8 @@ impl State {
             ))),
             #[cfg(feature = "streaming")]
             playback_changed: tokio::sync::Notify::new(),
+            #[cfg(feature = "streaming")]
+            follow: Mutex::new(crate::follow::Follow::default()),
 
             logs: log_buffer,
             screen: Mutex::new(Vec::new()),

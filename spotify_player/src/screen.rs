@@ -25,6 +25,8 @@ enum ToSession {
         muted: bool,
         token: String,
     },
+    /// Follow Spotify instead of driving it, until spt drives again
+    Follow,
 }
 
 /// A PC playing the session's audio, as the cast server knows it
@@ -47,6 +49,10 @@ pub struct SessionPlayback {
     /// forgotten the idle device's own
     #[serde(default)]
     pub left_off: bool,
+    /// Something else drives Spotify and `playback` is what it plays; play takes control back and
+    /// resumes the radio
+    #[serde(default)]
+    pub following: bool,
 }
 
 /// From the session to every PC, one JSON object per line, sent whenever any of it changes
@@ -86,8 +92,12 @@ pub mod session {
         loop {
             match tokio::net::TcpListener::bind(("0.0.0.0", PORT)).await {
                 Ok(listener) => {
+                    let follow: OnFollow = std::sync::Arc::new({
+                        let state = state.clone();
+                        move || crate::follow::start(&state)
+                    });
                     let playback = playback(state, client);
-                    return relay(listener, path, crate::listeners::pcs(), playback).await;
+                    return relay(listener, path, crate::listeners::pcs(), playback, follow).await;
                 }
                 Err(err) if !logged => {
                     tracing::info!("Waiting for port {PORT} for the shared screen: {err:#}");
@@ -120,12 +130,30 @@ pub mod session {
         receiver
     }
 
-    /// `track` keeps the saved song, so an idle session asks Spotify for it once
+    /// `track` keeps the last song shown that the session's own player doesn't report, so Spotify
+    /// is asked for each such song once
     async fn snapshot(
         state: &SharedState,
         client: &AppClient,
         track: &mut Option<FullTrack>,
     ) -> Option<serde_json::Value> {
+        let followed = {
+            let follow = state.follow.lock();
+            follow.following.then(|| follow.remote.clone())
+        };
+        if let Some(remote) = followed {
+            let playback = match remote {
+                Some(remote) => followed_playback(client, track, &remote).await,
+                None => None,
+            };
+            return to_json(SessionPlayback {
+                playback,
+                queue: None,
+                at_ms: chrono::Utc::now().timestamp_millis(),
+                left_off: false,
+                following: true,
+            });
+        }
         // Spotify's playback is the radio only on the session's own player, playing the saved
         // session; anything else (a phone, what Spotify loads on connecting) isn't
         let (own, saved) = {
@@ -150,14 +178,20 @@ pub mod session {
                 queue,
                 at_ms: chrono::Utc::now().timestamp_millis(),
                 left_off: false,
+                following: false,
             },
             None => SessionPlayback {
                 playback: left_off(state, client, track).await,
                 queue: None,
                 at_ms: chrono::Utc::now().timestamp_millis(),
                 left_off: true,
+                following: false,
             },
         };
+        to_json(playback)
+    }
+
+    fn to_json(playback: SessionPlayback) -> Option<serde_json::Value> {
         serde_json::to_value(playback)
             .inspect_err(|err| tracing::error!("Failed to serialize the playback: {err:#}"))
             .ok()
@@ -174,19 +208,69 @@ pub mod session {
             session.sync();
             (session.session.clone(), session.own_device.clone())
         };
-        let id = TrackId::from_uri(saved.current_uri.as_deref()?)
-            .ok()?
-            .into_static();
+        let song = song(client, track, saved.current_uri.as_deref()?).await?;
+        Some(shown_playback(Shown {
+            song,
+            context_uri: saved.context_uri,
+            progress_ms: saved.progress_ms,
+            device_id,
+            device_name: crate::config::get_config().app_config.device.name.clone(),
+            is_playing: false,
+        }))
+    }
+
+    /// What Spotify plays on the device driving it, as a playback the PCs can show
+    async fn followed_playback(
+        client: &AppClient,
+        track: &mut Option<FullTrack>,
+        remote: &crate::follow::Remote,
+    ) -> Option<CurrentPlaybackContext> {
+        let song = song(client, track, &remote.track_uri).await?;
+        let elapsed = if remote.is_playing {
+            chrono::Utc::now().timestamp_millis() - remote.at_ms
+        } else {
+            0
+        };
+        Some(shown_playback(Shown {
+            song,
+            context_uri: remote.context_uri.clone(),
+            progress_ms: remote.position_ms + elapsed.max(0),
+            device_id: None,
+            device_name: remote.device.clone(),
+            is_playing: remote.is_playing,
+        }))
+    }
+
+    /// A song's details, asking Spotify only for a song not shown last
+    async fn song(
+        client: &AppClient,
+        track: &mut Option<FullTrack>,
+        uri: &str,
+    ) -> Option<FullTrack> {
+        let id = TrackId::from_uri(uri).ok()?.into_static();
         if track.as_ref().and_then(|t| t.id.as_ref()) != Some(&id) {
             match BaseClient::track(&**client, id, None).await {
-                Ok(saved_track) => *track = Some(saved_track),
+                Ok(song) => *track = Some(song),
                 Err(err) => {
-                    tracing::warn!("Failed to get the song the session left off on: {err:#}");
+                    tracing::warn!("Failed to get the song {uri}: {err:#}");
                     return None;
                 }
             }
         }
-        let context = saved.context_uri.and_then(|uri| {
+        track.clone()
+    }
+
+    struct Shown {
+        song: FullTrack,
+        context_uri: Option<String>,
+        progress_ms: i64,
+        device_id: Option<String>,
+        device_name: String,
+        is_playing: bool,
+    }
+
+    fn shown_playback(shown: Shown) -> CurrentPlaybackContext {
+        let context = shown.context_uri.and_then(|uri| {
             let kind = uri.split(':').nth(1)?.to_string();
             Some(Context {
                 _type: serde_json::from_value(serde_json::Value::String(kind)).ok()?,
@@ -195,13 +279,13 @@ pub mod session {
                 external_urls: std::collections::HashMap::new(),
             })
         });
-        Some(CurrentPlaybackContext {
+        CurrentPlaybackContext {
             device: Device {
-                id: device_id,
-                is_active: false,
+                id: shown.device_id,
+                is_active: shown.is_playing,
                 is_private_session: false,
                 is_restricted: false,
-                name: crate::config::get_config().app_config.device.name.clone(),
+                name: shown.device_name,
                 _type: DeviceType::Speaker,
                 volume_percent: None,
             },
@@ -209,19 +293,23 @@ pub mod session {
             shuffle_state: false,
             context,
             timestamp: chrono::Utc::now(),
-            progress: Some(chrono::Duration::milliseconds(saved.progress_ms)),
-            is_playing: false,
-            item: track.clone().map(PlayableItem::Track),
+            progress: Some(chrono::Duration::milliseconds(shown.progress_ms)),
+            is_playing: shown.is_playing,
+            item: Some(PlayableItem::Track(shown.song)),
             currently_playing_type: CurrentlyPlayingType::Track,
             actions: Actions::default(),
-        })
+        }
     }
+
+    /// What the session does when a PC asks it to follow Spotify
+    type OnFollow = std::sync::Arc<dyn Fn() + Send + Sync>;
 
     async fn relay(
         listener: tokio::net::TcpListener,
         path: PathBuf,
         mut pcs: watch::Receiver<Vec<Pc>>,
         mut playback: watch::Receiver<Option<serde_json::Value>>,
+        follow: OnFollow,
     ) {
         let screen = std::fs::read_to_string(&path)
             .ok()
@@ -260,8 +348,9 @@ pub mod session {
                 Ok((stream, addr)) => {
                     let shared = shared.clone();
                     let path = path.clone();
+                    let follow = follow.clone();
                     tokio::spawn(async move {
-                        if let Err(err) = serve_pc(stream, &shared, &path).await {
+                        if let Err(err) = serve_pc(stream, &shared, &path, &follow).await {
                             tracing::warn!(
                                 "The shared screen's connection to {addr} ended: {err:#}"
                             );
@@ -277,6 +366,7 @@ pub mod session {
         stream: tokio::net::TcpStream,
         shared: &watch::Sender<FromSession>,
         path: &Path,
+        follow: &OnFollow,
     ) -> anyhow::Result<()> {
         let (reader, mut writer) = stream.into_split();
         let mut lines = BufReader::new(reader).lines();
@@ -315,6 +405,7 @@ pub mod session {
                                 }
                             });
                         }
+                        ToSession::Follow => follow(),
                     }
                 }
             }
@@ -368,7 +459,13 @@ pub mod session {
             let addr = listener.local_addr().unwrap();
             let (pcs, pcs_rx) = watch::channel(Vec::new());
             let (playback, playback_rx) = watch::channel(None);
-            tokio::spawn(relay(listener, path.clone(), pcs_rx, playback_rx));
+            tokio::spawn(relay(
+                listener,
+                path.clone(),
+                pcs_rx,
+                playback_rx,
+                std::sync::Arc::new(|| {}),
+            ));
 
             let (mut a_in, mut a_out) = pc(addr).await;
             let (mut b_in, mut b_out) = pc(addr).await;
@@ -563,6 +660,16 @@ pub mod pc {
         LINK.get().is_some_and(|link| {
             link.connected.load(Ordering::Relaxed) && !link.in_control.load(Ordering::Relaxed)
         })
+    }
+
+    /// Have the session follow Spotify instead of driving it
+    pub fn follow_spotify() {
+        let Some(link) = LINK.get() else {
+            return;
+        };
+        if let Err(err) = send(link, &ToSession::Follow) {
+            tracing::warn!("Failed to ask the session to follow Spotify: {err:#}");
+        }
     }
 
     /// Make this PC the one in control

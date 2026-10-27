@@ -355,6 +355,10 @@ impl Default for KeymapConfig {
                     key_sequence: "P".into(),
                     command: Command::MutePc,
                 },
+                Keymap {
+                    key_sequence: "F".into(),
+                    command: Command::FollowSpotify,
+                },
             ],
         }
     }

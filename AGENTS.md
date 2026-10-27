@@ -35,6 +35,7 @@ This file guides coding agents when working in this repository.
 | `fzt.rs`                      | Loads fzt (`fzt.dll`, fzt-terminal's `cmd/fztlib`) and wraps its JSON calls |
 | `keeper.rs`                   | The session's job of trimming played songs and refilling radio playlists    |
 | `relay.rs`                    | The session's relay: a PC's only way to Spotify, behind a key on the NAS    |
+| `follow.rs`                   | Drive and follow: the session follows Spotify when something else drives it |
 | `play_report.rs`              | Reports the session's plays to Spotify (feature-gated)                      |
 | `ui/streaming.rs`             | FFT audio visualizer: `Analyzer`, `VisBands`, visualization page            |
 | `ui/ascii_cover.rs`           | ASCII album cover beside the bars, pulsing with the bass (feature-gated)    |
@@ -219,8 +220,16 @@ Working on the fork:
   saved session otherwise (`screen.rs` pushes it marked `left_off` when Spotify holds nothing
   for the session's player, as when Spotify drops the idle speaker). Spotify playing elsewhere,
   a phone say, changes nothing on screen. Play resumes the radio's song on the session's
-  speaker, never on Spotify's active device. The one planned exception is a Jam mode
-  (OpenProject #87).
+  speaker, never on Spotify's active device. A PC's play asks the session to resume the radio
+  (the relay's `/spt/resume`), so its resume logic applies wherever play is pressed.
+- Drive and follow (decided 2026-10-26, OpenProject #86): spt drives the session by default.
+  When something else drives Spotify (a phone, a Jam), the session follows (`follow.rs`): it
+  reads Spotify's connect-state pushes (`hm://connect-state/v1/cluster`, the dealer stream
+  librespot's own spirc reads), so following costs no Web API calls, and the PCs show what
+  Spotify plays while the radio stays put. Play takes control back. While following, Spotify
+  playing inside the radio's playlist moves the radio's saved place (the catch-up). The keeper
+  takes the radio's position from the session and never removes the radio's song: it had
+  trimmed a half-played one by Spotify's listening history, leaving the saved place on nothing.
 - The PCs' sync is snapclient's algorithm (`cast/stream.rs`), timed from cpal's callback
   timestamps (when the buffer reaches the speaker). WASAPI shared mode takes only the
   device's rate, so the 44.1 kHz stream is resampled to it on arrival (`cast/resample.rs`).

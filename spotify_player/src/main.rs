@@ -6,6 +6,8 @@ mod client;
 mod command;
 mod config;
 mod event;
+#[cfg(feature = "streaming")]
+mod follow;
 #[allow(unsafe_code)] // loads fzt's C library
 mod fzt;
 #[cfg(feature = "streaming")]
@@ -179,7 +181,7 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
             state.clone(),
             client.clone(),
         ));
-        tokio::task::spawn(relay::session::serve(client.clone()));
+        tokio::task::spawn(relay::session::serve(client.clone(), state.clone()));
     }
 
     // player event watcher task

@@ -468,6 +468,16 @@ impl AppClient {
         Ok(())
     }
 
+    /// Move the session's player to `position_ms` in the song it has loaded
+    #[cfg(feature = "streaming")]
+    pub fn seek_player(&self, position_ms: u32) {
+        if let Some(spirc) = self.stream_conn.lock().as_ref() {
+            if let Err(err) = spirc.set_position_ms(position_ms) {
+                tracing::warn!("Failed to seek the player: {err:#}");
+            }
+        }
+    }
+
     /// Pause the session's player, if a connection exists.
     ///
     /// Returns `true` if a streaming connection was present and the pause
@@ -1412,6 +1422,10 @@ impl AppClient {
             saved.current_uri,
             saved.progress_ms
         );
+        #[cfg(feature = "streaming")]
+        {
+            state.session.lock().expected.clone_from(&saved.current_uri);
+        }
         self.start_saved_session(&saved, device_id).await?;
         self.pause_playback(Some(device_id)).await?;
         // done only once Spotify has taken it, so a refusal is sent again
@@ -1422,7 +1436,12 @@ impl AppClient {
 
     /// Play the session again from where it left off, when Spotify no longer has a playback
     /// (the device went inactive after a long pause, or another device took over)
-    async fn resume_saved_session(&self, state: &SharedState) -> Result<()> {
+    pub async fn resume_saved_session(&self, state: &SharedState) -> Result<()> {
+        // the radio is the session's to resume, catching up and checking what loads
+        #[cfg(feature = "cast")]
+        if let Some(relay) = &self.relay {
+            return relay.resume().await;
+        }
         let saved = {
             let mut session = state.session.lock();
             session.sync();
@@ -1440,6 +1459,10 @@ impl AppClient {
             saved.current_uri,
             saved.progress_ms
         );
+        #[cfg(feature = "streaming")]
+        if state.is_session {
+            state.session.lock().expected.clone_from(&saved.current_uri);
+        }
         self.start_saved_session(&saved, &device_id).await
     }
 
@@ -2185,8 +2208,9 @@ impl AppClient {
     ) -> Result<()> {
         state.player.write().queue = playback.queue;
         let new_playback = Self::apply_playback(state, playback.playback, true);
-        if playback.left_off {
-            // nothing is loaded on Spotify, so play resumes the saved session
+        if playback.left_off || playback.following {
+            // nothing of ours is loaded on Spotify, so play resumes the saved session, taking
+            // control back
             state.player.write().buffered_playback = None;
         }
         if new_playback {
