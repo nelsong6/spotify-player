@@ -50,7 +50,9 @@ $activeDir = "\\NelsonNAS\tools\spt\$active"
 $moveSession = $true
 if ($active -and (Test-Path "$activeDir\session-sources.txt")) {
     $activeCommit = (Get-Content "$activeDir\release.json" -Raw | ConvertFrom-Json).commit
-    $compiled = @(Get-Content "$activeDir\session-sources.txt") + @(Get-Content "$dir\session-sources.txt") +
+    # this release's list as published: publish-tool has moved the downloaded files by now
+    $compiled = @(Get-Content "$activeDir\session-sources.txt") +
+        @(Get-Content "\\NelsonNAS\tools\spt\$version\session-sources.txt") +
         'Cargo.toml', 'Cargo.lock', 'spotify_player/Cargo.toml'
     $changed = @(git diff --name-only $activeCommit $commit | Where-Object { $_ -in $compiled })
     $moveSession = $changed.Count -gt 0
