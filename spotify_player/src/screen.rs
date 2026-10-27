@@ -126,13 +126,19 @@ pub mod session {
         client: &AppClient,
         track: &mut Option<FullTrack>,
     ) -> Option<serde_json::Value> {
-        // Spotify's playback is ours only on the session's own player; anything else Spotify
-        // plays (a phone, another app) isn't the radio
-        let own = state.session.lock().own_device.clone();
+        // Spotify's playback is the radio only on the session's own player, playing the saved
+        // session; anything else (a phone, what Spotify loads on connecting) isn't
+        let (own, saved) = {
+            let mut session = state.session.lock();
+            session.sync();
+            (session.own_device.clone(), session.session.clone())
+        };
         let (playback, queue) = {
             let player = state.player.read();
             match player.current_playback() {
-                Some(playback) if own.is_some() && playback.device.id == own => {
+                Some(playback)
+                    if own.is_some() && playback.device.id == own && saved.holds(&playback) =>
+                {
                     (Some(playback), player.queue.clone())
                 }
                 _ => (None, None),
