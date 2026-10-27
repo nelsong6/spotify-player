@@ -21,7 +21,9 @@ pub struct Remote {
     pub is_playing: bool,
     /// The device's volume, in percent
     pub volume: Option<u32>,
-    /// When the device last reported its position, as Spotify passed it on
+    /// The device's last report, as Spotify passed it on: the position, and the moment it was
+    /// taken
+    reported_position_ms: i64,
     reported_at: i64,
 }
 
@@ -130,6 +132,7 @@ fn handle(state: &SharedState, update: ClusterUpdate) {
         at_ms: now,
         is_playing,
         volume,
+        reported_position_ms: reported.position_ms,
         reported_at: reported.at,
     };
     let seen = match (ours, held, is_playing) {
@@ -164,10 +167,12 @@ struct Report {
     duration_ms: i64,
 }
 
-/// Where the followed device is in its song now. A phone can go on reporting a new song, or play
-/// and pause, without updating when its position was taken; that stale moment carried forward
-/// runs the position past the song's end. A report counts only when its moment changed: otherwise
-/// the position is the session's own, from 0 at a new song and moving while it plays.
+/// Where the followed device is in its song now. A device reports its position when its state
+/// changes (a new song, a pause, a resume, a seek), but a phone can leave the moment it gives for
+/// that position stale, minutes old, so counting from that moment runs past the song's end. A
+/// report is taken as of when it arrives instead, unless its moment is that recent anyway, and the
+/// position moves on from there while the device plays. Updates that bring no new report (another
+/// device's change) leave the count running.
 fn position(
     last: Option<&Remote>,
     track_uri: &str,
@@ -175,26 +180,29 @@ fn position(
     is_playing: bool,
     now: i64,
 ) -> i64 {
-    let fresh = last.is_none_or(|last| last.reported_at != reported.at);
-    let position = if fresh {
-        let elapsed = if is_playing {
-            (now - reported.at).max(0)
+    /// How far a report's moment may lag its arrival and still be taken as given
+    const RECENT_MS: i64 = 5_000;
+    let new_report = last.is_none_or(|last| {
+        last.track_uri != track_uri
+            || last.is_playing != is_playing
+            || last.reported_position_ms != reported.position_ms
+            || last.reported_at != reported.at
+    });
+    let position = if new_report {
+        let lag = now - reported.at;
+        if is_playing && (0..=RECENT_MS).contains(&lag) {
+            reported.position_ms + lag
         } else {
-            0
-        };
-        reported.position_ms + elapsed
-    } else {
-        match last {
-            Some(last) if last.track_uri == track_uri => {
-                let elapsed = if last.is_playing { now - last.at_ms } else { 0 };
-                last.position_ms + elapsed.max(0)
-            }
-            _ => 0,
+            reported.position_ms
         }
+    } else {
+        last.map_or(reported.position_ms, |last| {
+            let elapsed = if last.is_playing { now - last.at_ms } else { 0 };
+            last.position_ms + elapsed.max(0)
+        })
     };
-    if reported.duration_ms > 0 && position > reported.duration_ms {
-        // past the song's end: nothing reported here is usable
-        0
+    if reported.duration_ms > 0 {
+        position.clamp(0, reported.duration_ms)
     } else {
         position.max(0)
     }
@@ -232,7 +240,7 @@ mod tests {
         position_ms: i64,
         at_ms: i64,
         is_playing: bool,
-        reported_at: i64,
+        reported: &Report,
     ) -> Remote {
         Remote {
             device: "Pixel 6".to_string(),
@@ -242,7 +250,8 @@ mod tests {
             at_ms,
             is_playing,
             volume: None,
-            reported_at,
+            reported_position_ms: reported.position_ms,
+            reported_at: reported.at,
         }
     }
 
@@ -255,43 +264,55 @@ mod tests {
     }
 
     #[test]
-    fn a_fresh_report_is_carried_forward_while_playing() {
+    fn a_recent_report_counts_from_its_moment() {
         assert_eq!(
-            position(None, "a", &report(10_000, 1_000), true, 6_000),
-            15_000
+            position(None, "a", &report(10_000, 1_000), true, 4_000),
+            13_000
         );
         assert_eq!(
-            position(None, "a", &report(10_000, 1_000), false, 6_000),
+            position(None, "a", &report(10_000, 1_000), false, 4_000),
             10_000
         );
     }
 
     #[test]
-    fn a_stale_report_gives_way_to_the_sessions_own_estimate() {
-        // the phone moved to a new song without a new report: from 0
-        let was = last("a", 120_000, 50_000, true, 1_000);
+    fn a_report_with_a_stale_moment_counts_from_its_arrival() {
+        // a new song, its moment minutes old: as of now, not run past the end
+        let was = last("a", 120_000, 50_000, true, &report(0, 1_000));
         assert_eq!(
-            position(Some(&was), "b", &report(0, 1_000), true, 60_000),
+            position(Some(&was), "b", &report(0, 1_000), true, 600_000),
             0
         );
-        // the same song, still unreported: the estimate moves on while playing
+        // a resume at 2:16 with the same stale moment
+        let paused = last("b", 136_000, 50_000, false, &report(136_000, 1_000));
         assert_eq!(
-            position(Some(&was), "a", &report(0, 1_000), true, 60_000),
-            130_000
-        );
-        // and holds while paused
-        let paused = last("a", 120_000, 50_000, false, 1_000);
-        assert_eq!(
-            position(Some(&paused), "a", &report(0, 1_000), true, 60_000),
-            120_000
+            position(Some(&paused), "b", &report(136_000, 1_000), true, 600_000),
+            136_000
         );
     }
 
     #[test]
-    fn a_position_past_the_songs_end_is_never_used() {
+    fn an_update_without_a_new_report_leaves_the_count_running() {
+        let reported = report(30_000, 1_000);
+        let playing = last("a", 30_000, 50_000, true, &reported);
         assert_eq!(
-            position(None, "a", &report(290_000, 1_000), true, 600_000),
-            0
+            position(Some(&playing), "a", &reported, true, 60_000),
+            40_000
+        );
+        let paused = last("a", 30_000, 50_000, false, &reported);
+        assert_eq!(
+            position(Some(&paused), "a", &reported, false, 60_000),
+            30_000
+        );
+    }
+
+    #[test]
+    fn a_position_never_runs_past_the_songs_end() {
+        let reported = report(290_000, 1_000);
+        let playing = last("a", 295_000, 50_000, true, &reported);
+        assert_eq!(
+            position(Some(&playing), "a", &reported, true, 80_000),
+            300_000
         );
     }
 
