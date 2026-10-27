@@ -96,6 +96,10 @@ impl Default for KeymapConfig {
                     command: Command::RefreshPlayback,
                 },
                 Keymap {
+                    key_sequence: "R".into(),
+                    command: Command::RefreshLibrary,
+                },
+                Keymap {
                     key_sequence: "/".into(),
                     command: Command::OpenCommandPalette,
                 },

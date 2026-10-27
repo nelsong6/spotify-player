@@ -171,6 +171,11 @@ Spotify behaviors this fork depends on, each verified live (2026-10-23 to 10-25)
 - **One broken playlist empties `/me/playlists`**: a page containing a playlist Spotify
   answers 502 for comes back with no items, so the library shows no playlists.
 - **Recently played** keeps the last 50 plays, each with its context; skipped songs count.
+- **A development-mode app has two limits**: the 30-second rate limit (waits of 4–29 s) and a
+  quota shared by every development-mode app on the developer account, whose refusal body says
+  `"reason": "QUOTA_EXCEEDED"`. Neither size is published. On 2026-10-26 a day of polling from
+  three instances, then a publish whose restart burst the library load, earned a 68,401 s wait
+  (about 19 h) on spt's app. The middleware now logs every refusal's body.
 - **ncspot's client ID accepts only `/ncspot_login`** as its redirect path (any loopback
   port); `/login` gets "redirect_uri: no matching configuration". Upstream still sends
   `/login` for the fallback client, which only shows on a first sign-in, since refreshing a
@@ -224,6 +229,11 @@ Working on the fork:
   a phone say, changes nothing on screen. Play resumes the radio's song on the session's
   speaker, never on Spotify's active device. A PC's play asks the session to resume the radio
   (the relay's `/spt/resume`), so its resume logic applies wherever play is pressed.
+- Spotify as a backend (decided 2026-10-27, OpenProject #88): spt is a home radio that uses
+  Spotify as its backend, not a live Spotify player, so the library need not be current. The
+  session keeps library answers on disk until a refresh (`R`) or until spt itself changes them
+  (`client/budget.rs`), and sends every request under its own budget; a playlist edited on a phone
+  shows in spt after a refresh. Don't make the library live again.
 - Drive and follow (decided 2026-10-26, OpenProject #86): spt drives the session by default.
   When something else drives Spotify (a phone, a Jam), the session follows (`follow.rs`): it
   reads Spotify's connect-state pushes (`hm://connect-state/v1/cluster`, the dealer stream
@@ -246,5 +256,8 @@ Working on the fork:
   through a `.cmd` file holding the full command line: quoted Windows paths passed straight
   to `new-session` were dropped, and the instance silently used the real cache. A test with
   an empty `-C` folder runs every first-time sign-in.
+- An untested change is tried before CI finishes: build the PC's exe here (`-j 4`, this is the
+  gaming PC) and run it against the live session; CI still gates the merge. The session's Linux
+  build comes only from CI's `linux-build`.
 - No Actions run on a PR, not even a queued one: GitHub may have disabled workflows on
   this fork (its Actions page says so and has the button to re-enable them).

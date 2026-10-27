@@ -11,6 +11,8 @@ use tokio::{
     time::Instant,
 };
 
+use super::budget;
+
 const GET_DEDUPLICATION_WINDOW: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Debug)]
@@ -275,6 +277,30 @@ impl SpotifyApiMiddleware {
                     .is_some_and(|suffix| suffix.starts_with('/')))
     }
 
+    /// `url` relative to the API, with its query
+    fn endpoint(&self, url: &Url) -> String {
+        let path = url
+            .path()
+            .strip_prefix(self.api_base_url.path().trim_end_matches('/'))
+            .unwrap_or(url.path())
+            .trim_start_matches('/');
+        match url.query() {
+            Some(query) => format!("{path}?{query}"),
+            None => path.to_string(),
+        }
+    }
+
+    /// A kept library answer, as Spotify gave it
+    fn kept_response(url: &Url, body: Vec<u8>) -> Response {
+        http::Response::builder()
+            .status(StatusCode::OK)
+            .header(http::header::CONTENT_TYPE, "application/json")
+            .url(url.clone())
+            .body(body)
+            .expect("a kept answer is a valid response")
+            .into()
+    }
+
     fn retry_after(headers: &HeaderMap) -> Option<Duration> {
         headers
             .get(RETRY_AFTER)
@@ -317,6 +343,7 @@ impl SpotifyApiMiddleware {
         request: Request,
         extensions: &mut Extensions,
         next: Next<'_>,
+        library: Option<&str>,
     ) -> reqwest_middleware::Result<Response> {
         let url = request.url();
         match self.requests.register_get(Self::get_request_key(url)).await {
@@ -336,6 +363,9 @@ impl SpotifyApiMiddleware {
                 match response {
                     Ok(response) => match CachedResponse::from_response(response).await {
                         Ok(response) => {
+                            if let Some(key) = library.filter(|_| response.status.is_success()) {
+                                budget::keep(key, &response.body);
+                            }
                             leader.publish(SharedGetResult::Response(response.clone()));
                             Ok(response.to_response())
                         }
@@ -377,6 +407,7 @@ impl SpotifyApiMiddleware {
                 )));
             };
 
+            budget::wait_turn(url.as_str()).await;
             let response = next.clone().run(request, extensions).await?;
             let response = self.observe_rate_limit(response, &Method::GET, url).await?;
 
@@ -404,6 +435,14 @@ impl Middleware for SpotifyApiMiddleware {
         if !self.is_api_request(request.url()) {
             return next.run(request, extensions).await;
         }
+        if request.method() == Method::GET {
+            let key = budget::endpoint_key(&self.endpoint(request.url()));
+            if budget::is_library(&key) {
+                if let Some(body) = budget::kept(&key) {
+                    return Ok(Self::kept_response(request.url(), body));
+                }
+            }
+        }
         if self.refuse_while_limited {
             if let Some(refusal) = self.refusal(request.url()).await {
                 return Ok(refusal);
@@ -412,14 +451,20 @@ impl Middleware for SpotifyApiMiddleware {
 
         let method = request.method().to_owned();
         let url = request.url().to_owned();
+        let key = budget::endpoint_key(&self.endpoint(&url));
 
         if method == Method::GET {
-            return self.run_get(request, extensions, next).await;
+            let library = budget::is_library(&key).then_some(key.as_str());
+            return self.run_get(request, extensions, next, library).await;
         }
 
         tracing::info!(%method, %url, "Making a Spotify Web API request");
 
+        budget::wait_turn(url.as_str()).await;
         let response = next.run(request, extensions).await?;
+        if response.status().is_success() {
+            budget::changed(&key);
+        }
         self.observe_rate_limit(response, &method, &url).await
     }
 }

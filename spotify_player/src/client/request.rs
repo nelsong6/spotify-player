@@ -26,6 +26,8 @@ pub enum ClientRequest {
     GetDevices,
     GetBrowseCategories,
     GetBrowseCategoryPlaylists(Category),
+    /// Forget the kept library and load it from Spotify again
+    RefreshLibrary,
     GetUserPlaylists,
     GetUserSavedAlbums,
     GetUserSavedShows,
