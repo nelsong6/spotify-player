@@ -175,7 +175,11 @@ pub async fn new_connection(
         "Initializing a new integrated player with device_id={}",
         session.device_id()
     );
-    state.session.lock().own_device = Some(session.device_id().to_string());
+    {
+        let mut recorded = state.session.lock();
+        recorded.own_device = Some(session.device_id().to_string());
+        recorded.own_volume = Some(volume_percent(mixer.volume()));
+    }
     if let Err(err) = crate::handover::connected(session.device_id()) {
         tracing::error!("Failed to ask the session to hand over: {err:#}");
     }
@@ -240,6 +244,9 @@ pub async fn new_connection(
                     .map(|c| c.uri.clone())
                     .unwrap_or_default();
                 play_reporter.handle(&event, &session, &context_uri);
+                if let player::PlayerEvent::VolumeChanged { volume } = event {
+                    state.session.lock().own_volume = Some(volume_percent(volume));
+                }
                 // the session asks Spotify for its playback only when its player reports a
                 // change; these have no `spotify_player` event of their own
                 if matches!(
@@ -360,4 +367,8 @@ pub async fn new_connection(
     tracing::info!("New streaming connection has been established!");
 
     Ok(spirc)
+}
+
+fn volume_percent(volume: u16) -> u32 {
+    u32::from(volume) * 100 / 65535
 }

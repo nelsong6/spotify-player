@@ -13,7 +13,7 @@ use tracing::Instrument;
 
 use crate::{
     cli::Request,
-    client::{show_radio_page, AppClient, PlayerRequest},
+    client::{show_radio_page, AppClient, ClientRequest, PlayerRequest},
     config::{self, get_cache_folder_path},
     state::{
         AlbumId, ArtistId, Context, ContextId, Id, PlayableId, Playback, PlaybackMetadata,
@@ -540,29 +540,23 @@ async fn handle_playback_request(
         }
     };
 
-    if let (Some(state), PlayerRequest::StartPlayback(started, _)) = (state, &player_request) {
-        state.session.lock().record_start(started);
-    }
-
     if let Some(state) = state {
         // A non-null application's state indicates there is a running application instance.
         // To reduce the latency of the CLI command, the player request is handled asynchronously
-        // knowing that the application will outlive the asynchronous task.
+        // knowing that the application will outlive the asynchronous task. It takes the
+        // application's own path, so play from the command line resumes the radio as the
+        // screen's play does.
         tokio::task::spawn({
             let client = client.clone();
             let state = state.clone();
             async move {
-                match client.handle_player_request(player_request, playback).await {
-                    Ok(playback) => {
-                        // update application's states
-                        state.player.write().buffered_playback = playback;
-                        client.update_playback_non_blocking(&state);
-                    }
-                    Err(err) => {
-                        tracing::warn!(
-                            "Failed to handle a player request for playback CLI command: {err:#}"
-                        );
-                    }
+                if let Err(err) = client
+                    .handle_request(&state, ClientRequest::Player(player_request))
+                    .await
+                {
+                    tracing::warn!(
+                        "Failed to handle a player request for playback CLI command: {err:#}"
+                    );
                 }
             }
         });

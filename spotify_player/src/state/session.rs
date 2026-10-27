@@ -80,6 +80,9 @@ pub struct SessionState {
     last_saved: Option<Instant>,
     /// This instance's integrated player, the only device whose playback it records
     pub own_device: Option<String>,
+    /// The integrated player's volume in percent, shown at the saved spot
+    #[cfg(feature = "streaming")]
+    pub own_volume: Option<u32>,
     /// In the session, the song a start of the saved session should load; another loaded in its
     /// place (the song left the playlist) mustn't keep the saved position
     #[cfg(feature = "streaming")]
