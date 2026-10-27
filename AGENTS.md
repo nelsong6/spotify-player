@@ -179,8 +179,9 @@ Working on the fork:
 
 - `publish.ps1` publishes CI's build of the pushed commit to `\NelsonNAS\tools\spt`:
   the Windows exe plus `fzt.dll` (pinned in `fzt.lock`, from fzt-terminal releases) and the
-  Linux binary `nas/` runs for the session, then restarts only the session's waiting slot,
-  which takes over between songs
+  Linux binary `nas/` runs for the session, then, when the session's program changed (a file
+  in CI's `session-sources.txt`, from Cargo's dependency file, or the dependencies), restarts
+  only the session's waiting slot, which takes over between songs
   (`handover.rs`, OpenProject #78), and restarts every spt running in a tmux pane on the
   PCs, in its pane (`restart-spt.ps1`, over ssh for the other PCs; one asleep is skipped and
   updates when spt next opens). It skips a tab still on a tmux older than win32.7-7, whose

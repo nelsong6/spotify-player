@@ -130,9 +130,19 @@ jobs:
       - name: Build
         run: cargo build --locked --release --no-default-features --features rustls-tls,streaming
 
+      # the repository's files compiled into the session, from Cargo's dependency file:
+      # publish.ps1 moves the session to a release only when one of them changed
+      - name: List the session's sources
+        run: >-
+          tr ' ' '\n' < target/release/spotify_player.d | grep "^$GITHUB_WORKSPACE/"
+          | xargs realpath -m --relative-to="$GITHUB_WORKSPACE" | grep -v '^target/' | sort -u
+          > target/release/session-sources.txt
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: spotify_player-linux
-          path: target/release/spotify_player
+          path: |
+            target/release/spotify_player
+            target/release/session-sources.txt
           if-no-files-found: error

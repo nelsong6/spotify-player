@@ -42,9 +42,26 @@ foreach ($artifact in 'spotify_player-windows', 'spotify_player-linux') {
 publish-tool -Name spt -Version $version -Path $dir `
     -Entry spotify_player.exe -Repo https://github.com/nelsong6/spotify-player -Commit $commit
 
-# the session isn't restarted: its waiting slot starts again on this release and takes the
-# session over at the next song change or pause, so the music doesn't stop
-ssh nas 'sudo /usr/local/bin/docker exec spt-session /upgrade.sh 2>/dev/null || true'
+# The session moves to this release only when its program changed: a file compiled into it (CI's
+# session-sources.txt, for its release and this one) or the dependencies. Without a list (a
+# release from before CI kept one) it moves.
+$active = (ssh nas 'sudo cat /volume1/docker/spt-session/data/slots/active.json' | ConvertFrom-Json).release
+$activeDir = "\\NelsonNAS\tools\spt\$active"
+$moveSession = $true
+if ($active -and (Test-Path "$activeDir\session-sources.txt")) {
+    $activeCommit = (Get-Content "$activeDir\release.json" -Raw | ConvertFrom-Json).commit
+    $compiled = @(Get-Content "$activeDir\session-sources.txt") + @(Get-Content "$dir\session-sources.txt") +
+        'Cargo.toml', 'Cargo.lock', 'spotify_player/Cargo.toml'
+    $changed = @(git diff --name-only $activeCommit $commit | Where-Object { $_ -in $compiled })
+    $moveSession = $changed.Count -gt 0
+}
+if ($moveSession) {
+    # the session isn't restarted: its waiting slot starts again on this release and takes the
+    # session over at the next song change or pause, so the music doesn't stop
+    ssh nas 'sudo /usr/local/bin/docker exec spt-session /upgrade.sh 2>/dev/null || true'
+} else {
+    Write-Host "the session's program is unchanged since $active; it stays"
+}
 
 # a running spt keeps its release until restarted, so restart each one on the PCs; a PC that is
 # asleep or off gets this release the next time spt opens
