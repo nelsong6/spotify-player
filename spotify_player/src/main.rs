@@ -126,15 +126,17 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
             .context("initialize new Spotify session")?;
     }
 
-    // request user data
+    // request user data; the session shows no library, so it loads none
     client_pub.send(client::ClientRequest::GetCurrentUser)?;
-    client_pub.send(client::ClientRequest::GetUserPlaylists)?;
-    client_pub.send(client::ClientRequest::GetUserFollowedArtists)?;
-    client_pub.send(client::ClientRequest::GetUserSavedAlbums)?;
-    client_pub.send(client::ClientRequest::GetContext(state::ContextId::Tracks(
-        state::USER_LIKED_TRACKS_ID.to_owned(),
-    )))?;
-    client_pub.send(client::ClientRequest::GetUserSavedShows)?;
+    if !state.is_session {
+        client_pub.send(client::ClientRequest::GetUserPlaylists)?;
+        client_pub.send(client::ClientRequest::GetUserFollowedArtists)?;
+        client_pub.send(client::ClientRequest::GetUserSavedAlbums)?;
+        client_pub.send(client::ClientRequest::GetContext(state::ContextId::Tracks(
+            state::USER_LIKED_TRACKS_ID.to_owned(),
+        )))?;
+        client_pub.send(client::ClientRequest::GetUserSavedShows)?;
+    }
 
     // client socket task (for handling CLI commands)
     tokio::task::spawn({
