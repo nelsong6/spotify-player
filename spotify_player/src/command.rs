@@ -87,6 +87,7 @@ pub enum Command {
     CycleAsciiCover,
     ToggleListening,
     MutePc,
+    FollowSpotify,
     OpenCommandPalette,
 }
 
@@ -384,6 +385,9 @@ impl Command {
                 "play the session aloud on this PC, or only show it (the session pauses when no PC plays it aloud)"
             }
             Self::MutePc => "open a popup for muting or unmuting each PC playing the session",
+            Self::FollowSpotify => {
+                "follow what Spotify plays, wherever it's driven from, until play takes control back"
+            }
             Self::OpenCommandPalette => "open the command palette: search and run what's in the menu",
             Self::CycleAsciiCover => {
                 "cycle the ASCII cover beside the audio visualization (pulse, still, off)"

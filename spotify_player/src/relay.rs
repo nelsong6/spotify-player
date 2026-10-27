@@ -45,7 +45,7 @@ pub mod session {
 
     type Reply = Response<Full<Bytes>>;
 
-    pub async fn serve(client: AppClient) {
+    pub async fn serve(client: AppClient, state: crate::state::SharedState) {
         let mut logged = false;
         let listener = loop {
             match tokio::net::TcpListener::bind(("0.0.0.0", PORT)).await {
@@ -61,7 +61,7 @@ pub mod session {
         if let Err(err) = key(&key_path()) {
             tracing::error!("Failed to make the relay's key: {err:#}");
         }
-        tokio::spawn(crate::keeper::run(client.clone()));
+        tokio::spawn(crate::keeper::run(client.clone(), state.clone()));
         loop {
             let stream = match listener.accept().await {
                 Ok((stream, _)) => stream,
@@ -71,10 +71,12 @@ pub mod session {
                 }
             };
             let client = client.clone();
+            let state = state.clone();
             tokio::spawn(async move {
                 let service = hyper::service::service_fn(move |request| {
                     let client = client.clone();
-                    async move { Ok::<_, Infallible>(handle(&client, request).await) }
+                    let state = state.clone();
+                    async move { Ok::<_, Infallible>(handle(&client, &state, request).await) }
                 });
                 if let Err(err) = hyper::server::conn::http1::Builder::new()
                     .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
@@ -110,7 +112,11 @@ pub mod session {
         response
     }
 
-    async fn handle(client: &AppClient, request: Request<hyper::body::Incoming>) -> Reply {
+    async fn handle(
+        client: &AppClient,
+        state: &crate::state::SharedState,
+        request: Request<hyper::body::Incoming>,
+    ) -> Reply {
         let sent = request
             .headers()
             .get(KEY_HEADER)
@@ -141,6 +147,10 @@ pub mod session {
             radio(client, seed).await
         } else if let Some(query) = path_and_query.strip_prefix("/spt/image?") {
             image(client, query).await
+        } else if path_and_query == "/spt/resume" && method == Method::POST {
+            crate::client::until_accepted("resume the radio", || client.resume_saved_session(state))
+                .await
+                .map(|()| Vec::new())
         } else {
             return reply(StatusCode::NOT_FOUND, "");
         };
@@ -153,7 +163,6 @@ pub mod session {
         }
     }
 
-    /// Send a PC's Web API request to Spotify as the session's own
     /// How long the relay keeps a library answer, so PCs restarting together (as a publish
     /// restarts them) load the library from Spotify once
     const LIBRARY_KEPT: Duration = Duration::from_mins(10);
@@ -201,6 +210,7 @@ pub mod session {
         kept.insert(kept_key(endpoint), (Instant::now(), text.to_string()));
     }
 
+    /// Send a PC's Web API request to Spotify as the session's own
     async fn forward(client: &AppClient, method: &Method, endpoint: &str, body: &[u8]) -> Reply {
         let library = *method == Method::GET && is_library(endpoint);
         if library {
@@ -518,6 +528,22 @@ pub mod pc {
             Ok(serde_json::from_slice(
                 &self.get(&format!("/spt/radio/{seed_uri}")).await?,
             )?)
+        }
+
+        /// Have the session resume the radio where it left off
+        pub async fn resume(&self) -> anyhow::Result<()> {
+            let response = self
+                .http
+                .post(format!("{}/spt/resume", self.base))
+                .send()
+                .await?;
+            let status = response.status();
+            anyhow::ensure!(
+                status.is_success(),
+                "the relay answered {status}: {}",
+                response.text().await.unwrap_or_default()
+            );
+            Ok(())
         }
 
         pub async fn image(&self, url: &str) -> anyhow::Result<Vec<u8>> {

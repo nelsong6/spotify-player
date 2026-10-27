@@ -193,6 +193,8 @@ pub async fn new_connection(
     let pause_on_startup =
         configs.app_config.pause_on_startup && IS_FIRST_CONNECTION.swap(false, Ordering::SeqCst);
 
+    crate::follow::watch(&session, state.clone());
+
     let player_event_task = tokio::task::spawn({
         let mut channel = player.get_player_event_channel();
         let session = session.clone();
@@ -300,7 +302,16 @@ pub async fn new_connection(
                                     }
                                 });
                             }
-                            PlayerEvent::Changed { .. } => {}
+                            PlayerEvent::Changed { ref playable_id } => {
+                                let expected = state.session.lock().expected.take();
+                                if expected.is_some_and(|uri| uri != playable_id.uri()) {
+                                    tracing::warn!(
+                                        "The saved song isn't where it was; starting {} from its beginning",
+                                        playable_id.uri()
+                                    );
+                                    client.seek_player(0);
+                                }
+                            }
                         }
                         state.playback_changed.notify_one();
                         client.update_playback_non_blocking(&state);

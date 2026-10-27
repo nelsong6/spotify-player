@@ -1,13 +1,16 @@
 //! The session keeps playlists in step with what has been played from them, so playing one from
 //! its top always picks up where you left off. Each pass removes the songs Spotify's listening
-//! history shows were played from a kept playlist, and, while it is the one playing, the songs
-//! before the playing one; a radio playlist is then refilled with radios seeded by random songs
-//! of its source playlist. A pass runs every `PLAYING_INTERVAL` for the playlist playing and
-//! every `IDLE_INTERVAL` for the others.
+//! history shows were played from a kept playlist, and, for the playlist the radio is on, the
+//! songs before the radio's song; a radio playlist is then refilled with radios seeded by random
+//! songs of its source playlist. The radio's song itself is never removed: where the radio is
+//! comes from the session, playing or paused, not from Spotify. The keeper looks every
+//! `PLAYING_INTERVAL`: the playlist the radio is on is kept once the radio has moved, the others
+//! every `IDLE_INTERVAL`.
 
 use crate::{
     client::AppClient,
     config::{self, KeptPlaylist},
+    state::SharedState,
 };
 use anyhow::{Context as _, Result};
 use chrono::{DateTime, Utc};
@@ -37,6 +40,9 @@ struct PlaylistState {
     /// The newest play from this playlist already acted on
     history_after: Option<DateTime<Utc>>,
     last_kept: Option<DateTime<Utc>>,
+    /// The radio's song at the last pass, when the radio was on this playlist
+    #[serde(default)]
+    kept_at: Option<String>,
 }
 
 /// Beside the saved session, so a new release's slot carries on from the last one's
@@ -61,14 +67,14 @@ fn save_state(state: &KeeperState) {
 }
 
 /// Keep the configured playlists until the session stops
-pub async fn run(client: AppClient) {
+pub async fn run(client: AppClient, session: SharedState) {
     let kept = config::get_config().app_config.kept_playlists.clone();
     if kept.is_empty() {
         return;
     }
     let mut state = load_state();
     loop {
-        if let Err(err) = pass(&client, &kept, &mut state).await {
+        if let Err(err) = pass(&client, &session, &kept, &mut state).await {
             tracing::error!("Failed to keep playlists: {err:#}");
         }
         save_state(&state);
@@ -76,17 +82,21 @@ pub async fn run(client: AppClient) {
     }
 }
 
-async fn pass(client: &AppClient, kept: &[KeptPlaylist], state: &mut KeeperState) -> Result<()> {
-    let playback = client.current_playback2().await?;
-    let playing_context = playback
-        .as_ref()
-        .and_then(|p| p.context.as_ref())
-        .map(|c| c.uri.clone());
-    let playing_uri = playback
-        .as_ref()
-        .and_then(|p| p.item.as_ref())
-        .and_then(rspotify::model::PlayableItem::id)
-        .map(|id| id.uri());
+async fn pass(
+    client: &AppClient,
+    session: &SharedState,
+    kept: &[KeptPlaylist],
+    state: &mut KeeperState,
+) -> Result<()> {
+    // where the radio is, from the session that owns it
+    let (playing_context, playing_uri) = {
+        let mut session = session.session.lock();
+        session.sync();
+        (
+            session.session.context_uri.clone(),
+            session.session.current_uri.clone(),
+        )
+    };
     let now = Utc::now();
     let idle = chrono::Duration::from_std(IDLE_INTERVAL)?;
 
@@ -97,7 +107,9 @@ async fn pass(client: &AppClient, kept: &[KeptPlaylist], state: &mut KeeperState
             .uri();
         let playing_here = playing_context.as_deref() == Some(uri.as_str());
         let playlist_state = state.playlists.entry(playlist.id.clone()).or_default();
-        let due = playing_here || playlist_state.last_kept.is_none_or(|t| now - t >= idle);
+        // the playlist the radio is on is kept again once the radio has moved
+        let moved = playing_here && playlist_state.kept_at != playing_uri;
+        let due = moved || playlist_state.last_kept.is_none_or(|t| now - t >= idle);
         if !due {
             continue;
         }
@@ -120,6 +132,9 @@ async fn pass(client: &AppClient, kept: &[KeptPlaylist], state: &mut KeeperState
             continue;
         }
         playlist_state.last_kept = Some(now);
+        if playing_here {
+            playlist_state.kept_at.clone_from(&playing_uri);
+        }
     }
     Ok(())
 }
@@ -199,8 +214,9 @@ async fn keep(
 }
 
 /// The songs of a kept playlist (`items`, in order) that have been played: those `plays` from it
-/// show played after `after`, and, when `current` plays from it, those before `current`, which
-/// backs up the history that keeps only the last 50 plays.
+/// show played after `after`, and, when the radio is on it at `current`, those before `current`,
+/// which backs up the history that keeps only the last 50 plays. `current` itself stays, played in
+/// part or not: it's where the radio is.
 fn played_songs(
     items: &[String],
     plays: &[(DateTime<Utc>, String)],
@@ -214,6 +230,9 @@ fn played_songs(
         .collect();
     if let Some(index) = current.and_then(|c| items.iter().position(|u| u == c)) {
         played.extend(items[..index].iter().cloned());
+    }
+    if let Some(current) = current {
+        played.remove(current);
     }
     played
 }
@@ -261,5 +280,9 @@ mod tests {
         // a current song that isn't in the playlist removes nothing more
         let played = played_songs(&items, &[], None, Some("z"));
         assert!(played.is_empty());
+
+        // the radio's song stays though the history shows it played
+        let played = played_songs(&items, &plays, None, Some("c"));
+        assert_eq!(played, ["a", "b"].map(String::from).into());
     }
 }
