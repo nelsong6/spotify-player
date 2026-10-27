@@ -1,7 +1,7 @@
 //! The shared screen: every PC shows the same page, popup and visualization. The session on the
 //! NAS keeps what the screen shows and passes it to every PC. One PC at a time is in control and
 //! changes the screen; the others show it locked until space takes control. The session also
-//! passes on its playback, lists the PCs playing its audio, and mutes one when another asks.
+//! passes on its playback and lists the PCs playing its audio.
 
 use serde::{Deserialize, Serialize};
 
@@ -18,12 +18,6 @@ enum ToSession {
     Screen {
         pc: String,
         screen: serde_json::Value,
-    },
-    /// Mute or unmute a PC, with an auth.romaine.life access token (`home_auth`)
-    Mute {
-        pc: String,
-        muted: bool,
-        token: String,
     },
     /// Follow Spotify instead of driving it, until spt drives again
     Follow,

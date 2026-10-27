@@ -39,6 +39,12 @@ pub enum ClientRequest {
     /// On a PC, the session's playback, as the session pushed it
     #[cfg(feature = "cast")]
     FollowSessionPlayback(Box<crate::screen::SessionPlayback>),
+    /// On a PC, mute or unmute another PC, through the session's relay
+    #[cfg(feature = "cast")]
+    MutePc {
+        pc: String,
+        muted: bool,
+    },
     Search(String),
     AddPlayableToQueue(PlayableId<'static>),
     AddAlbumToQueue(AlbumId<'static>),

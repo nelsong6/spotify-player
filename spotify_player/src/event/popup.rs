@@ -308,7 +308,7 @@ pub fn handle_key_sequence_for_popup(
                 pcs.len(),
                 |_, _| {},
                 |_, id: usize| -> Result<()> {
-                    crate::screen::pc::set_muted(&pcs[id], !pcs[id].muted);
+                    crate::screen::pc::set_muted(&pcs[id], !pcs[id].muted, client_pub);
                     Ok(())
                 },
                 |ui: &mut UIStateGuard| {

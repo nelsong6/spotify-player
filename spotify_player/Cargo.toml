@@ -74,8 +74,6 @@ futures = "0.3.34"
 # fix for https://github.com/aome510/spotify-player/issues/914
 vergen = "=9.0.6"
 ratatui-image = { version = "11.0.8", optional = true, default-features = false, features = ["crossterm"] }
-# checks auth.romaine.life's tokens in the session (`home_auth`)
-jsonwebtoken = { version = "9.3.1", optional = true }
 # the session's relay, the PCs' way to Spotify (`relay`)
 hyper = { version = "1.11.1", optional = true, features = ["server", "http1"] }
 hyper-util = { version = "0.1.20", optional = true, features = ["tokio"] }
@@ -83,8 +81,6 @@ http-body-util = { version = "0.1.5", optional = true }
 
 [dev-dependencies]
 wiremock = "0.6.5"
-# signs test tokens for `home_auth`
-rsa = { version = "0.9.10", features = ["getrandom", "pem"] }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies.winit]
 version = "0.30.13"
@@ -111,7 +107,7 @@ optional = true
 
 [features]
 # the home cast's session (`spotify_player session`): the player, its audio on stdout for Snapcast
-streaming = ["librespot-playback", "librespot-connect", "librespot-protocol", "protobuf", "dep:jsonwebtoken", "dep:hyper", "dep:hyper-util", "dep:http-body-util"]
+streaming = ["librespot-playback", "librespot-connect", "librespot-protocol", "protobuf", "dep:hyper", "dep:hyper-util", "dep:http-body-util"]
 # the terminal UI: pages, popups, keys and the command palette. The session has no screen, so
 # its build leaves this out.
 tui = []

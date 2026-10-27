@@ -160,41 +160,16 @@ pub fn pcs() -> Vec<Pc> {
         .unwrap_or_default()
 }
 
-/// Mute or unmute a PC: this one directly, another through the session, signing in to
-/// auth.romaine.life first if needed
-pub fn set_muted(pc: &Pc, muted: bool) {
+/// Mute or unmute a PC: this one directly, another through the session's relay
+pub fn set_muted(pc: &Pc, muted: bool, client_pub: &flume::Sender<ClientRequest>) {
     if pc.id == gethostname::gethostname().to_string_lossy() {
         crate::cast::set_muted(muted);
         return;
     }
-    let Some(link) = LINK.get() else {
-        return;
-    };
-    let pc = pc.id.clone();
-    let sent = std::thread::Builder::new()
-        .name("mute-a-pc".to_string())
-        .spawn(move || {
-            let sent = crate::home_auth::pc::access_token().and_then(|token| {
-                anyhow::ensure!(
-                    link.connected.load(Ordering::Relaxed),
-                    "the session is out of reach"
-                );
-                send(
-                    link,
-                    &ToSession::Mute {
-                        pc: pc.clone(),
-                        muted,
-                        token,
-                    },
-                )
-            });
-            if let Err(err) = sent {
-                tracing::error!("Failed to ask the session to mute {pc}: {err:#}");
-            }
-        });
-    if let Err(err) = sent {
-        tracing::error!("Failed to start muting a PC: {err:#}");
-    }
+    let _ = client_pub.send(ClientRequest::MutePc {
+        pc: pc.id.clone(),
+        muted,
+    });
 }
 
 /// Send the screen now, after a key press may have changed it

@@ -576,6 +576,12 @@ impl AppClient {
             ClientRequest::FollowSessionPlayback(playback) => {
                 self.follow_session_playback(state, *playback).await?;
             }
+            #[cfg(feature = "cast")]
+            ClientRequest::MutePc { pc, muted } => {
+                if let Some(relay) = &self.relay {
+                    relay.mute(&pc, muted).await?;
+                }
+            }
             ClientRequest::GetDevices => {
                 #[allow(unused_mut)]
                 let mut devices: Vec<Device> = self
