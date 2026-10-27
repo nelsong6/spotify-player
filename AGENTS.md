@@ -78,7 +78,7 @@ Event/UI threads never call async functions directly. They send a `ClientRequest
 | `notify`                                                                                                                                | Desktop notifications                                    |
 | `fzf`                                                                                                                                   | Fuzzy search                                             |
 
-Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the NAS's Linux build is `rustls-tls` + `streaming`, without `tui`, so the session's program holds no screen code. Code that's the session's or a PC's alone lives in its own file (`relay/session.rs` and `relay/pc.rs`, `screen/session.rs` and `screen/pc.rs`): `publish.ps1` moves the session only when a file compiled into it changed. Gate feature-specific code with `#[cfg(feature = "...")]`.
+Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the NAS's Linux build is `rustls-tls` + `streaming`, without `tui`, so the session's program holds no screen code. Code that's the session's or a PC's alone lives in its own file (`relay/session.rs` and `relay/pc.rs`, `screen/session.rs` and `screen/pc.rs`, `client/session_side.rs` and `client/pc_side.rs`): `publish.ps1` moves the session only when a file compiled into it changed. Gate feature-specific code with `#[cfg(feature = "...")]`.
 
 ## Verifying changes
 
