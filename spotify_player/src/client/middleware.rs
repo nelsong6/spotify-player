@@ -283,26 +283,33 @@ impl SpotifyApiMiddleware {
             .map(Duration::from_secs)
     }
 
-    async fn observe_rate_limit(&self, response: &Response, method: &Method, url: &Url) {
+    /// Record a refusal's wait, and log it with the body Spotify sent, which says why (its
+    /// `reason`, e.g. `QUOTA_EXCEEDED`)
+    async fn observe_rate_limit(
+        &self,
+        response: Response,
+        method: &Method,
+        url: &Url,
+    ) -> reqwest_middleware::Result<Response> {
         if response.status() != StatusCode::TOO_MANY_REQUESTS {
-            return;
+            return Ok(response);
         }
-
-        if let Some(retry_after) = Self::retry_after(response.headers()) {
+        let response = CachedResponse::from_response(response)
+            .await
+            .map_err(Error::Reqwest)?;
+        let body = String::from_utf8_lossy(&response.body);
+        let retry_after = Self::retry_after(&response.headers);
+        if let Some(retry_after) = retry_after {
             self.requests.store_retry_after(retry_after).await;
-            tracing::warn!(
-                %method,
-                %url,
-                retry_after_secs = retry_after.as_secs(),
-                "Spotify Web API rate limit encountered"
-            );
-        } else {
-            tracing::warn!(
-                %method,
-                %url,
-                "Spotify Web API rate limit encountered without a valid Retry-After duration"
-            );
         }
+        tracing::warn!(
+            %method,
+            %url,
+            retry_after_secs = retry_after.map(|wait| wait.as_secs()),
+            %body,
+            "Spotify Web API rate limit encountered"
+        );
+        Ok(response.to_response())
     }
 
     async fn run_get(
@@ -371,7 +378,7 @@ impl SpotifyApiMiddleware {
             };
 
             let response = next.clone().run(request, extensions).await?;
-            self.observe_rate_limit(&response, &Method::GET, url).await;
+            let response = self.observe_rate_limit(response, &Method::GET, url).await?;
 
             let retry_after = Self::retry_after(response.headers());
             if response.status() != StatusCode::TOO_MANY_REQUESTS
@@ -412,11 +419,8 @@ impl Middleware for SpotifyApiMiddleware {
 
         tracing::info!(%method, %url, "Making a Spotify Web API request");
 
-        let response = next.run(request, extensions).await;
-        if let Ok(response) = &response {
-            self.observe_rate_limit(response, &method, &url).await;
-        }
-        response
+        let response = next.run(request, extensions).await?;
+        self.observe_rate_limit(response, &method, &url).await
     }
 }
 

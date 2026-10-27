@@ -34,7 +34,7 @@ impl AppClient {
             spotify: Arc::new(spotify::Spotify::new()),
             http: reqwest::Client::new(),
             auth_config: AuthConfig::new(config::get_config())?,
-            api_client: WebApiClient::new(primary, None).with_ncspot_only_get_endpoints(Vec::new()),
+            api_client: WebApiClient::new(primary),
             #[cfg(feature = "streaming")]
             stream_conn: Arc::new(Mutex::new(None)),
             relay: Some(crate::relay::pc::Relay::new()),

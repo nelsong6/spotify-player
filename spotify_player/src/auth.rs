@@ -13,7 +13,6 @@ use sha2::{Digest as _, Sha256};
 
 pub const SPOTIFY_CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
 pub const NCSPOT_CLIENT_ID: &str = "d420a117a32841c2b3474932e49fb54b";
-pub const NCSPOT_REDIRECT_URI: &str = "http://127.0.0.1:8989/ncspot_login";
 
 const SPOTIFY_AUTHORIZE_URL: &str = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
@@ -126,7 +125,7 @@ pub fn get_creds(auth_config: &AuthConfig, reauth: bool, use_cached: bool) -> Re
     })
 }
 
-/// Authenticate the configured Web API client and its optional fallback using PKCE.
+/// Authenticate the configured Web API client using PKCE.
 ///
 /// This mirrors `rspotify`'s `prompt_for_token` (reusing/refreshing a cached token when possible),
 /// but replaces its callback listener with [`obtain_auth_code`], which is robust against stray
@@ -138,11 +137,7 @@ pub async fn prompt_for_user_token(
     client: &mut crate::client::WebApiClient,
     force: bool,
 ) -> Result<()> {
-    prompt_for_web_api_token(client.primary_mut(), force, "configured client").await?;
-    if let Some(fallback) = client.fallback_mut() {
-        prompt_for_web_api_token(fallback, force, "ncspot fallback client").await?;
-    }
-    Ok(())
+    prompt_for_web_api_token(client.primary_mut(), force, "configured client").await
 }
 
 async fn prompt_for_web_api_token(

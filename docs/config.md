@@ -32,9 +32,8 @@ spotify_player -o device.volume=80 -o theme=dracula
 
 | Option                            | Description                                                                                         | Default                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `client_id`                       | Primary Spotify client ID for API access; rejected requests can fall back to ncspot (see notes).    | See code (default: ncspot's client ID)                                 |
+| `client_id`                       | Spotify client ID for API access (see notes).                                                        | See code (default: ncspot's client ID)                                 |
 | `client_id_command`               | Shell command that outputs client ID to stdout (overrides `client_id`).                             | `None`                                                                 |
-| `ncspot_only_get_endpoints`       | Endpoint prefixes for GET requests that should always use the ncspot client.                        | `["me/playlists", "playlists/"]`                                       |
 | `login_redirect_uri`              | Redirect URI for authentication.                                                                    | `http://127.0.0.1:8989/login`                                          |
 | `client_port`                     | Port for the application's client to handle CLI commands.                                           | `8080`                                                                 |
 | `log_folder`                      | Path to store log files.                                                                            | `None`                                                                 |
@@ -53,7 +52,6 @@ spotify_player -o device.volume=80 -o theme=dracula
 | `theme`                           | Name of the theme to use.                                                                           | `default`                                                              |
 | `app_refresh_duration_in_ms`      | Interval (ms) between application refreshes.                                                        | `32`                                                                   |
 | `playback_refresh_duration_in_ms` | Interval (ms) between playback refreshes.                                                           | `0`                                                                    |
-| `api_rate_limit_retries`          | Number of times to retry an ncspot GET request after Spotify returns `429 Too Many Requests`.       | `2`                                                                    |
 | `page_size_in_rows`               | Number of rows per page for navigation.                                                             | `20`                                                                   |
 | `enable_media_control`            | Enable media control support (requires `media-control` feature).                                    | `true` (Linux), `false` (macOS/Windows)                                |
 | `cast_server`                     | The Snapcast server the [home cast](../README.md#home-cast) plays from, `host` or `host:port` (`cast`). | `nas`                                                                  |
@@ -84,8 +82,8 @@ spotify_player -o device.volume=80 -o theme=dracula
 
 ### Notes
 
-- By default, `spotify-player` uses [ncspot](https://github.com/hrkfdn/ncspot)'s client ID for compatibility with Spotify's API. When a custom `client_id` is configured, most requests use it first and any `4xx` response is retried once with a separately authenticated ncspot fallback client. Each Web API token is stored as `<client_id>_token.json`, so changing `client_id` selects a different cache instead of reusing a token issued to another client. The fallback OAuth flow always uses `http://127.0.0.1:8989/ncspot_login`, the redirect URI ncspot registered for its client ID, while `login_redirect_uri` applies only to the custom client. See the [Authentication section of the README](../README.md#authentication) for details.
-- The custom client has no request middleware. For ncspot requests, `spotify-player` stores `Retry-After` durations globally and retries GET requests up to `api_rate_limit_retries` times. New ncspot GET requests wait for an active `Retry-After` period, while mutation requests are never delayed or retried by the middleware.
+- By default, `spotify-player` uses [ncspot](https://github.com/hrkfdn/ncspot)'s client ID. A configured `client_id` replaces it for every request; there is no fallback. Each Web API token is stored as `<client_id>_token.json`, so changing `client_id` selects a different cache instead of reusing a token issued to another client. See the [Authentication section of the README](../README.md#authentication) for details.
+- While Spotify has asked the client to wait (`Retry-After`), it sends nothing and answers with that refusal; nothing is retried automatically.
 - `ap_port` and `proxy` are passed to Librespot for session configuration. Librespot uses its defaults if unset.
 - Setting a positive `app_refresh_duration_in_ms` increases API usage and may trigger rate limits. By default, `playback_refresh_duration_in_ms=0` refreshes playback only on events or commands. The home cast's session and PCs ignore it: the session refreshes on its player's events, and the PCs get its playback from it.
 - `border_type`, `progress_bar_type`, and `progress_bar_position` accept only the values listed in the table above.
