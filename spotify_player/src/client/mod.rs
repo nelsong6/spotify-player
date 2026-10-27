@@ -28,6 +28,8 @@ use rand::seq::IndexedRandom as _;
 use rspotify::model::LibraryId;
 use rspotify::{http::Query, prelude::*};
 
+mod budget;
+pub use budget::refresh_library;
 mod handlers;
 mod middleware;
 #[cfg(feature = "cast")]
@@ -159,6 +161,8 @@ pub fn new_api_client() -> Result<WebApiClient> {
         cache_path: configs.cache_folder.join(format!("{id}_token.json")),
         ..Default::default()
     };
+    #[cfg(any(feature = "cast", feature = "streaming"))]
+    budget::keep_library_in(configs.session_folder().join("library"));
     // while Spotify has asked it to wait, the client sends nothing and answers with that refusal
     let middleware = SpotifyApiMiddleware::refusing_while_limited(&config.api_base_url)?;
     let client = rspotify::AuthCodePkceSpotify::with_config(
@@ -587,6 +591,28 @@ impl AppClient {
                 }
 
                 state.player.write().devices = devices;
+            }
+            ClientRequest::RefreshLibrary => {
+                #[cfg(feature = "cast")]
+                if let Some(relay) = &self.relay {
+                    relay.refresh().await?;
+                }
+                #[cfg(feature = "cast")]
+                let relayed = self.relay.is_some();
+                #[cfg(not(feature = "cast"))]
+                let relayed = false;
+                if !relayed {
+                    refresh_library();
+                }
+                state.data.write().caches = MemoryCaches::new();
+                for request in [
+                    ClientRequest::GetUserPlaylists,
+                    ClientRequest::GetUserFollowedArtists,
+                    ClientRequest::GetUserSavedAlbums,
+                    ClientRequest::GetUserSavedShows,
+                ] {
+                    Box::pin(self.handle_request(state, request)).await?;
+                }
             }
             ClientRequest::GetUserPlaylists => {
                 let playlists = self.current_user_playlists().await?;

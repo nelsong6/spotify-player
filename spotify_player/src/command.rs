@@ -36,6 +36,7 @@ pub enum Command {
     ChooseSelected,
 
     RefreshPlayback,
+    RefreshLibrary,
 
     FocusNextWindow,
     FocusPreviousWindow,
@@ -337,6 +338,7 @@ impl Command {
             Self::ChooseSelected => "choose the selected item and act on it",
             Self::JumpToCurrentTrackInContext => "jump to the current track in the context",
             Self::RefreshPlayback => "manually refresh the current playback",
+            Self::RefreshLibrary => "load the library from Spotify again: playlists, liked songs, albums, artists",
             Self::ShowActionsOnSelectedItem => "open a popup showing actions on a selected item",
             Self::ShowActionsOnCurrentTrack => "open a popup showing actions on the current track",
             Self::ShowActionsOnCurrentContext => "open a popup showing actions on the current context",

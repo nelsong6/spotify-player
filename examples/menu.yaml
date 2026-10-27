@@ -49,6 +49,7 @@
     - {name: "artists", description: "Browse the artists you follow", action: "BrowseUserFollowedArtists"}
     - {name: "albums", description: "Browse your saved albums", action: "BrowseUserSavedAlbums"}
     - {name: "liked songs", description: "Go to your liked songs", action: "LikedTrackPage"}
+    - {name: "refresh", description: "Load the library from Spotify again", action: "RefreshLibrary"}
     - {name: "top tracks", description: "Go to your top tracks", action: "TopTrackPage"}
     - {name: "recently played", description: "Go to what you played recently", action: "RecentlyPlayedTrackPage"}
 - name: "go to"

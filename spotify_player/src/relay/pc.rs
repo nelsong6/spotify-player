@@ -189,6 +189,18 @@ impl Relay {
         Ok(())
     }
 
+    /// Have the session load the library from Spotify again
+    pub async fn refresh(&self) -> anyhow::Result<()> {
+        let response = self
+            .http
+            .post(format!("{}/spt/refresh", self.base))
+            .send()
+            .await?;
+        let status = response.status();
+        anyhow::ensure!(status.is_success(), "the relay answered {status}");
+        Ok(())
+    }
+
     pub async fn image(&self, url: &str) -> anyhow::Result<Vec<u8>> {
         let query: String = reqwest::Url::parse_with_params("http://relay/", [("url", url)])?
             .query()

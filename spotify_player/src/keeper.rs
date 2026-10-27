@@ -4,8 +4,8 @@
 //! songs before the radio's song; a radio playlist is then refilled with radios seeded by random
 //! songs of its source playlist. The radio's song itself is never removed: where the radio is
 //! comes from the session, playing or paused, not from Spotify. The keeper looks every
-//! `PLAYING_INTERVAL`: the playlist the radio is on is kept once the radio has moved, the others
-//! every `IDLE_INTERVAL`.
+//! `INTERVAL` and asks Spotify for nothing unless a kept playlist has moved on: the radio's, or the
+//! one Spotify is seen playing elsewhere (a phone).
 
 use crate::{
     client::AppClient,
@@ -22,8 +22,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-const PLAYING_INTERVAL: Duration = Duration::from_mins(10);
-const IDLE_INTERVAL: Duration = Duration::from_hours(1);
+const INTERVAL: Duration = Duration::from_mins(10);
 const STATE_FILE: &str = "keeper.json";
 /// The most radios one pass fetches to fill a radio playlist's buffer
 const RADIOS_PER_PASS: usize = 10;
@@ -40,7 +39,7 @@ struct PlaylistState {
     /// The newest play from this playlist already acted on
     history_after: Option<DateTime<Utc>>,
     last_kept: Option<DateTime<Utc>>,
-    /// The radio's song at the last pass, when the radio was on this playlist
+    /// The song playing from this playlist at the last pass, the radio's or Spotify's elsewhere
     #[serde(default)]
     kept_at: Option<String>,
 }
@@ -78,7 +77,7 @@ pub async fn run(client: AppClient, session: SharedState) {
             tracing::error!("Failed to keep playlists: {err:#}");
         }
         save_state(&state);
-        tokio::time::sleep(PLAYING_INTERVAL).await;
+        tokio::time::sleep(INTERVAL).await;
     }
 }
 
@@ -97,8 +96,16 @@ async fn pass(
             session.session.current_uri.clone(),
         )
     };
+    // what Spotify plays elsewhere, when the session follows it
+    let followed = {
+        let follow = session.follow.lock();
+        follow
+            .remote
+            .as_ref()
+            .filter(|_| follow.following)
+            .and_then(|remote| Some((remote.context_uri.clone()?, remote.track_uri.clone())))
+    };
     let now = Utc::now();
-    let idle = chrono::Duration::from_std(IDLE_INTERVAL)?;
 
     let mut history: Option<Vec<PlayHistory>> = None;
     for playlist in kept {
@@ -106,11 +113,18 @@ async fn pass(
             .with_context(|| format!("kept playlist id {}", playlist.id))?
             .uri();
         let playing_here = playing_context.as_deref() == Some(uri.as_str());
+        let followed_song = followed
+            .as_ref()
+            .filter(|(context, _)| *context == uri)
+            .map(|(_, song)| song.clone());
         let playlist_state = state.playlists.entry(playlist.id.clone()).or_default();
-        // the playlist the radio is on is kept again once the radio has moved
-        let moved = playing_here && playlist_state.kept_at != playing_uri;
-        let due = moved || playlist_state.last_kept.is_none_or(|t| now - t >= idle);
-        if !due {
+        // a playlist is kept again once what plays from it has moved on
+        let song = if playing_here {
+            playing_uri.clone()
+        } else {
+            followed_song
+        };
+        if song.is_none() || playlist_state.kept_at == song {
             continue;
         }
         if history.is_none() {
@@ -132,9 +146,7 @@ async fn pass(
             continue;
         }
         playlist_state.last_kept = Some(now);
-        if playing_here {
-            playlist_state.kept_at.clone_from(&playing_uri);
-        }
+        playlist_state.kept_at = song;
     }
     Ok(())
 }

@@ -399,6 +399,7 @@ Press `?` or `C-h` to open the shortcut help page (default for `OpenCommandHelp`
 
 - Use the command palette's "filter" (the `Search` command) to search in the shortcut help page and other pages.
 - `RefreshPlayback` manually updates playback status.
+- `RefreshLibrary` loads the library from Spotify again. The session keeps playlists, liked songs, albums and artists on disk until then, changing only what spt itself changes.
 
 List of supported commands:
 
@@ -425,6 +426,7 @@ List of supported commands:
 | `SelectLastOrScrollToBottom`    | select the last item in a list/table or scroll to the bottom                                       | `G`, `end`         |
 | `ChooseSelected`                | choose the selected item                                                                           | `enter`            |
 | `RefreshPlayback`               | manually refresh the current playback                                                              | `r`                |
+| `RefreshLibrary`                | load the library from Spotify again: playlists, liked songs, albums, artists                       | `R`                |
 | `ShowActionsOnSelectedItem`     | open a popup showing actions on a selected item                                                    | `g a`, `C-space`   |
 | `ShowActionsOnCurrentTrack`     | open a popup showing actions on the current track                                                  | `a`                |
 | `ShowActionsOnCurrentContext`   | open a popup showing actions on the current context                                                | `A`                |
