@@ -89,6 +89,19 @@ impl SavedSession {
         self.context_uri.is_none() && self.uris.is_empty()
     }
 
+    /// Whether `playback` is this session's: its context, or one of its tracks. Anything else
+    /// on the session's player is Spotify's own, such as what it loads when the player connects.
+    pub fn holds(&self, playback: &rspotify::model::CurrentPlaybackContext) -> bool {
+        match &self.context_uri {
+            Some(uri) => playback.context.as_ref().is_some_and(|c| &c.uri == uri),
+            None => playback
+                .item
+                .as_ref()
+                .and_then(rspotify::model::PlayableItem::id)
+                .is_some_and(|id| self.uris.contains(&id.uri())),
+        }
+    }
+
     /// URI of the playlist the playback came from: the radio's source, or the playlist played
     #[cfg(feature = "streaming")]
     pub fn source_playlist(&self) -> Option<String> {
@@ -217,6 +230,13 @@ impl SessionState {
             .as_ref()
             .and_then(|p| p.device.id.as_deref());
         if self.own_device.is_none() || device != self.own_device.as_deref() {
+            return;
+        }
+        if !player
+            .playback
+            .as_ref()
+            .is_some_and(|playback| self.session.holds(playback))
+        {
             return;
         }
         let Some((current_uri, progress_ms)) = playing_item(player) else {
