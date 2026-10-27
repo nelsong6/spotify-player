@@ -42,7 +42,6 @@ pub enum Command {
     FocusPreviousWindow,
 
     SwitchTheme,
-    SwitchDevice,
     Search,
     Queue,
 
@@ -86,8 +85,8 @@ pub enum Command {
     CycleContinueMode,
     ToggleVisualization,
     CycleAsciiCover,
-    ToggleListening,
-    MutePc,
+    PlayHere,
+    PlayHereOnPc,
     FollowSpotify,
     OpenCommandPalette,
 }
@@ -347,7 +346,6 @@ impl Command {
             Self::FocusNextWindow => "focus the next focusable window (if any)",
             Self::FocusPreviousWindow => "focus the previous focusable window (if any)",
             Self::SwitchTheme => "open a popup for switching theme",
-            Self::SwitchDevice => "open a popup for switching device",
             Self::Search => "open a popup for searching in the current page",
             Self::BrowseUserPlaylists => "open a popup for browsing user's playlists",
             Self::BrowseUserFollowedArtists => "open a popup for browsing user's followed artists",
@@ -383,10 +381,10 @@ impl Command {
                 "toggle mouse capture (off: the terminal can select text again)"
             }
             Self::ToggleVisualization => "show or hide the audio visualization",
-            Self::ToggleListening => {
-                "play the session aloud on this PC, or only show it (the session pauses when no PC plays it aloud)"
+            Self::PlayHere => {
+                "turn play here on or off: play the session's audio on this PC, or only show it (the session pauses when no PC plays it here)"
             }
-            Self::MutePc => "open a popup for muting or unmuting each PC playing the session",
+            Self::PlayHereOnPc => "open a popup to turn play here on or off for each PC",
             Self::FollowSpotify => {
                 "follow what Spotify plays, wherever it's driven from, until play takes control back"
             }

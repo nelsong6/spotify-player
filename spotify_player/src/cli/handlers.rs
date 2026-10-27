@@ -227,7 +227,6 @@ pub fn handle_cli_subcommand(cmd: &str, args: &ArgMatches) -> Result<()> {
         "get" => handle_get_subcommand(args),
         "playback" => handle_playback_subcommand(args)?,
         "playlist" => handle_playlist_subcommand(args)?,
-        "connect" => Request::Connect(get_id_or_name(args)),
         "like" => Request::Like {
             unlike: args.get_flag("unlike"),
         },

@@ -404,7 +404,7 @@ fn construct_playback_text(
                 }
                 #[cfg(feature = "cast")]
                 if !crate::cast::is_listening() {
-                    parts.push("muted here".to_string());
+                    parts.push("play here: off".to_string());
                 }
 
                 let metadata_str = parts.join(" | ");

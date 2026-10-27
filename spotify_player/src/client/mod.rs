@@ -391,29 +391,19 @@ impl AppClient {
         mut playback: Option<PlaybackMetadata>,
     ) -> Result<Option<PlaybackMetadata>> {
         // handle requests that don't require an active playback
-        match request {
-            PlayerRequest::TransferPlayback(device_id, force_play) => {
-                // `TransferPlayback` needs to be handled separately from other player requests
-                // because `TransferPlayback` doesn't require an active playback
-                self.transfer_playback(&device_id, Some(force_play)).await?;
-                tracing::info!("Transferred playback to device with id={}", device_id);
-                return Ok(None);
+        if let PlayerRequest::StartPlayback(p, shuffle) = request {
+            // Set the playback's shuffle state if specified in the request
+            if let (Some(shuffle), Some(playback)) = (shuffle, playback.as_mut()) {
+                playback.shuffle_state = shuffle;
             }
-            PlayerRequest::StartPlayback(p, shuffle) => {
-                // Set the playback's shuffle state if specified in the request
-                if let (Some(shuffle), Some(playback)) = (shuffle, playback.as_mut()) {
-                    playback.shuffle_state = shuffle;
-                }
-                let device_id = playback.as_ref().and_then(|p| p.device_id.as_deref());
-                self.start_playback(p, device_id).await?;
-                // For some reasons, when starting a new playback, the integrated `spotify_player`
-                // client doesn't respect the initial shuffle state, so we need to manually update the state
-                if let Some(ref playback) = playback {
-                    self.shuffle(playback.shuffle_state, device_id).await?;
-                }
-                return Ok(None);
+            let device_id = playback.as_ref().and_then(|p| p.device_id.as_deref());
+            self.start_playback(p, device_id).await?;
+            // For some reasons, when starting a new playback, the integrated `spotify_player`
+            // client doesn't respect the initial shuffle state, so we need to manually update the state
+            if let Some(ref playback) = playback {
+                self.shuffle(playback.shuffle_state, device_id).await?;
             }
-            _ => {}
+            return Ok(None);
         }
 
         let mut playback = playback.context("no playback found")?;
@@ -485,9 +475,6 @@ impl AppClient {
             PlayerRequest::StartPlayback(..) => {
                 anyhow::bail!("`StartPlayback` should be handled earlier")
             }
-            PlayerRequest::TransferPlayback(..) => {
-                anyhow::bail!("`TransferPlayback` should be handled earlier")
-            }
         }
 
         Ok(Some(playback))
@@ -538,12 +525,6 @@ impl AppClient {
                 self.update_playback_non_blocking(state);
             }
             ClientRequest::Player(request) => {
-                if let PlayerRequest::TransferPlayback(device_id, play) = &request {
-                    if self.hand_off_track_list(state, device_id, *play).await? {
-                        self.update_playback_non_blocking(state);
-                        return Ok(());
-                    }
-                }
                 let playback = state.player.read().buffered_playback.clone();
                 // nothing is loaded while the radio sits at its saved spot: play on our speaker,
                 // not on whatever device Spotify has active
@@ -581,22 +562,6 @@ impl AppClient {
                 if let Some(relay) = &self.relay {
                     relay.mute(&pc, muted).await?;
                 }
-            }
-            ClientRequest::GetDevices => {
-                #[allow(unused_mut)]
-                let mut devices: Vec<Device> = self
-                    .available_devices()
-                    .await?
-                    .into_iter()
-                    .filter_map(Device::try_from_device)
-                    .collect();
-
-                #[cfg(feature = "streaming")]
-                if state.is_session {
-                    self.ensure_integrated_device(&mut devices).await;
-                }
-
-                state.player.write().devices = devices;
             }
             ClientRequest::RefreshLibrary => {
                 #[cfg(feature = "cast")]

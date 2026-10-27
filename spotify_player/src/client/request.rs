@@ -15,7 +15,6 @@ pub enum PlayerRequest {
     Shuffle,
     Volume(u8),
     ToggleMute,
-    TransferPlayback(String, bool),
     StartPlayback(Playback, Option<bool>),
 }
 
@@ -23,7 +22,6 @@ pub enum PlayerRequest {
 /// A request to the client
 pub enum ClientRequest {
     GetCurrentUser,
-    GetDevices,
     GetBrowseCategories,
     GetBrowseCategoryPlaylists(Category),
     /// Forget the kept library and load it from Spotify again

@@ -35,12 +35,11 @@
     - {name: "go to artist", description: "Its artist's page", action: "action:GoToArtist"}
     - {name: "go to album", description: "Its album's page", action: "action:GoToAlbum"}
     - {name: "copy link", description: "Copy its Spotify link", action: "action:CopyLink"}
-- name: "devices"
-  description: "Where the music plays"
+- name: "play here"
+  description: "Which PCs play the radio"
   children:
-    - {name: "send", description: "Move playback to another device", action: "SwitchDevice"}
-    - {name: "listen here", description: "Play the music aloud on this PC, or only show it here", action: "ToggleListening"}
-    - {name: "mute a PC", description: "Mute or unmute any PC playing the music", action: "MutePc"}
+    - {name: "play here", description: "Play the radio on this PC, or only show it here", action: "PlayHere"}
+    - {name: "play here on a PC", description: "Turn play here on or off for any PC", action: "PlayHereOnPc"}
     - {name: "follow spotify", description: "Show what Spotify plays from anywhere, until play takes control back", action: "FollowSpotify"}
 - name: "library"
   description: "Your playlists, artists, albums and liked songs"
