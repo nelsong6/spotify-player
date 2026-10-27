@@ -25,6 +25,9 @@ use rspotify::prelude::OAuthClient as _;
 
 /// How often the session looks for a handover request while nothing plays
 const IDLE_CHECK: Duration = Duration::from_secs(2);
+/// How long a failed handover waits before trying again, so a refusal from Spotify isn't
+/// answered with more requests
+const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(30);
 
 #[derive(Serialize, Deserialize)]
 struct Active {
@@ -204,9 +207,17 @@ pub async fn watch_while_idle(client: AppClient, state: SharedState) {
         if playing {
             continue;
         }
-        if let Some(device_id) = pending(&state) {
-            hand_over(&client, &state, &device_id, false).await;
+        let Some(device_id) = pending(&state) else {
+            continue;
+        };
+        // Spotify has forgotten the idle session's playback: nothing to move, and the new
+        // release starts from the saved session
+        if state.player.read().playback.is_none() {
+            tracing::info!("Nothing to hand over to device_id={device_id}; exiting");
+            std::process::exit(0);
         }
+        hand_over(&client, &state, &device_id, false).await;
+        tokio::time::sleep(RETRY_AFTER_FAILURE).await;
     }
 }
 

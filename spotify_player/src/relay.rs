@@ -30,14 +30,18 @@ pub mod session {
     use base64::Engine as _;
     use http_body_util::{BodyExt as _, Full};
     use hyper::{body::Bytes, Method, Request, Response, StatusCode};
+    use parking_lot::Mutex;
     use rspotify::{
         http::{HttpError, Query},
         model::TrackId,
         prelude::*,
         ClientError,
     };
+    use std::collections::HashMap;
     use std::convert::Infallible;
     use std::path::Path;
+    use std::sync::LazyLock;
+    use std::time::{Duration, Instant};
 
     type Reply = Response<Full<Bytes>>;
 
@@ -150,7 +154,53 @@ pub mod session {
     }
 
     /// Send a PC's Web API request to Spotify as the session's own
+    /// How long the relay keeps a library answer, so PCs restarting together (as a publish
+    /// restarts them) load the library from Spotify once
+    const LIBRARY_KEPT: Duration = Duration::from_mins(10);
+    /// What a PC loads at startup or on opening a page; playback, devices, the queue and search
+    /// stay live
+    const LIBRARY: &[&str] = &[
+        "me/tracks",
+        "me/playlists",
+        "me/following",
+        "me/albums",
+        "me/shows",
+        "playlists/",
+        "albums/",
+        "artists/",
+        "shows/",
+        "tracks/",
+    ];
+
+    static KEPT: LazyLock<Mutex<HashMap<String, (Instant, String)>>> =
+        LazyLock::new(Mutex::default);
+
+    fn is_library(endpoint: &str) -> bool {
+        LIBRARY.iter().any(|prefix| endpoint.starts_with(prefix))
+    }
+
+    fn kept(endpoint: &str) -> Option<String> {
+        let kept = KEPT.lock();
+        let (at, text) = kept.get(endpoint)?;
+        (at.elapsed() < LIBRARY_KEPT).then(|| text.clone())
+    }
+
+    fn keep(endpoint: &str, text: &str) {
+        let mut kept = KEPT.lock();
+        kept.retain(|_, (at, _)| at.elapsed() < LIBRARY_KEPT);
+        kept.insert(endpoint.to_string(), (Instant::now(), text.to_string()));
+    }
+
     async fn forward(client: &AppClient, method: &Method, endpoint: &str, body: &[u8]) -> Reply {
+        let library = *method == Method::GET && is_library(endpoint);
+        if library {
+            if let Some(text) = kept(endpoint) {
+                return reply(StatusCode::OK, text);
+            }
+        } else if *method != Method::GET {
+            // a change from a PC may change what was kept
+            KEPT.lock().clear();
+        }
         let payload = if body.is_empty() {
             serde_json::Value::Null
         } else {
@@ -168,7 +218,12 @@ pub mod session {
         };
         match result {
             Ok(text) if text.is_empty() => reply(StatusCode::NO_CONTENT, ""),
-            Ok(text) => reply(StatusCode::OK, text),
+            Ok(text) => {
+                if library {
+                    keep(endpoint, &text);
+                }
+                reply(StatusCode::OK, text)
+            }
             Err(ClientError::Http(err)) => match *err {
                 // Spotify's own refusal, passed on whole so the PC waits as Spotify asks
                 HttpError::StatusCode(response) => {
@@ -249,6 +304,24 @@ pub mod session {
             std::fs::remove_file(&path).unwrap();
             assert_ne!(super::key(&path).unwrap(), first);
             std::fs::remove_dir_all(&dir).unwrap();
+        }
+
+        #[test]
+        fn keeps_the_library_and_nothing_live() {
+            assert!(super::is_library(
+                "me/tracks?market=from_token&offset=0&limit=50"
+            ));
+            assert!(super::is_library(
+                "playlists/7surudSXNGQsQLp3Fh7DtY/items?offset=0"
+            ));
+            assert!(!super::is_library("me/player/devices"));
+            assert!(!super::is_library("me/player/queue"));
+            assert!(!super::is_library("search?q=abc&type=track"));
+
+            super::keep("me/albums?test", "albums");
+            assert_eq!(super::kept("me/albums?test").as_deref(), Some("albums"));
+            super::KEPT.lock().clear();
+            assert_eq!(super::kept("me/albums?test"), None);
         }
     }
 }
