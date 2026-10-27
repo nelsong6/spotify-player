@@ -254,6 +254,19 @@ pub async fn new_connection(
                 ) {
                     client.update_playback_non_blocking(&state);
                 }
+                // the player stopped (another device took over, or it was told to): it plays
+                // nothing, whatever Spotify last said, so a refused refresh can't leave it
+                // "playing" and hold up a handover
+                if matches!(
+                    event,
+                    player::PlayerEvent::Stopped { .. }
+                        | player::PlayerEvent::SessionDisconnected { .. }
+                ) {
+                    if let Some(playback) = state.player.write().buffered_playback.as_mut() {
+                        playback.is_playing = false;
+                    }
+                    state.playback_changed.notify_one();
+                }
                 match PlayerEvent::from_librespot_player_event(event) {
                     Err(err) => {
                         tracing::warn!("Failed to convert a `librespot` player event into `spotify_player` player event: {err:#}");
