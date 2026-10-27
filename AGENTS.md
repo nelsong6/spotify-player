@@ -224,6 +224,11 @@ Working on the fork:
   a phone say, changes nothing on screen. Play resumes the radio's song on the session's
   speaker, never on Spotify's active device. A PC's play asks the session to resume the radio
   (the relay's `/spt/resume`), so its resume logic applies wherever play is pressed.
+- Spotify as a backend (decided 2026-10-27, OpenProject #88): spt is a home radio that uses
+  Spotify as its backend, not a live Spotify player, so the library need not be current. The
+  session keeps library answers on disk until a refresh (`R`) or until spt itself changes them
+  (`client/budget.rs`), and sends every request under its own budget; a playlist edited on a phone
+  shows in spt after a refresh. Don't make the library live again.
 - Drive and follow (decided 2026-10-26, OpenProject #86): spt drives the session by default.
   When something else drives Spotify (a phone, a Jam), the session follows (`follow.rs`): it
   reads Spotify's connect-state pushes (`hm://connect-state/v1/cluster`, the dealer stream
