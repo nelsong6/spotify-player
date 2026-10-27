@@ -2079,40 +2079,6 @@ impl AppClient {
             track_or_episode.clone()
         };
 
-        // retrieve current artist for genres if not in cache
-        let curr_artist = match &curr_item {
-            rspotify::model::PlayableItem::Track(full_track) => {
-                let cached = state
-                    .data
-                    .read()
-                    .caches
-                    .genres
-                    .contains_key(&full_track.artists[0].name);
-
-                if cached {
-                    None
-                } else {
-                    match &full_track.artists[0].id {
-                        Some(id) => self.artist(id.clone()).await.ok(),
-                        None => None,
-                    }
-                }
-            }
-            rspotify::model::PlayableItem::Episode(_)
-            | rspotify::model::PlayableItem::Unknown(_) => None,
-        };
-
-        if let Some(artist) = curr_artist {
-            #[allow(deprecated)]
-            if !artist.genres.is_empty() {
-                state.data.write().caches.genres.insert(
-                    artist.name,
-                    artist.genres,
-                    *TTL_CACHE_DURATION,
-                );
-            }
-        }
-
         let url = match curr_item {
             rspotify::model::PlayableItem::Track(ref track) => {
                 crate::utils::get_track_album_image_url(track)
@@ -2184,6 +2150,41 @@ impl AppClient {
         #[cfg(feature = "notify")]
         if configs.app_config.enable_notify {
             Self::notify_new_playback(&curr_item, &path)?;
+        }
+
+        // the genres come from the Web API, which may be holding requests back, so they're
+        // looked up after the cover is shown and notified
+        let curr_artist = match &curr_item {
+            rspotify::model::PlayableItem::Track(full_track) => {
+                let cached = state
+                    .data
+                    .read()
+                    .caches
+                    .genres
+                    .contains_key(&full_track.artists[0].name);
+
+                if cached {
+                    None
+                } else {
+                    match &full_track.artists[0].id {
+                        Some(id) => self.artist(id.clone()).await.ok(),
+                        None => None,
+                    }
+                }
+            }
+            rspotify::model::PlayableItem::Episode(_)
+            | rspotify::model::PlayableItem::Unknown(_) => None,
+        };
+
+        if let Some(artist) = curr_artist {
+            #[allow(deprecated)]
+            if !artist.genres.is_empty() {
+                state.data.write().caches.genres.insert(
+                    artist.name,
+                    artist.genres,
+                    *TTL_CACHE_DURATION,
+                );
+            }
         }
 
         Ok(())
