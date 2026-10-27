@@ -652,8 +652,17 @@ fn render_transport(
     use rspotify::model::{PlayableItem, RepeatState};
 
     let player = state.player.read();
-    let Some(playback) = player.buffered_playback.as_ref() else {
-        return;
+    // A PC keeps no loaded playback while following Spotify or at the radio's saved spot (play
+    // resumes the radio then); what it shows is still the playback the session sent.
+    let shown;
+    let playback = if let Some(playback) = player.buffered_playback.as_ref() {
+        playback
+    } else {
+        let Some(playback) = player.playback.as_ref() else {
+            return;
+        };
+        shown = crate::state::PlaybackMetadata::from_playback(playback);
+        &shown
     };
     let duration = match player.currently_playing() {
         Some(PlayableItem::Track(track)) => track.duration,
