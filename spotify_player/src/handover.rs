@@ -19,7 +19,7 @@ use std::time::Duration;
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 
-use crate::client::AppClient;
+use crate::client::{until_accepted, AppClient};
 use crate::state::SharedState;
 use rspotify::prelude::OAuthClient as _;
 
@@ -171,14 +171,13 @@ pub async fn hand_over(client: &AppClient, state: &SharedState, device_id: &str,
     tracing::info!("Handing the session over to device_id={device_id}");
     // the next song would start here otherwise
     client.pause_player();
-    let moved = match client.hand_off_track_list(state, device_id, play).await {
-        Ok(true) => Ok(()),
-        Ok(false) => client
-            .transfer_playback(device_id, Some(play))
-            .await
-            .map_err(anyhow::Error::from),
-        Err(err) => Err(err),
-    };
+    let moved = until_accepted("hand the session over", || async {
+        if client.hand_off_track_list(state, device_id, play).await? {
+            return Ok(());
+        }
+        Ok(client.transfer_playback(device_id, Some(play)).await?)
+    })
+    .await;
     if let Err(err) = moved {
         // keep the session; the next song change tries again
         tracing::error!("Failed to hand the session over: {err:#}");
@@ -186,7 +185,11 @@ pub async fn hand_over(client: &AppClient, state: &SharedState, device_id: &str,
     }
     // the paused state moves with the playback, whatever the transfer asks for
     if play {
-        if let Err(err) = client.resume_playback(Some(device_id), None).await {
+        if let Err(err) = until_accepted("start the playback on the new release", || async {
+            Ok(client.resume_playback(Some(device_id), None).await?)
+        })
+        .await
+        {
             tracing::error!("Failed to start the playback on the new release: {err:#}");
         }
     }

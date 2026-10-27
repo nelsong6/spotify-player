@@ -68,6 +68,50 @@ fn parse_current_playback_response(
     Ok(Some(serde_json::from_value(response)?))
 }
 
+/// How long Spotify asked to wait, when it refused a request for its rate limit
+fn refused_for(err: &anyhow::Error) -> Option<std::time::Duration> {
+    let rspotify::ClientError::Http(http) = err.downcast_ref::<rspotify::ClientError>()? else {
+        return None;
+    };
+    let rspotify::http::HttpError::StatusCode(response) = http.as_ref() else {
+        return None;
+    };
+    if response.status() != reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return None;
+    }
+    let seconds = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(5);
+    Some(std::time::Duration::from_secs(seconds + 1))
+}
+
+/// Run a step that changes what plays until Spotify takes it. A refusal for the rate limit is
+/// waited out as Spotify asks and the step sent again; it is never taken as done.
+pub async fn until_accepted<T, F, Fut>(what: &str, mut step: F) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    loop {
+        match step().await {
+            Err(err) => match refused_for(&err) {
+                Some(wait) => {
+                    tracing::warn!(
+                        "Spotify refused to {what}; sending it again in {}s",
+                        wait.as_secs()
+                    );
+                    tokio::time::sleep(wait).await;
+                }
+                None => return Err(err),
+            },
+            done => return done,
+        }
+    }
+}
+
 /// The application's Spotify client
 #[derive(Clone)]
 pub struct AppClient {
@@ -255,13 +299,23 @@ impl AppClient {
                 for i in 0..max_retries {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-                    if let Err(err) = client.retrieve_current_playback(&state, false).await {
+                    if let Err(err) = until_accepted("report the playback", || {
+                        client.retrieve_current_playback(&state, false)
+                    })
+                    .await
+                    {
                         tracing::error!("Failed to retrieve current playback: {err:#}");
                         return;
                     }
 
-                    // if playback exists, don't connect to a new device
-                    if state.player.read().playback.is_some() {
+                    // if playback exists, don't connect to a new device. The session's own
+                    // playback counts only when it's the saved session: anything else is what
+                    // Spotify loads on connecting, which the saved session replaces.
+                    let existing = state.player.read().playback.clone();
+                    let kept = existing.is_some_and(|playback| {
+                        !state.is_session || state.session.lock().session.holds(&playback)
+                    });
+                    if kept {
                         tracing::info!("Playback already exists, skipping device connection.");
                         continue;
                     }
@@ -283,13 +337,20 @@ impl AppClient {
                             max_retries,
                             "Trying to connect to device"
                         );
-                        if let Err(err) = client.transfer_playback(&device_id, Some(false)).await {
+                        let connected = until_accepted("connect to the device", || async {
+                            Ok(client.transfer_playback(&device_id, Some(false)).await?)
+                        })
+                        .await;
+                        if let Err(err) = connected {
                             tracing::warn!(%device_id, "Connection failed: {err:#}");
                         } else {
                             tracing::info!(%device_id, "Connection succeeded!");
                             if !resume {
                                 if let Err(err) =
-                                    client.restore_session(&state, device_id.as_ref()).await
+                                    until_accepted("restore the saved session", || {
+                                        client.restore_session(&state, device_id.as_ref())
+                                    })
+                                    .await
                                 {
                                     tracing::warn!(
                                         "Failed to restore the previous session: {err:#}"
@@ -297,8 +358,12 @@ impl AppClient {
                                 }
                             }
                             if resume {
-                                if let Err(err) =
-                                    client.resume_playback(Some(device_id.as_ref()), None).await
+                                if let Err(err) = until_accepted("resume the playback", || async {
+                                    Ok(client
+                                        .resume_playback(Some(device_id.as_ref()), None)
+                                        .await?)
+                                })
+                                .await
                                 {
                                     tracing::warn!(
                                         "Failed to resume playback after reconnect: {err:#}"
@@ -1334,7 +1399,7 @@ impl AppClient {
     async fn restore_session(&self, state: &SharedState, device_id: &str) -> Result<()> {
         // only on the first connection after startup, not when the session reconnects
         static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if RESTORED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        if RESTORED.load(std::sync::atomic::Ordering::SeqCst) {
             return Ok(());
         }
         let Some(saved) = session::load() else {
@@ -1349,6 +1414,8 @@ impl AppClient {
         );
         self.start_saved_session(&saved, device_id).await?;
         self.pause_playback(Some(device_id)).await?;
+        // done only once Spotify has taken it, so a refusal is sent again
+        RESTORED.store(true, std::sync::atomic::Ordering::SeqCst);
         state.session.lock().sync();
         Ok(())
     }
@@ -2579,9 +2646,52 @@ fn move_seed_track_to_front(tracks: &mut Vec<Track>, seed_track: Track) {
 
 #[cfg(test)]
 mod tests {
-    use super::{move_seed_track_to_front, parse_current_playback_response};
+    use super::{move_seed_track_to_front, parse_current_playback_response, until_accepted};
     use crate::state::Track;
     use rspotify::model::{PlayableItem, TrackId};
+
+    fn refusal() -> anyhow::Error {
+        let response: reqwest::Response = http::Response::builder()
+            .status(429)
+            .header("retry-after", "2")
+            .body(Vec::new())
+            .unwrap()
+            .into();
+        rspotify::ClientError::Http(Box::new(rspotify::http::HttpError::StatusCode(response)))
+            .into()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refused_step_waits_as_spotify_asks_and_is_sent_again() {
+        let started = tokio::time::Instant::now();
+        let mut sent = 0;
+        let result = until_accepted("test", || {
+            sent += 1;
+            let refused = sent == 1;
+            async move {
+                if refused {
+                    Err(refusal())
+                } else {
+                    Ok(sent)
+                }
+            }
+        })
+        .await;
+        assert_eq!(result.unwrap(), 2);
+        assert!(started.elapsed() >= std::time::Duration::from_secs(2));
+    }
+
+    #[tokio::test]
+    async fn another_failure_is_not_sent_again() {
+        let mut sent = 0;
+        let result: anyhow::Result<()> = until_accepted("test", || {
+            sent += 1;
+            async { anyhow::bail!("not found") }
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(sent, 1);
+    }
 
     fn sample_track(id: &'static str, name: &str) -> Track {
         Track {

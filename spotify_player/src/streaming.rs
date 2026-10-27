@@ -288,8 +288,11 @@ pub async fn new_connection(
                                         .await;
                                         return;
                                     }
-                                    if let Err(err) =
-                                        client.continue_after_end(&state, ended_uri).await
+                                    if let Err(err) = crate::client::until_accepted(
+                                        "continue after the playback ran out",
+                                        || client.continue_after_end(&state, ended_uri.clone()),
+                                    )
+                                    .await
                                     {
                                         tracing::warn!(
                                             "Failed to continue after the playback ran out: {err:#}"
