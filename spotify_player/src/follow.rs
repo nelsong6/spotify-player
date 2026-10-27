@@ -1,13 +1,18 @@
 //! Drive and follow. spt drives the session: our radio, our position. When
 //! something else drives Spotify (a phone, a Jam, any remote), the session follows it: the PCs
 //! show what Spotify plays, and the radio stays where it was. Spotify pushes its connect state to
-//! the session's player, so following costs no requests.
+//! the session's player, so following costs no requests. While following, a second player plays
+//! along with the followed device, so the PCs visualize it and can play it aloud.
 
 use crate::config;
 use crate::state::SharedState;
 use futures::StreamExt as _;
 use librespot_core::{dealer::protocol::Message, Session};
+use librespot_playback::player::Player;
 use librespot_protocol::connect::ClusterUpdate;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Notify;
 
 /// What Spotify plays on the device driving it
 #[derive(Clone, Debug)]
@@ -33,6 +38,8 @@ pub struct Follow {
     pub following: bool,
     /// What Spotify last said it plays
     pub remote: Option<Remote>,
+    /// Woken on each change to what's followed
+    changed: Arc<Notify>,
 }
 
 /// Follow Spotify's connect state for as long as `session` lasts
@@ -62,6 +69,7 @@ pub fn watch(session: &Session, state: SharedState) {
 pub fn start(state: &SharedState) {
     state.follow.lock().following = true;
     tracing::info!("Following Spotify, as a PC asked");
+    state.follow.lock().changed.notify_one();
     state.playback_changed.notify_one();
 }
 
@@ -143,9 +151,141 @@ fn handle(state: &SharedState, update: ClusterUpdate) {
         session.record_position(&remote.track_uri, remote.position_ms);
     }
     follow.remote = Some(remote);
+    follow.changed.notify_one();
     drop(follow);
     drop(session);
     state.playback_changed.notify_one();
+}
+
+/// Play along with the followed device on `player`, which shares the session's audio output, for
+/// as long as this slot is the session. The radio's own player starting stops it first, through
+/// [`radio_started`].
+pub fn play_along(player: Arc<Player>, state: SharedState) {
+    /// How often the player is checked against the followed device without a change
+    const CHECK_INTERVAL: Duration = Duration::from_secs(5);
+    /// How far the player may drift from the followed device before it seeks
+    const DRIFT_MS: i64 = 3_000;
+    *ALONG.lock() = Some(Arc::clone(&player));
+    let changed = Arc::clone(&state.follow.lock().changed);
+    tokio::spawn(async move {
+        crate::handover::until_session().await;
+        let mut playing: Option<Along> = None;
+        loop {
+            let wanted = {
+                let follow = state.follow.lock();
+                follow
+                    .remote
+                    .clone()
+                    .filter(|remote| follow.following && !is_ours(remote))
+            };
+            let now = chrono::Utc::now().timestamp_millis();
+            playing = match (wanted, playing.take()) {
+                (None, Some(_)) => {
+                    player.stop();
+                    None
+                }
+                (None, None) => None,
+                (Some(remote), along) => {
+                    let target = (remote.position_ms
+                        + if remote.is_playing {
+                            (now - remote.at_ms).max(0)
+                        } else {
+                            0
+                        })
+                    .max(0);
+                    match along.filter(|along| along.track_uri == remote.track_uri) {
+                        Some(along) => {
+                            let drifted = (along.position_at(now) - target).abs() > DRIFT_MS;
+                            if drifted {
+                                player.seek(u32::try_from(target).unwrap_or(u32::MAX));
+                            }
+                            let toggled = along.is_playing != remote.is_playing;
+                            if toggled {
+                                if remote.is_playing {
+                                    player.play();
+                                } else {
+                                    player.pause();
+                                }
+                            }
+                            if drifted || toggled {
+                                Some(Along::at(&remote, target, now))
+                            } else {
+                                Some(along)
+                            }
+                        }
+                        None => match librespot_core::SpotifyUri::from_uri(&remote.track_uri) {
+                            Ok(uri) => {
+                                tracing::info!(
+                                    "Playing along with {}: {} from {target} ms",
+                                    remote.device,
+                                    remote.track_uri
+                                );
+                                player.load(
+                                    uri,
+                                    remote.is_playing,
+                                    u32::try_from(target).unwrap_or(u32::MAX),
+                                );
+                                Some(Along::at(&remote, target, now))
+                            }
+                            Err(err) => {
+                                tracing::warn!(
+                                    "Can't play along with {}: {err:#}",
+                                    remote.track_uri
+                                );
+                                player.stop();
+                                None
+                            }
+                        },
+                    }
+                }
+            };
+            let _ = tokio::time::timeout(CHECK_INTERVAL, changed.notified()).await;
+        }
+    });
+}
+
+/// The player that plays along, stopped when the radio's own player starts, since both write the
+/// session's one audio output
+static ALONG: parking_lot::Mutex<Option<Arc<Player>>> = parking_lot::Mutex::new(None);
+
+/// The radio's own player started: playing along stops at once, before following ends
+pub fn radio_started() {
+    if let Some(player) = ALONG.lock().as_ref() {
+        player.stop();
+    }
+}
+
+/// Whether `remote` is the session's own player, which needs no one playing along
+fn is_ours(remote: &Remote) -> bool {
+    remote.device == config::get_config().app_config.device.name
+}
+
+/// What the player playing along was last set to
+struct Along {
+    track_uri: String,
+    position_ms: i64,
+    at_ms: i64,
+    is_playing: bool,
+}
+
+impl Along {
+    fn at(remote: &Remote, position_ms: i64, now: i64) -> Self {
+        Self {
+            track_uri: remote.track_uri.clone(),
+            position_ms,
+            at_ms: now,
+            is_playing: remote.is_playing,
+        }
+    }
+
+    fn position_at(&self, now: i64) -> i64 {
+        self.position_ms
+            + if self.is_playing {
+                (now - self.at_ms).max(0)
+            } else {
+                0
+            }
+    }
 }
 
 /// A device's position as Spotify passes it on: the position as of a moment

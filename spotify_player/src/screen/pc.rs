@@ -164,9 +164,7 @@ pub fn pcs() -> Vec<Pc> {
 /// auth.romaine.life first if needed
 pub fn set_muted(pc: &Pc, muted: bool) {
     if pc.id == gethostname::gethostname().to_string_lossy() {
-        if crate::cast::is_listening() == muted {
-            crate::cast::toggle_listening();
-        }
+        crate::cast::set_muted(muted);
         return;
     }
     let Some(link) = LINK.get() else {

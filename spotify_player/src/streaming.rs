@@ -185,6 +185,13 @@ pub async fn new_connection(
     }
 
     let player = player::Player::new(
+        player_config.clone(),
+        session.clone(),
+        mixer.get_soft_volume(),
+        move || backend(None, AudioFormat::S16),
+    );
+    // not a Spotify Connect device, so playing along never takes over from the device followed
+    let along = player::Player::new(
         player_config,
         session.clone(),
         mixer.get_soft_volume(),
@@ -198,6 +205,7 @@ pub async fn new_connection(
         configs.app_config.pause_on_startup && IS_FIRST_CONNECTION.swap(false, Ordering::SeqCst);
 
     crate::follow::watch(&session, state.clone());
+    crate::follow::play_along(along, state.clone());
 
     let player_event_task = tokio::task::spawn({
         let mut channel = player.get_player_event_channel();
@@ -244,6 +252,9 @@ pub async fn new_connection(
                     .map(|c| c.uri.clone())
                     .unwrap_or_default();
                 play_reporter.handle(&event, &session, &context_uri);
+                if let player::PlayerEvent::Playing { .. } = event {
+                    crate::follow::radio_started();
+                }
                 if let player::PlayerEvent::VolumeChanged { volume } = event {
                     state.session.lock().own_volume = Some(volume_percent(volume));
                 }

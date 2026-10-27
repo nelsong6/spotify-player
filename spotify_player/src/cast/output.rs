@@ -3,7 +3,6 @@
 //! to the new default when the system's default output changes. The sound card's callback is told
 //! when its buffer reaches the speaker, which is what keeps the PCs in step.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,6 +14,7 @@ use super::clock::Clock;
 use super::protocol::{Format, Micros};
 use super::resample::Resampler;
 use super::stream::Stream;
+use super::Mute;
 
 /// How long to wait between attempts to open an output while there is none
 const REOPEN_INTERVAL: Duration = Duration::from_secs(2);
@@ -103,7 +103,7 @@ enum Event {
 pub fn run(
     shared: &Arc<Mutex<Shared>>,
     clock: &Arc<Clock>,
-    muted: &Arc<AtomicBool>,
+    mute: &Arc<Mute>,
     played: Option<&flume::Sender<(u32, Vec<f32>)>>,
 ) {
     let (events, changes) = flume::unbounded();
@@ -114,7 +114,7 @@ pub fn run(
         })
         .ok();
     loop {
-        match open(shared, clock, muted, played.cloned(), events.clone()) {
+        match open(shared, clock, mute, played.cloned(), events.clone()) {
             Ok(stream) => {
                 match changes.recv() {
                     Ok(Event::Lost) => {
@@ -142,7 +142,7 @@ pub fn run(
 fn open(
     shared: &Arc<Mutex<Shared>>,
     clock: &Arc<Clock>,
-    muted: &Arc<AtomicBool>,
+    mute: &Arc<Mute>,
     played: Option<flume::Sender<(u32, Vec<f32>)>>,
     events: flume::Sender<Event>,
 ) -> anyhow::Result<cpal::Stream> {
@@ -163,7 +163,7 @@ fn open(
     let callback = Callback {
         shared: Arc::clone(shared),
         clock: Arc::clone(clock),
-        muted: Arc::clone(muted),
+        mute: Arc::clone(mute),
         played,
         rate,
         device_channels: usize::from(config.channels()),
@@ -207,7 +207,7 @@ where
 struct Callback {
     shared: Arc<Mutex<Shared>>,
     clock: Arc<Clock>,
-    muted: Arc<AtomicBool>,
+    mute: Arc<Mute>,
     /// Receives what plays, for the visualization
     played: Option<flume::Sender<(u32, Vec<f32>)>>,
     rate: u32,
@@ -239,11 +239,7 @@ impl Callback {
         } else if let Some(played) = &self.played {
             let _ = played.try_send((self.rate, self.buf.clone()));
         }
-        let gain = if self.muted.load(Ordering::Relaxed) {
-            0.0
-        } else {
-            1.0
-        };
+        let gain = if self.mute.silent() { 0.0 } else { 1.0 };
         for (out, src) in data
             .chunks_mut(self.device_channels)
             .zip(self.buf.chunks(CHANNELS))
