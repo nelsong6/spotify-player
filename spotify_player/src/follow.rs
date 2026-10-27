@@ -8,7 +8,7 @@ use crate::config;
 use crate::state::SharedState;
 use futures::StreamExt as _;
 use librespot_core::{dealer::protocol::Message, Session};
-use librespot_playback::player::Player;
+use librespot_playback::player::{Player, PlayerEvent};
 use librespot_protocol::connect::ClusterUpdate;
 use std::sync::Arc;
 use std::time::Duration;
@@ -164,12 +164,18 @@ pub fn play_along(player: Arc<Player>, state: SharedState) {
     /// How often the player is checked against the followed device without a change
     const CHECK_INTERVAL: Duration = Duration::from_secs(5);
     /// How far the player may drift from the followed device before it seeks
-    const DRIFT_MS: i64 = 3_000;
+    const DRIFT_MS: i64 = 400;
+    /// How long a seek is given to land before the player is judged again
+    const SEEK_SETTLE: Duration = Duration::from_secs(2);
     *ALONG.lock() = Some(Arc::clone(&player));
     let changed = Arc::clone(&state.follow.lock().changed);
+    let mut events = player.get_player_event_channel();
     tokio::spawn(async move {
         crate::handover::until_session().await;
+        let lead = output_lead_ms();
+        tracing::info!("Playing along {lead} ms ahead, for the PCs' output delay");
         let mut playing: Option<Along> = None;
+        let mut last_seek: Option<tokio::time::Instant> = None;
         loop {
             let wanted = {
                 let follow = state.follow.lock();
@@ -186,18 +192,24 @@ pub fn play_along(player: Arc<Player>, state: SharedState) {
                 }
                 (None, None) => None,
                 (Some(remote), along) => {
+                    // the PCs play what the player plays `lead` later
                     let target = (remote.position_ms
                         + if remote.is_playing {
                             (now - remote.at_ms).max(0)
                         } else {
                             0
-                        })
-                    .max(0);
+                        }
+                        + lead)
+                        .max(0);
                     match along.filter(|along| along.track_uri == remote.track_uri) {
                         Some(along) => {
-                            let drifted = (along.position_at(now) - target).abs() > DRIFT_MS;
+                            let settled = last_seek.is_none_or(|at| at.elapsed() >= SEEK_SETTLE);
+                            let drifted = along.started
+                                && settled
+                                && (along.position_at(now) - target).abs() > DRIFT_MS;
                             if drifted {
                                 player.seek(u32::try_from(target).unwrap_or(u32::MAX));
+                                last_seek = Some(tokio::time::Instant::now());
                             }
                             let toggled = along.is_playing != remote.is_playing;
                             if toggled {
@@ -208,7 +220,7 @@ pub fn play_along(player: Arc<Player>, state: SharedState) {
                                 }
                             }
                             if drifted || toggled {
-                                Some(Along::at(&remote, target, now))
+                                Some(Along::at(&remote, target, now, along.started))
                             } else {
                                 Some(along)
                             }
@@ -225,7 +237,7 @@ pub fn play_along(player: Arc<Player>, state: SharedState) {
                                     remote.is_playing,
                                     u32::try_from(target).unwrap_or(u32::MAX),
                                 );
-                                Some(Along::at(&remote, target, now))
+                                Some(Along::at(&remote, target, now, false))
                             }
                             Err(err) => {
                                 tracing::warn!(
@@ -239,9 +251,51 @@ pub fn play_along(player: Arc<Player>, state: SharedState) {
                     }
                 }
             };
-            let _ = tokio::time::timeout(CHECK_INTERVAL, changed.notified()).await;
+            tokio::select! {
+                () = tokio::time::sleep(CHECK_INTERVAL) => {}
+                () = changed.notified() => {}
+                event = events.recv() => {
+                    let Some(event) = event else { break };
+                    // the player's own word on where it is, as of now: a song starts only once
+                    // it has loaded, and a seek lands only once its audio has arrived
+                    if let (
+                        PlayerEvent::Playing { position_ms, .. }
+                        | PlayerEvent::Paused { position_ms, .. }
+                        | PlayerEvent::Seeked { position_ms, .. }
+                        | PlayerEvent::PositionCorrection { position_ms, .. },
+                        Some(along),
+                    ) = (event, playing.as_mut())
+                    {
+                        along.position_ms = i64::from(position_ms);
+                        along.at_ms = chrono::Utc::now().timestamp_millis();
+                        along.started = true;
+                    }
+                }
+            }
         }
     });
+}
+
+/// How far the session's player runs ahead of what the PCs play: Snapcast's buffer, and the pipe
+/// into Snapcast, which stays full while the player waits on it
+fn output_lead_ms() -> i64 {
+    /// The session's audio: 44.1 kHz, 16-bit stereo
+    const BYTES_PER_SECOND: i64 = 44_100 * 2 * 2;
+    let buffer_ms = std::fs::read_to_string("/etc/snapserver.conf")
+        .ok()
+        .and_then(|conf| {
+            conf.lines().find_map(|line| {
+                let (key, value) = line.split_once('=')?;
+                (key.trim() == "buffer").then(|| value.trim().parse::<i64>().ok())?
+            })
+        })
+        .unwrap_or(0);
+    // SAFETY: F_GETPIPE_SZ only reads the size of the pipe behind stdout
+    #[cfg(target_os = "linux")]
+    let pipe = i64::from(unsafe { libc::fcntl(libc::STDOUT_FILENO, libc::F_GETPIPE_SZ) }.max(0));
+    #[cfg(not(target_os = "linux"))]
+    let pipe = 0;
+    buffer_ms + pipe * 1000 / BYTES_PER_SECOND
 }
 
 /// The player that plays along, stopped when the radio's own player starts, since both write the
@@ -263,15 +317,18 @@ fn is_ours(remote: &Remote) -> bool {
 /// What the player playing along was last set to
 struct Along {
     track_uri: String,
+    /// Whether the player has said where it is since loading the song
+    started: bool,
     position_ms: i64,
     at_ms: i64,
     is_playing: bool,
 }
 
 impl Along {
-    fn at(remote: &Remote, position_ms: i64, now: i64) -> Self {
+    fn at(remote: &Remote, position_ms: i64, now: i64, started: bool) -> Self {
         Self {
             track_uri: remote.track_uri.clone(),
+            started,
             position_ms,
             at_ms: now,
             is_playing: remote.is_playing,

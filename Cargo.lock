@@ -5407,6 +5407,7 @@ dependencies = [
  "hyper-util",
  "image",
  "jsonwebtoken",
+ "libc",
  "libloading",
  "librespot-connect",
  "librespot-core",
