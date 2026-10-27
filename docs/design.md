@@ -97,7 +97,7 @@ Every feature spt has, what it does today, and whether it is part of the radio. 
 | Plays reported | The session's plays show in Spotify's listening history. | In |
 | Command line | `spt playback ...`, `spt start ...`, `spt playlist ...` and others, run against the open spt. | In |
 | OS media keys | Off in the shared config. | In |
-| Following Spotify | `F`, or automatically when something else plays: the PCs show what Spotify plays elsewhere. | On hold (#89, #87) |
+| Following Spotify | `F` only: the PCs show what Spotify plays elsewhere. Another device never starts it, since only a deliberate act moves the radio. | On hold (#89, #87) |
 
 ## Not supported
 

@@ -1,5 +1,5 @@
-//! Drive and follow. spt drives the session: our radio, our position. When
-//! something else drives Spotify (a phone, a Jam, any remote), the session follows it: the PCs
+//! Drive and follow. spt drives the session: our radio, our position. When asked to (`F`), or
+//! when something else plays on the session's own speaker (a Jam), the session follows: the PCs
 //! show what Spotify plays, and the radio stays where it was. Spotify pushes its connect state to
 //! the session's player, so following costs no requests. While following, a second player plays
 //! along with the followed device, so the PCs visualize it and can play it aloud.
@@ -350,12 +350,13 @@ enum Seen {
     Elsewhere,
 }
 
-/// Whether the session follows, from whether it did and what Spotify now says plays
+/// Whether the session follows, from whether it did and what Spotify now says plays. Another
+/// device starts nothing: the radio moves only by a deliberate act (`F`).
 fn follows(following: bool, seen: Seen) -> bool {
     match seen {
         Seen::Radio => false,
-        Seen::OtherOnOurSpeaker | Seen::Elsewhere => true,
-        Seen::LeftoverOnOurSpeaker => following,
+        Seen::OtherOnOurSpeaker => true,
+        Seen::Elsewhere | Seen::LeftoverOnOurSpeaker => following,
     }
 }
 
@@ -445,8 +446,10 @@ mod tests {
     }
 
     #[test]
-    fn follows_whatever_else_drives_spotify_until_the_radio_plays_on_our_speaker() {
-        assert!(follows(false, Seen::Elsewhere));
+    fn follows_another_device_only_on_purpose_until_the_radio_plays_on_our_speaker() {
+        // another device, even playing, doesn't dislodge the radio; `F` follows it
+        assert!(!follows(false, Seen::Elsewhere));
+        assert!(follows(true, Seen::Elsewhere));
         assert!(follows(false, Seen::OtherOnOurSpeaker));
         assert!(!follows(true, Seen::Radio));
         // Spotify's own leftover on our speaker changes nothing
