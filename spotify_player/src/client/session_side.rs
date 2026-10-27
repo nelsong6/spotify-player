@@ -1,6 +1,11 @@
 //! The session's side of the client: its player, and keeping the radio going.
 
+use std::collections::HashMap;
+
 use anyhow::Result;
+use librespot_core::SpotifyUri;
+use librespot_metadata::Metadata as _;
+use rspotify::model::{AlbumId, ArtistId, FullTrack, SimplifiedAlbum, SimplifiedArtist};
 use rspotify::prelude::*;
 
 use super::AppClient;
@@ -190,5 +195,81 @@ impl AppClient {
         RESTORED.store(true, std::sync::atomic::Ordering::SeqCst);
         state.session.lock().sync();
         Ok(())
+    }
+}
+
+impl AppClient {
+    /// A song's details from the player's own metadata, which isn't under the Web API's rate
+    /// limit
+    #[allow(deprecated)] // rspotify's types still carry fields Spotify removed
+    pub async fn track_from_player(&self, uri: &str) -> Result<FullTrack> {
+        let session = self.spotify.session().await;
+        let track = librespot_metadata::Track::get(&session, &SpotifyUri::from_uri(uri)?).await?;
+        let cover = track
+            .album
+            .covers
+            .iter()
+            .max_by_key(|image| image.width)
+            .map(|image| {
+                Ok::<_, anyhow::Error>(rspotify::model::Image {
+                    url: format!("https://i.scdn.co/image/{}", image.id.to_base16()?),
+                    width: u32::try_from(image.width).ok(),
+                    height: u32::try_from(image.height).ok(),
+                })
+            })
+            .transpose()?;
+        let artists = track
+            .artists
+            .iter()
+            .map(|artist| SimplifiedArtist {
+                external_urls: HashMap::new(),
+                href: None,
+                id: artist
+                    .id
+                    .to_id()
+                    .ok()
+                    .and_then(|id| ArtistId::from_id(id).ok()),
+                name: artist.name.clone(),
+            })
+            .collect::<Vec<_>>();
+        Ok(FullTrack {
+            album: SimplifiedAlbum {
+                album_group: None,
+                album_type: None,
+                artists: artists.clone(),
+                available_markets: Vec::new(),
+                external_urls: HashMap::new(),
+                href: None,
+                id: track
+                    .album
+                    .id
+                    .to_id()
+                    .ok()
+                    .and_then(|id| AlbumId::from_id(id).ok()),
+                images: cover.into_iter().collect(),
+                name: track.album.name.clone(),
+                release_date: None,
+                release_date_precision: None,
+                restrictions: None,
+            },
+            artists,
+            available_markets: Vec::new(),
+            disc_number: track.disc_number,
+            duration: chrono::Duration::milliseconds(i64::from(track.duration)),
+            explicit: track.is_explicit,
+            external_ids: HashMap::new(),
+            external_urls: HashMap::new(),
+            href: None,
+            id: Some(TrackId::from_uri(uri)?.into_static()),
+            is_local: false,
+            is_playable: None,
+            linked_from: None,
+            restrictions: None,
+            name: track.name,
+            popularity: u32::try_from(track.popularity).unwrap_or_default(),
+            preview_url: None,
+            track_number: u32::try_from(track.number).unwrap_or_default(),
+            r#type: rspotify::model::Type::Track,
+        })
     }
 }

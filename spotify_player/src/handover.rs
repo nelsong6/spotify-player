@@ -230,21 +230,32 @@ pub async fn hand_over(client: &AppClient, state: &SharedState, device_id: &str,
 pub async fn watch_while_idle(client: AppClient, state: SharedState) {
     loop {
         tokio::time::sleep(IDLE_CHECK).await;
-        let playing = state
-            .player
-            .read()
-            .buffered_playback
-            .as_ref()
-            .is_some_and(|p| p.is_playing);
+        // Spotify's playback may be another device's, a phone the session follows: only what
+        // plays on this slot's own speaker is the session's to wait for and move
+        let (ours, playing) = {
+            let own = state.session.lock().own_device.clone();
+            let player = state.player.read();
+            let ours = own.is_some()
+                && player
+                    .playback
+                    .as_ref()
+                    .is_some_and(|playback| playback.device.id == own);
+            let playing = player
+                .buffered_playback
+                .as_ref()
+                .is_some_and(|p| p.is_playing);
+            (ours, ours && playing)
+        };
         if playing {
             continue;
         }
         let Some(device_id) = pending(&state) else {
             continue;
         };
-        // Spotify has forgotten the idle session's playback: nothing to move, and the new
-        // release starts from the saved session
-        if state.player.read().playback.is_none() {
+        // nothing of the session's on its speaker (Spotify forgot the idle playback, or another
+        // device plays): nothing to move, and the new release starts from the saved session or
+        // follows what Spotify pushes it
+        if !ours {
             tracing::info!("Nothing to hand over to device_id={device_id}; exiting");
             std::process::exit(0);
         }

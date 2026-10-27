@@ -6,7 +6,6 @@ use rspotify::model::{
     Actions, Context, CurrentPlaybackContext, CurrentlyPlayingType, Device, DeviceType, FullTrack,
     PlayableItem, RepeatState, TrackId,
 };
-use rspotify::prelude::*;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::watch;
@@ -166,11 +165,11 @@ async fn followed_playback(
     }))
 }
 
-/// A song's details, asking Spotify only for a song not shown last
+/// A song's details, from the player's own metadata and only for a song not shown last
 async fn song(client: &AppClient, track: &mut Option<FullTrack>, uri: &str) -> Option<FullTrack> {
     let id = TrackId::from_uri(uri).ok()?.into_static();
     if track.as_ref().and_then(|t| t.id.as_ref()) != Some(&id) {
-        match BaseClient::track(&**client, id, None).await {
+        match client.track_from_player(uri).await {
             Ok(song) => *track = Some(song),
             Err(err) => {
                 tracing::warn!("Failed to get the song {uri}: {err:#}");
