@@ -21,6 +21,9 @@ struct PlayerEventHandlerState {
     last_get_context: Instant,
     last_playback_refresh: Instant,
     last_queue_refresh: Option<(String, Instant)>,
+    /// Whether the library page's playlists, albums and artists were loaded this run
+    #[cfg(feature = "cast")]
+    library_loaded: bool,
 }
 
 /// starts the client's request handler
@@ -189,6 +192,21 @@ fn handle_page_change_event(
             }
         }
 
+        // a PC starts from the library's copy on disk and refreshes it the first time the page
+        // is seen (the visualization covers it until switched off)
+        #[cfg(feature = "cast")]
+        PageState::Library { .. }
+            if state.follows_session()
+                && !handler_state.library_loaded
+                && crate::screen::pc::is_settled()
+                && !state.is_visualization_shown() =>
+        {
+            handler_state.library_loaded = true;
+            client_pub.send(ClientRequest::GetUserPlaylists)?;
+            client_pub.send(ClientRequest::GetUserSavedAlbums)?;
+            client_pub.send(ClientRequest::GetUserFollowedArtists)?;
+        }
+
         PageState::Lyrics {
             track_uri,
             track,
@@ -263,6 +281,8 @@ pub fn start_player_event_watcher(state: &SharedState, client_pub: &flume::Sende
         last_playback_refresh: Instant::now(),
         ended_playable_uri: None,
         last_queue_refresh: None,
+        #[cfg(feature = "cast")]
+        library_loaded: false,
     };
 
     loop {
