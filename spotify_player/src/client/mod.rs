@@ -256,6 +256,16 @@ impl AppClient {
             let client = self.clone();
             let state = state.clone();
             async move {
+                // A new release's slot starts beside the session it takes over from: it acts
+                // only once it is the session, and a takeover has already moved the playback.
+                #[cfg(feature = "streaming")]
+                if state.is_session
+                    && crate::handover::until_session().await == crate::handover::Became::TookOver
+                {
+                    client.update_playback_non_blocking(&state);
+                    return;
+                }
+
                 // The main playback initialization logic is simple:
                 // if there is no playback, connect to an available device
                 //
@@ -1261,7 +1271,13 @@ impl AppClient {
         if state.is_session {
             state.session.lock().expected.clone_from(&saved.current_uri);
         }
-        self.start_saved_session(&saved, &device_id).await
+        let started = self.start_saved_session(&saved, &device_id).await;
+        #[cfg(feature = "streaming")]
+        if started.is_err() {
+            // nothing loaded, so no song to check
+            state.session.lock().expected = None;
+        }
+        started
     }
 
     /// Move a track-list playback (a radio, liked songs, ...) to `device_id` by starting the list

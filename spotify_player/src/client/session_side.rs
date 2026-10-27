@@ -151,6 +151,19 @@ impl AppClient {
         if RESTORED.load(std::sync::atomic::Ordering::SeqCst) {
             return Ok(());
         }
+        // checked on every attempt: something playing here by now (a sent-again restore can come
+        // long after the first) is playback the restore would stop
+        let playing = state
+            .player
+            .read()
+            .buffered_playback
+            .as_ref()
+            .is_some_and(|playback| playback.is_playing);
+        if playing {
+            tracing::info!("Something plays already; not restoring the saved session");
+            RESTORED.store(true, std::sync::atomic::Ordering::SeqCst);
+            return Ok(());
+        }
         let Some(saved) = session::load() else {
             return Ok(());
         };
@@ -161,12 +174,18 @@ impl AppClient {
             saved.current_uri,
             saved.progress_ms
         );
-        #[cfg(feature = "streaming")]
-        {
-            state.session.lock().expected.clone_from(&saved.current_uri);
+        state.session.lock().expected.clone_from(&saved.current_uri);
+        let started = async {
+            self.start_saved_session(&saved, device_id).await?;
+            self.pause_playback(Some(device_id)).await?;
+            anyhow::Ok(())
         }
-        self.start_saved_session(&saved, device_id).await?;
-        self.pause_playback(Some(device_id)).await?;
+        .await;
+        if started.is_err() {
+            // nothing loaded, so no song to check
+            state.session.lock().expected = None;
+        }
+        started?;
         // done only once Spotify has taken it, so a refusal is sent again
         RESTORED.store(true, std::sync::atomic::Ordering::SeqCst);
         state.session.lock().sync();
