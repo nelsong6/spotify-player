@@ -581,6 +581,19 @@ impl AppClient {
                     }
                 }
                 let playback = state.player.read().buffered_playback.clone();
+                // nothing is loaded while the radio sits at its saved spot: play on our speaker,
+                // not on whatever device Spotify has active
+                if let (PlayerRequest::StartPlayback(started, _), None) = (&request, &playback) {
+                    let device_id = self
+                        .find_available_device(state)
+                        .await?
+                        .context("no Spotify device to play on")?;
+                    self.start_playback(started.clone(), Some(&device_id))
+                        .await?;
+                    state.session.lock().record_start(started);
+                    self.update_playback_non_blocking(state);
+                    return Ok(());
+                }
                 let started = match &request {
                     PlayerRequest::StartPlayback(p, _) => Some(p.clone()),
                     _ => None,
@@ -924,16 +937,12 @@ impl AppClient {
             .collect())
     }
 
-    /// Find a device to play on: the active one, else the session's player, which has the
-    /// config's device name. A PC never picks another device. If found, return the device's ID.
+    /// Find the device to play on: the session's player, which has the config's device name.
+    /// The radio plays only there, whatever device Spotify has active. If found, return the
+    /// device's ID.
     #[cfg_attr(not(feature = "streaming"), allow(unused_variables))]
     async fn find_available_device(&self, state: &SharedState) -> Result<Option<String>> {
         let devices = self.available_devices().await?;
-
-        // if there is an active device, return it
-        if let Some(d) = devices.iter().find(|d| d.is_active) {
-            return Ok(d.id.clone());
-        }
 
         #[allow(unused_mut)]
         let mut devices = devices
@@ -946,7 +955,7 @@ impl AppClient {
             self.ensure_integrated_device(&mut devices).await;
         }
 
-        tracing::info!("no active device found, available devices: {devices:?}");
+        tracing::info!("available devices: {devices:?}");
 
         let session_name = &config::get_config().app_config.device.name;
         let id = devices

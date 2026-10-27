@@ -214,6 +214,13 @@ Working on the fork:
   on the NAS, where only Nelson's account and the NAS admins can read it: a PC proves itself
   through his Windows login and never signs in. The keeper runs in the slot that holds the
   relay's port, so only one slot keeps playlists.
+- Our radio (decided 2026-10-26, OpenProject #86): spt is a radio built on Spotify, not a
+  Spotify client. The PCs show only the radio: the session's own player while it plays, the
+  saved session otherwise (`screen.rs` pushes it marked `left_off` when Spotify holds nothing
+  for the session's player, as when Spotify drops the idle speaker). Spotify playing elsewhere,
+  a phone say, changes nothing on screen. Play resumes the radio's song on the session's
+  speaker, never on Spotify's active device. The one planned exception is a Jam mode
+  (OpenProject #87).
 - The PCs' sync is snapclient's algorithm (`cast/stream.rs`), timed from cpal's callback
   timestamps (when the buffer reaches the speaker). WASAPI shared mode takes only the
   device's rate, so the 44.1 kHz stream is resampled to it on arrival (`cast/resample.rs`).
