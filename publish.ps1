@@ -48,8 +48,8 @@ ssh nas 'sudo /usr/local/bin/docker exec spt-session /upgrade.sh 2>/dev/null || 
 
 # a running spt keeps its release until restarted, so restart each one on the PCs; a PC that is
 # asleep or off gets this release the next time spt opens
-$restart = [Convert]::ToBase64String(
-    [Text.Encoding]::Unicode.GetBytes((Get-Content (Join-Path $PSScriptRoot 'restart-spt.ps1') -Raw)))
+$script = "`$Version = '$version'`n" + (Get-Content (Join-Path $PSScriptRoot 'restart-spt.ps1') -Raw)
+$restart = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
 foreach ($pc in 'nelsonpc', 'upstairspc', 'treadmill') {
     if ($pc -eq $env:COMPUTERNAME) {
         pwsh -NoProfile -EncodedCommand $restart
