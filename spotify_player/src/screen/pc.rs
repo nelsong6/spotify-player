@@ -172,6 +172,54 @@ pub fn set_muted(pc: &Pc, muted: bool, client_pub: &flume::Sender<ClientRequest>
     });
 }
 
+/// Which PCs play the session here, set for every PC at once
+#[derive(Clone, Copy, Debug)]
+pub enum Group {
+    Everywhere,
+    Nowhere,
+    OnlyHere,
+    AllButHere,
+}
+
+impl Group {
+    /// In the order the PC list shows them
+    pub const ALL: [Group; 4] = [
+        Group::Everywhere,
+        Group::Nowhere,
+        Group::OnlyHere,
+        Group::AllButHere,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Group::Everywhere => "play here on every PC",
+            Group::Nowhere => "play here on no PC",
+            Group::OnlyHere => "play here only on this PC",
+            Group::AllButHere => "play here on every PC but this one",
+        }
+    }
+
+    fn plays(self, here: bool) -> bool {
+        match self {
+            Group::Everywhere => true,
+            Group::Nowhere => false,
+            Group::OnlyHere => here,
+            Group::AllButHere => !here,
+        }
+    }
+}
+
+/// Turn play here on or off for every PC playing the session, as `group` says
+pub fn set_group(group: Group, client_pub: &flume::Sender<ClientRequest>) {
+    let here = gethostname::gethostname().to_string_lossy().into_owned();
+    for pc in pcs() {
+        let play = group.plays(pc.id == here);
+        if pc.muted == play {
+            set_muted(&pc, !play, client_pub);
+        }
+    }
+}
+
 /// Send the screen now, after a key press may have changed it
 pub fn changed() {
     if let Some(link) = LINK.get() {

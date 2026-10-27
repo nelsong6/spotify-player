@@ -40,6 +40,10 @@
   children:
     - {name: "play here", description: "Play the radio on this PC, or only show it here", action: "PlayHere"}
     - {name: "play here on a PC", description: "Turn play here on or off for any PC", action: "PlayHereOnPc"}
+    - {name: "everywhere", description: "Play here on every PC", action: "PlayHereEverywhere"}
+    - {name: "nowhere", description: "Play here on no PC; the radio pauses", action: "PlayHereNowhere"}
+    - {name: "only this PC", description: "Play here on this PC and no other", action: "PlayHereOnlyHere"}
+    - {name: "all but this PC", description: "Play here on every PC but this one", action: "PlayHereAllButHere"}
     - {name: "follow spotify", description: "Show what Spotify plays from anywhere, until play takes control back", action: "FollowSpotify"}
 - name: "library"
   description: "Your playlists, artists, albums and liked songs"

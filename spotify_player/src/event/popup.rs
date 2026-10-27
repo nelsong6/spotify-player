@@ -302,13 +302,20 @@ pub fn handle_key_sequence_for_popup(
         PopupState::PcList(_) => {
             let pcs = crate::screen::pc::pcs();
 
+            let groups = crate::screen::pc::Group::ALL;
+
             handle_command_for_list_popup(
                 command,
                 ui,
-                pcs.len(),
+                groups.len() + pcs.len(),
                 |_, _| {},
                 |_, id: usize| -> Result<()> {
-                    crate::screen::pc::set_muted(&pcs[id], !pcs[id].muted, client_pub);
+                    match id.checked_sub(groups.len()) {
+                        None => crate::screen::pc::set_group(groups[id], client_pub),
+                        Some(id) => {
+                            crate::screen::pc::set_muted(&pcs[id], !pcs[id].muted, client_pub);
+                        }
+                    }
                     Ok(())
                 },
                 |ui: &mut UIStateGuard| {

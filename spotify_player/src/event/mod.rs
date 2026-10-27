@@ -892,6 +892,21 @@ fn handle_global_command(
         Command::PlayHereOnPc => {
             ui.popup = Some(PopupState::PcList(ListState::default()));
         }
+        Command::PlayHereEverywhere
+        | Command::PlayHereNowhere
+        | Command::PlayHereOnlyHere
+        | Command::PlayHereAllButHere => {
+            #[cfg(feature = "cast")]
+            crate::screen::pc::set_group(
+                match command {
+                    Command::PlayHereEverywhere => crate::screen::pc::Group::Everywhere,
+                    Command::PlayHereNowhere => crate::screen::pc::Group::Nowhere,
+                    Command::PlayHereOnlyHere => crate::screen::pc::Group::OnlyHere,
+                    _ => crate::screen::pc::Group::AllButHere,
+                },
+                client_pub,
+            );
+        }
         Command::FollowSpotify => {
             #[cfg(feature = "cast")]
             crate::screen::pc::follow_spotify();
