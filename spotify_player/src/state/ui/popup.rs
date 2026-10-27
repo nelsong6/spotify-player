@@ -1,10 +1,10 @@
+use super::LineInput;
 use crate::{
     command,
     state::{
         model::{Album, Artist, Episode, EpisodeId, Playlist, Show, Track, TrackId},
         ItemId,
     },
-    ui::single_line_input::LineInput,
 };
 use ratatui::widgets::ListState;
 use rspotify::model::PlaylistId;
@@ -41,10 +41,12 @@ pub enum PopupState {
         message: String,
         action: ConfirmableAction,
     },
+    #[cfg(feature = "tui")]
     CommandPalette(Box<CommandPalette>),
 }
 
 /// The command palette: an fzt session over the menu, or why it couldn't open
+#[cfg(feature = "tui")]
 #[derive(Debug, Deserialize)]
 pub enum CommandPalette {
     #[serde(skip)]
@@ -58,6 +60,7 @@ pub enum CommandPalette {
 }
 
 /// The menu session stays on the PC that opened it; the other PCs get what it draws.
+#[cfg(feature = "tui")]
 impl Serialize for CommandPalette {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
@@ -128,10 +131,8 @@ impl PopupState {
             | Self::ArtistList(.., list_state)
             | Self::ThemeList(.., list_state)
             | Self::ActionList(.., list_state) => Some(list_state),
-            Self::Search { .. }
-            | Self::PlaylistCreate { .. }
-            | Self::ConfirmAction { .. }
-            | Self::CommandPalette(..) => None,
+            // the search, playlist-create, confirm and palette popups
+            _ => None,
         }
     }
 
@@ -146,10 +147,8 @@ impl PopupState {
             | Self::ArtistList(.., list_state)
             | Self::ThemeList(.., list_state)
             | Self::ActionList(.., list_state) => Some(list_state),
-            Self::Search { .. }
-            | Self::PlaylistCreate { .. }
-            | Self::ConfirmAction { .. }
-            | Self::CommandPalette(..) => None,
+            // the search, playlist-create, confirm and palette popups
+            _ => None,
         }
     }
 

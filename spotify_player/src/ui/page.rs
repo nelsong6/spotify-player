@@ -19,7 +19,7 @@ use super::{
     UIStateGuard,
 };
 use crate::state::BidiDisplay;
-use crate::ui::utils::to_bidi_string;
+use crate::utils::to_bidi_string;
 
 const COMMAND_TABLE_CONSTRAINTS: [Constraint; 3] = [
     Constraint::Percentage(25),

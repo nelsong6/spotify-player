@@ -1,3 +1,7 @@
+// Without the terminal UI much of the shared state (pages, keys, themes) goes unused; the builds
+// with it lint for dead code.
+#![cfg_attr(not(feature = "tui"), allow(dead_code))]
+
 mod auth;
 #[cfg(feature = "cast")]
 mod cast;
@@ -5,10 +9,12 @@ mod cli;
 mod client;
 mod command;
 mod config;
+#[cfg(feature = "tui")]
 mod event;
 #[cfg(feature = "streaming")]
 mod follow;
 #[allow(unsafe_code)] // loads fzt's C library
+#[cfg(feature = "tui")]
 mod fzt;
 #[cfg(feature = "streaming")]
 mod handover;
@@ -33,6 +39,7 @@ mod state;
 #[cfg(feature = "streaming")]
 mod streaming;
 mod token;
+#[cfg(feature = "tui")]
 mod ui;
 mod utils;
 
@@ -201,26 +208,10 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
         #[cfg(feature = "cast")]
         screen::pc::start(state, &client_pub).context("follow the shared screen")?;
 
-        #[cfg(feature = "image")]
-        ui::init_image_picker(state).context("initialize image picker")?;
-        let terminal = ui::init_terminal().context("initialize terminal")?;
-
-        // terminal event handler task
-        std::thread::Builder::new()
-            .name("terminal-event-handler".to_string())
-            .spawn({
-                let client_pub = client_pub.clone();
-                let state = state.clone();
-                move || {
-                    event::start_event_handler(&state, &client_pub);
-                }
-            })?;
-
-        // application UI task
-        std::thread::Builder::new().name("ui".to_string()).spawn({
-            let state = state.clone();
-            move || ui::run(&state, terminal)
-        })?;
+        #[cfg(feature = "tui")]
+        start_tui(state, &client_pub)?;
+        #[cfg(not(feature = "tui"))]
+        anyhow::bail!("built without the terminal UI (the `tui` feature): only `session` runs");
     }
 
     #[cfg(feature = "media-control")]
@@ -257,6 +248,35 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
+}
+
+/// Draw the terminal UI and take its keys
+#[cfg(feature = "tui")]
+fn start_tui(
+    state: &state::SharedState,
+    client_pub: &flume::Sender<client::ClientRequest>,
+) -> Result<()> {
+    #[cfg(feature = "image")]
+    ui::init_image_picker(state).context("initialize image picker")?;
+    let terminal = ui::init_terminal().context("initialize terminal")?;
+
+    // terminal event handler task
+    std::thread::Builder::new()
+        .name("terminal-event-handler".to_string())
+        .spawn({
+            let client_pub = client_pub.clone();
+            let state = state.clone();
+            move || {
+                event::start_event_handler(&state, &client_pub);
+            }
+        })?;
+
+    // application UI task
+    std::thread::Builder::new().name("ui".to_string()).spawn({
+        let state = state.clone();
+        move || ui::run(&state, terminal)
+    })?;
+    Ok(())
 }
 
 /// Start logging for the TUI or the session, keeping recent lines for the logs page

@@ -96,7 +96,7 @@ A Spotify Premium account is **required**.
 
   ```shell
   pkg install rust openssl
-  cargo install spotify_player --no-default-features --features media-control,native-tls
+  cargo install spotify_player --no-default-features --features tui,media-control,native-tls
   ```
 
   This makes authentication, the Web API, and remote device control work.
@@ -273,7 +273,7 @@ A radio, liked songs or other track list played by `spotify_player` can't be tra
 
 One session, running on an always-on machine, plays the music; every PC with `spotify_player` open plays it aloud, in sync with the others, and controls it. Which PC you sit at doesn't matter: close the app in one room and open it in the next, and the same queue keeps playing.
 
-- **The session** is `spotify_player session`, built with the `streaming` feature. It runs the [librespot](https://github.com/librespot-org/librespot) player, the one Spotify Connect device for the house, named by `name` under `[device]`. It reports what it plays to Spotify, as Spotify's own apps do, so its plays show in your listening history. It writes its audio to stdout for [Snapcast](https://github.com/badaix/snapcast)'s server, which runs it as a `process` source (`codec=pcm`, `sampleformat=44100:16:2`) and streams it to the PCs. [`nas/spt-session`](nas/spt-session) runs both in a container on a Synology NAS, deployed with `nas/deploy.sh`.
+- **The session** is `spotify_player session`, built with the `streaming` feature and without `tui` (the terminal UI), since it has no screen. It runs the [librespot](https://github.com/librespot-org/librespot) player, the one Spotify Connect device for the house, named by `name` under `[device]`. It reports what it plays to Spotify, as Spotify's own apps do, so its plays show in your listening history. It writes its audio to stdout for [Snapcast](https://github.com/badaix/snapcast)'s server, which runs it as a `process` source (`codec=pcm`, `sampleformat=44100:16:2`) and streams it to the PCs. [`nas/spt-session`](nas/spt-session) runs both in a container on a Synology NAS, deployed with `nas/deploy.sh`.
 - **A PC** runs `spotify_player` built with the `cast` feature (on by default). It attaches to the Snapcast server named by `cast_server`, plays the session's audio on the system's default output (on Windows it follows a change of default output), and controls the session like any Connect device. It never starts a player of its own and never picks another device to play on.
 - **One Spotify sign-in**: only the session signs in to Spotify. A PC sends every Spotify request (the library, search, play, lyrics, covers) to the session's relay, on port 1707 of the `cast_server` host, which sends it on with the session's sign-in, merges identical requests and holds the whole house to Spotify's waits. The session doesn't poll what it plays: it asks Spotify when its player reports a change, and passes the playback to every PC with the [shared screen](#home-cast). The relay takes only requests carrying the key the session keeps beside `session_file` (`relay.key`), so a PC needs read access to that folder and nothing else; deleting the key revokes it, and the session makes a new one.
 - **Muting**: `ToggleListening` (`H`) switches between playing the session aloud here and only showing it; the playback window shows `muted here` while muted, and the visualization's transport line `here muted`. A muted PC still draws the [audio visualization](#audio-visualization).

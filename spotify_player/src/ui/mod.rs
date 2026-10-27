@@ -2,7 +2,7 @@ use crate::{
     config,
     state::{
         Album, Artist, ArtistFocusState, BrowsePageUIState, Context, ContextPageUIState,
-        DataReadGuard, Id, LibraryFocusState, MutableWindowState, PageState, PageType,
+        DataReadGuard, Id, LibraryFocusState, MutableWindowState, Orientation, PageState, PageType,
         PlaybackMetadata, PlaylistCreateCurrentField, PlaylistFolderItem, PlaylistPopupAction,
         PopupState, SearchFocusState, SharedState, Track, UIStateGuard,
     },
@@ -32,7 +32,6 @@ mod page;
 mod palette;
 mod playback;
 mod popup;
-pub mod single_line_input;
 #[cfg(feature = "cast")]
 pub mod streaming;
 pub mod utils;
@@ -245,38 +244,6 @@ fn render_main_layout(
         PageType::Queue => page::render_queue_page(frame, state, ui, rect),
         PageType::CommandHelp => page::render_commands_help_page(frame, ui, rect),
         PageType::Logs => page::render_logs_page(frame, state, ui, rect),
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Orientation {
-    Vertical,
-    #[default]
-    Horizontal,
-}
-
-impl Orientation {
-    /// Construct screen orientation based on the terminal's size
-    pub fn from_size(columns: u16, rows: u16) -> Self {
-        let ratio = f64::from(columns) / f64::from(rows);
-
-        // a larger ratio has to be used since terminal cells aren't square
-        if ratio > 2.3 {
-            Self::Horizontal
-        } else {
-            Self::Vertical
-        }
-    }
-
-    pub fn layout<I>(self, constraints: I) -> Layout
-    where
-        I: IntoIterator,
-        I::Item: Into<Constraint>,
-    {
-        match self {
-            Self::Vertical => Layout::vertical(constraints),
-            Self::Horizontal => Layout::horizontal(constraints),
-        }
     }
 }
 

@@ -34,7 +34,7 @@ This file guides coding agents when working in this repository.
 | `ui/palette.rs`               | Draws the command palette over the page from fzt's rows                     |
 | `fzt.rs`                      | Loads fzt (`fzt.dll`, fzt-terminal's `cmd/fztlib`) and wraps its JSON calls |
 | `keeper.rs`                   | The session's job of trimming played songs and refilling radio playlists    |
-| `relay.rs`                    | The session's relay: a PC's only way to Spotify, behind a key on the NAS    |
+| `relay/`                      | The session's relay: a PC's only way to Spotify, behind a key on the NAS    |
 | `follow.rs`                   | Drive and follow: the session follows Spotify when something else drives it |
 | `play_report.rs`              | Reports the session's plays to Spotify (feature-gated)                      |
 | `ui/streaming.rs`             | FFT audio visualizer: `Analyzer`, `VisBands`, visualization page            |
@@ -42,7 +42,7 @@ This file guides coding agents when working in this repository.
 | `streaming.rs`                | The session's librespot player, its audio on stdout (feature-gated)         |
 | `listeners.rs`                | Pauses the session when no PC plays it aloud (Snapcast's client list)       |
 | `home_auth.rs`                | auth.romaine.life sign-in on a PC; the session's check before muting a PC   |
-| `screen.rs`                   | One screen on every PC: the session keeps it, one PC at a time controls it  |
+| `screen/`                     | One screen on every PC: the session keeps it, one PC at a time controls it  |
 | `cast/`                       | A PC's side of the home cast: Snapcast client, clock sync, synced output    |
 | `cli/`                        | Unix socket server and client for inter-process CLI commands                |
 | `auth.rs`                     | OAuth scopes and librespot credential/session building                      |
@@ -69,6 +69,7 @@ Event/UI threads never call async functions directly. They send a `ClientRequest
 | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | `streaming`                                                                                                                             | The session: librespot player, `spotify_player session`  |
 | `cast`                                                                                                                                  | A PC: plays the session from Snapcast, visualization     |
+| `tui`                                                                                                                                   | The terminal UI: pages, keys, palette (part of `cast`)   |
 | `media-control`                                                                                                                         | OS media key integration                                 |
 | `image`                                                                                                                                 | Album art rendering                                      |
 | `ascii-cover`                                                                                                                           | ASCII album cover in the visualization (default)         |
@@ -77,7 +78,7 @@ Event/UI threads never call async functions directly. They send a `ClientRequest
 | `notify`                                                                                                                                | Desktop notifications                                    |
 | `fzf`                                                                                                                                   | Fuzzy search                                             |
 
-Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the NAS's Linux build is `rustls-tls` + `streaming`. Gate feature-specific code with `#[cfg(feature = "...")]`.
+Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the NAS's Linux build is `rustls-tls` + `streaming`, without `tui`, so the session's program holds no screen code. Code that's the session's or a PC's alone lives in its own file (`relay/session.rs` and `relay/pc.rs`, `screen/session.rs` and `screen/pc.rs`): `publish.ps1` moves the session only when a file compiled into it changed. Gate feature-specific code with `#[cfg(feature = "...")]`.
 
 ## Verifying changes
 
@@ -202,7 +203,7 @@ Working on the fork:
   is an output, and the session pauses when none plays it aloud. Kept playlists are a
   separate feature, and phones play only those.
 - One screen (decided 2026-10-25, OpenProject #79): every PC shows the same screen, kept by
-  the session (`screen.rs`), since Nelson is the only user and wants no drift between rooms.
+  the session (`screen/`), since Nelson is the only user and wants no drift between rooms.
   One PC at a time controls it, by his choice: the controller changes its own screen at once
   and sends it, and a locked PC takes control with space. Rejected: every PC sending commands
   to the session and drawing what comes back (consistent too, but each change waits on the
@@ -210,7 +211,7 @@ Working on the fork:
 - One Spotify sign-in (decided 2026-10-26, OpenProject #82): only the session talks to
   Spotify. Three instances polling `/me/player` every 5 s kept the account rate-limited all
   day. A PC sends its Web API requests, lyrics, radios and covers to the session's relay
-  (`relay.rs`, port 1707), which sends them on as its own; the session asks for its playback
+  (`relay/`, port 1707), which sends them on as its own; the session asks for its playback
   only on its player's events and pushes it to the PCs over the screen connection. The relay
   takes only requests carrying `relay.key`, which the session keeps beside the saved session
   on the NAS, where only Nelson's account and the NAS admins can read it: a PC proves itself
@@ -218,7 +219,7 @@ Working on the fork:
   relay's port, so only one slot keeps playlists.
 - Our radio (decided 2026-10-26, OpenProject #86): spt is a radio built on Spotify, not a
   Spotify client. The PCs show only the radio: the session's own player while it plays, the
-  saved session otherwise (`screen.rs` pushes it marked `left_off` when Spotify holds nothing
+  saved session otherwise (`screen/` pushes it marked `left_off` when Spotify holds nothing
   for the session's player, as when Spotify drops the idle speaker). Spotify playing elsewhere,
   a phone say, changes nothing on screen. Play resumes the radio's song on the session's
   speaker, never on Spotify's active device. A PC's play asks the session to resume the radio

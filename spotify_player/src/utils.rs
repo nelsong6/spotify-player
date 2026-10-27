@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use unicode_bidi::BidiInfo;
 
 /// formats a time duration into a "{minutes}:{seconds}" format
 pub fn format_duration(duration: &chrono::Duration) -> String {
@@ -94,4 +95,20 @@ pub fn filtered_items_from_query<'a, T: std::fmt::Display>(
             }
         })
         .collect::<Vec<_>>()
+}
+
+/// Convert a string to a bidirectional string.
+/// Used to handle RTL text properly in the UI.
+pub fn to_bidi_string(s: &str) -> String {
+    let bidi_info = BidiInfo::new(s, None);
+
+    let bidi_string = if bidi_info.has_rtl() && !bidi_info.paragraphs.is_empty() {
+        bidi_info
+            .reorder_line(&bidi_info.paragraphs[0], 0..s.len())
+            .into_owned()
+    } else {
+        s.to_string()
+    };
+
+    bidi_string
 }

@@ -1,7 +1,5 @@
-use crate::{
-    state::model::{Category, ContextId},
-    ui::single_line_input::LineInput,
-};
+use super::LineInput;
+use crate::state::model::{Category, ContextId};
 use ratatui::widgets::{ListState, TableState};
 use serde::{Deserialize, Serialize};
 
