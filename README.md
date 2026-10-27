@@ -211,7 +211,7 @@ Alternatively, run the `spotify_player authenticate` CLI command to authenticate
 
 Two kinds of credentials are involved:
 
-- One or two **Web API tokens**, used for REST calls (playback control, library, search, playlists, etc.). The default setup uses ncspot's client ID. When a custom `client_id` is configured, its token is used first and a separate ncspot token provides fallback access.
+- A **Web API token**, used for REST calls (playback control, library, search, playlists, etc.), under the configured `client_id` (ncspot's by default).
 - A **librespot session**, used for the [streaming](#streaming) feature (direct playback and Spotify Connect device registration).
 
 They authenticate through your Spotify account; the _client ID_ presented to Spotify differs between credentials (see below).
@@ -225,11 +225,9 @@ With the [streaming](#streaming) feature enabled (the default), the first launch
 
 These are two independent OAuth flows with two different client IDs, so Spotify requires a separate approval for each, and each credential is cached separately in the [cache folder](#caches). This is a one-time step per machine — subsequent launches reuse and silently refresh them unless a cache is cleared or a credential is revoked.
 
-When a custom `client_id` is configured, an ncspot fallback Web API token is also requested and cached as `<ncspot_client_id>_token.json`. Its OAuth callback always uses `http://127.0.0.1:8989/ncspot_login`, the redirect URI ncspot registered for its client ID; `login_redirect_uri` applies only to the custom client. A custom setup with streaming enabled can therefore require three approvals on first launch. Web API token cache filenames include their client IDs, so changing `client_id` requires a new approval instead of reusing a token issued to another client.
+Web API token cache filenames include their client IDs, so changing `client_id` requires a new approval instead of reusing a token issued to another client.
 
-A fallback ncspot client is integrated since the custom client might not be registered with [extended quota mode](https://developer.spotify.com/documentation/web-api/concepts/quota-modes) and could therefore doesn't have access to [certain endpoints](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api).
-
-The `spotify_player authenticate` command runs every required flow in one go, forcing a fresh login for each. Without streaming, the librespot flow is omitted, leaving one Web API approval for the default setup or two for a custom-client setup.
+The `spotify_player authenticate` command runs every required flow in one go, forcing a fresh login for each. Without streaming, the librespot flow is omitted, leaving one Web API approval.
 
 ### Client ID and rate limits
 
@@ -237,19 +235,15 @@ Every request to the Spotify Web API is attributed to a Spotify _application_, i
 
 By default, `spotify_player` uses [ncspot](https://github.com/hrkfdn/ncspot)'s client ID. This client ID is shared by many users, so its API quota can be exhausted by aggregate usage and cause `429 Too Many Requests` responses. **Registering and configuring your own client ID is strongly recommended** so routine requests use a quota dedicated to your Spotify application.
 
-The ncspot client ID remains available as a fallback because it is registered in [extended quota mode](https://developer.spotify.com/documentation/web-api/concepts/quota-modes) and predates Spotify's [November 2024 Web API changes](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api). It can access endpoints (browse, personalized content, generated playlists, …) that newly-registered applications can no longer use.
-
-When a custom `client_id` is configured, `spotify-player` sends most Web API requests through that client first. If Spotify rejects custom-client request with any `4xx` response, the request is attempted once through ncspot. Successful requests and failures outside the `4xx` range do not trigger fallback.
-
-While Spotify has asked the custom client to wait (`Retry-After`), it sends nothing and its requests go straight to ncspot; it never retries. The ncspot client stores `Retry-After` durations and retries rate-limited GET requests up to two times by default; mutation requests are never delayed or retried by the middleware. Configure the ncspot retry count with `api_rate_limit_retries`; see the [configuration documentation](https://github.com/aome510/spotify-player/blob/master/docs/config.md) for details.
+Requests go only through the configured client; there is no fallback to another. While Spotify has asked it to wait (`Retry-After`), it sends nothing and answers for Spotify with that refusal. Every refusal is logged with the body Spotify sent, whose `reason` tells a development-mode quota running out (`QUOTA_EXCEEDED`) from the 30-second rate limit.
 
 ### Using a custom client ID
 
-Use a custom client ID to avoid competing for the shared ncspot client's rate limit. Most requests will be attributed to your own Spotify application instead. Newly registered applications use restricted default quota mode, so endpoints unavailable to the custom client transparently fall back to ncspot.
+Use a custom client ID to avoid competing for the shared ncspot client's rate limit; every request is then attributed to your own Spotify application. Newly registered applications use the restricted development mode, so endpoints Spotify reserves for extended quota mode are unavailable to it.
 
 To configure one, [register an application](https://developer.spotify.com/dashboard) on the Spotify developer dashboard, add your `login_redirect_uri` (default `http://127.0.0.1:8989/login`) to the app's allowed redirect URIs, then set `client_id` (or `client_id_command`) in `app.toml`. See the [Client id command](https://github.com/aome510/spotify-player/blob/master/docs/config.md#client-id-command) section of the configuration docs for details.
 
-After changing the client ID, re-run `spotify_player authenticate` to refresh the custom and fallback tokens.
+After changing the client ID, re-run `spotify_player authenticate` to get a token for it.
 
 ## Features
 

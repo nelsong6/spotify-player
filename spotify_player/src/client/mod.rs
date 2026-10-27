@@ -147,7 +147,6 @@ pub fn new_api_client() -> Result<WebApiClient> {
     let configs = config::get_config();
 
     let id = configs.app_config.get_client_id()?;
-    let ncspot_only_get_endpoints = configs.app_config.ncspot_only_get_endpoints.clone();
     let mut scopes = auth::OAUTH_SCOPES
         .iter()
         .map(ToString::to_string)
@@ -155,67 +154,24 @@ pub fn new_api_client() -> Result<WebApiClient> {
     // `user-personalized` scope is not supported by the Web API client and only available to the official Spotify client
     scopes.remove("user-personalized");
 
-    let build_config = |cache_file: &str| rspotify::Config {
+    let config = rspotify::Config {
         token_cached: true,
-        cache_path: configs.cache_folder.join(cache_file),
+        cache_path: configs.cache_folder.join(format!("{id}_token.json")),
         ..Default::default()
     };
-    let build_oauth = |redirect_uri: String| rspotify::OAuth {
-        redirect_uri,
-        scopes: scopes.clone(),
-        ..Default::default()
-    };
-    let primary_cache_file = format!("{id}_token.json");
-
-    if id == auth::NCSPOT_CLIENT_ID {
-        let config = build_config(&primary_cache_file);
-        let middleware = SpotifyApiMiddleware::new(
-            &config.api_base_url,
-            configs.app_config.api_rate_limit_retries,
-        )?;
-        let client = rspotify::AuthCodePkceSpotify::with_config(
-            rspotify::Credentials { id, secret: None },
-            build_oauth(configs.app_config.login_redirect_uri.clone()),
-            config,
-        )
-        .with_middleware(middleware);
-        return Ok(WebApiClient::new(client, None)
-            .with_ncspot_only_get_endpoints(ncspot_only_get_endpoints));
-    }
-
-    tracing::info!(
-        %id,
-        "Using custom Spotify Web API client with ncspot fallback"
-    );
-    let primary_config = build_config(&primary_cache_file);
-    // a refused request falls back to ncspot's client at once, and Spotify's wait is kept
-    let primary_middleware =
-        SpotifyApiMiddleware::refusing_while_limited(&primary_config.api_base_url)?;
-    let primary = rspotify::AuthCodePkceSpotify::with_config(
+    // while Spotify has asked it to wait, the client sends nothing and answers with that refusal
+    let middleware = SpotifyApiMiddleware::refusing_while_limited(&config.api_base_url)?;
+    let client = rspotify::AuthCodePkceSpotify::with_config(
         rspotify::Credentials { id, secret: None },
-        build_oauth(configs.app_config.login_redirect_uri.clone()),
-        primary_config,
-    )
-    .with_middleware(primary_middleware);
-
-    let fallback_cache_file = format!("{}_token.json", auth::NCSPOT_CLIENT_ID);
-    let fallback_config = build_config(&fallback_cache_file);
-    let fallback_middleware = SpotifyApiMiddleware::new(
-        &fallback_config.api_base_url,
-        configs.app_config.api_rate_limit_retries,
-    )?;
-    let fallback = rspotify::AuthCodePkceSpotify::with_config(
-        rspotify::Credentials {
-            id: auth::NCSPOT_CLIENT_ID.to_string(),
-            secret: None,
+        rspotify::OAuth {
+            redirect_uri: configs.app_config.login_redirect_uri.clone(),
+            scopes,
+            ..Default::default()
         },
-        build_oauth(auth::NCSPOT_REDIRECT_URI.to_string()),
-        fallback_config,
+        config,
     )
-    .with_middleware(fallback_middleware);
-
-    Ok(WebApiClient::new(primary, Some(fallback))
-        .with_ncspot_only_get_endpoints(ncspot_only_get_endpoints))
+    .with_middleware(middleware);
+    Ok(WebApiClient::new(client))
 }
 
 impl AppClient {
