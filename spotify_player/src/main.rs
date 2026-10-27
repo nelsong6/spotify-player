@@ -126,9 +126,10 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
             .context("initialize new Spotify session")?;
     }
 
-    // request user data; the session shows no library, so it loads none
+    // request user data. The session shows no library, so it loads none; a PC shows the copy
+    // on disk and loads each part when its page opens (`client::handlers`).
     client_pub.send(client::ClientRequest::GetCurrentUser)?;
-    if !state.is_session {
+    if !state.is_session && !state.follows_session() {
         client_pub.send(client::ClientRequest::GetUserPlaylists)?;
         client_pub.send(client::ClientRequest::GetUserFollowedArtists)?;
         client_pub.send(client::ClientRequest::GetUserSavedAlbums)?;

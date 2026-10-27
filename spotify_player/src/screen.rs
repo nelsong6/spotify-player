@@ -496,6 +496,9 @@ pub mod pc {
         /// Wakes the sender after a key press, so the other PCs follow without waiting for a poll
         wake: flume::Sender<()>,
         pcs: Mutex<Vec<Pc>>,
+        /// Whether this PC knows what it shows: the session's screen arrived, or the session is
+        /// out of reach and the PC is its own screen
+        settled: AtomicBool,
     }
 
     static LINK: OnceLock<Link> = OnceLock::new();
@@ -523,6 +526,7 @@ pub mod pc {
             writer: Mutex::new(None),
             wake,
             pcs: Mutex::new(Vec::new()),
+            settled: AtomicBool::new(false),
         });
         std::thread::Builder::new()
             .name("screen-connection".to_string())
@@ -533,6 +537,7 @@ pub mod pc {
                     if let Err(err) = follow(link, &server, &state, &client_pub) {
                         tracing::warn!("The shared screen's connection to {server} ended: {err:#}");
                     }
+                    link.settled.store(true, Ordering::Relaxed);
                     link.connected.store(false, Ordering::Relaxed);
                     *link.writer.lock() = None;
                     std::thread::sleep(RECONNECT_INTERVAL);
@@ -545,6 +550,12 @@ pub mod pc {
                 move || send_changes(link, &state, &woken)
             })?;
         Ok(())
+    }
+
+    /// Whether this PC knows what it shows yet: until then its own page isn't on screen
+    pub fn is_settled() -> bool {
+        LINK.get()
+            .is_some_and(|link| link.settled.load(Ordering::Relaxed))
     }
 
     /// Whether another PC is in control, so this one only shows the screen
@@ -675,6 +686,7 @@ pub mod pc {
             let in_control = message.controller.as_deref() == Some(link.pc.as_str());
             link.in_control.store(in_control, Ordering::Relaxed);
             if in_control {
+                link.settled.store(true, Ordering::Relaxed);
                 changed();
                 continue;
             }
@@ -690,6 +702,7 @@ pub mod pc {
                 })
                 .unwrap_or_default();
             show(state, client_pub, screen);
+            link.settled.store(true, Ordering::Relaxed);
         }
         anyhow::bail!("the session closed the connection")
     }

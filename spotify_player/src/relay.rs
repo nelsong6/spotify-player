@@ -179,16 +179,26 @@ pub mod session {
         LIBRARY.iter().any(|prefix| endpoint.starts_with(prefix))
     }
 
+    /// An endpoint with its query in a fixed order: rspotify sends a request's query in any order
+    fn kept_key(endpoint: &str) -> String {
+        let Some((path, query)) = endpoint.split_once('?') else {
+            return endpoint.to_string();
+        };
+        let mut pairs: Vec<&str> = query.split('&').collect();
+        pairs.sort_unstable();
+        format!("{path}?{}", pairs.join("&"))
+    }
+
     fn kept(endpoint: &str) -> Option<String> {
         let kept = KEPT.lock();
-        let (at, text) = kept.get(endpoint)?;
+        let (at, text) = kept.get(&kept_key(endpoint))?;
         (at.elapsed() < LIBRARY_KEPT).then(|| text.clone())
     }
 
     fn keep(endpoint: &str, text: &str) {
         let mut kept = KEPT.lock();
         kept.retain(|_, (at, _)| at.elapsed() < LIBRARY_KEPT);
-        kept.insert(endpoint.to_string(), (Instant::now(), text.to_string()));
+        kept.insert(kept_key(endpoint), (Instant::now(), text.to_string()));
     }
 
     async fn forward(client: &AppClient, method: &Method, endpoint: &str, body: &[u8]) -> Reply {
@@ -320,6 +330,12 @@ pub mod session {
 
             super::keep("me/albums?test", "albums");
             assert_eq!(super::kept("me/albums?test").as_deref(), Some("albums"));
+            // the same request with its query in another order
+            super::keep("me/tracks?limit=50&offset=0&market=from_token", "page");
+            assert_eq!(
+                super::kept("me/tracks?offset=0&market=from_token&limit=50").as_deref(),
+                Some("page")
+            );
             super::KEPT.lock().clear();
             assert_eq!(super::kept("me/albums?test"), None);
         }
