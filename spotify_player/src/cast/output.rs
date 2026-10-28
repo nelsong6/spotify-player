@@ -83,6 +83,14 @@ impl Feed {
     }
 
     fn attach(&mut self, shared: &Arc<Mutex<Shared>>) {
+        // the format or buffer may have changed while the output's stream was opening
+        let mut output = shared.lock();
+        if output.input != self.input || output.buffer != self.buffer {
+            output.input = self.input;
+            output.buffer = self.buffer;
+            output.reset();
+        }
+        drop(output);
         self.outputs.push(Arc::clone(shared));
     }
 
