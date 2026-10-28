@@ -1,7 +1,9 @@
-//! The sound card side of the home cast. It plays on the system's default output and reopens on
-//! the default device when its own goes away (unplugged, dropped off USB); on Windows it also moves
-//! to the new default when the system's default output changes. The sound card's callback is told
-//! when its buffer reaches the speaker, which is what keeps the PCs in step.
+//! The sound card side of the home cast. It plays on the system's default output and on any other
+//! outputs chosen on this PC, each in step with the stream. It reopens on the default device when
+//! its own goes away (unplugged, dropped off USB); on Windows it also moves to the new default when
+//! the system's default output changes, and picks up a chosen output when it appears (a TV switched
+//! on). The sound card's callback is told when its buffer reaches the speaker, which is what keeps
+//! the PCs, and a PC's outputs, in step.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,64 +18,110 @@ use super::resample::Resampler;
 use super::stream::Stream;
 use super::Mute;
 
-/// How long to wait between attempts to open an output while there is none
+/// How long to wait between attempts to open an output that failed to open
 const REOPEN_INTERVAL: Duration = Duration::from_secs(2);
 /// The stream is always stereo; the session's player makes nothing else
 pub const CHANNELS: usize = 2;
 
-/// What the network thread and the sound card's callback share
-pub struct Shared {
-    pub stream: Stream,
+/// The stream as the network thread receives it, passed on to every output playing it
+pub struct Feed {
     input: Option<Format>,
-    out_rate: Option<u32>,
+    buffer: Micros,
+    outputs: Vec<Arc<Mutex<Shared>>>,
+}
+
+impl Default for Feed {
+    fn default() -> Self {
+        Self {
+            input: None,
+            buffer: 1_000_000,
+            outputs: Vec::new(),
+        }
+    }
+}
+
+impl Feed {
+    pub fn set_input(&mut self, format: Format) {
+        self.input = Some(format);
+        for output in &self.outputs {
+            output.lock().set_input(format);
+        }
+    }
+
+    pub fn set_buffer(&mut self, buffer: Micros) {
+        self.buffer = buffer;
+        for output in &self.outputs {
+            output.lock().set_buffer(buffer);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        for output in &self.outputs {
+            output.lock().stream.clear();
+        }
+    }
+
+    /// Queue a chunk of 16-bit PCM recorded at server time `start`
+    pub fn push_chunk(&mut self, start: Micros, pcm: &[u8], server_now: Micros) {
+        for output in &self.outputs {
+            output.lock().push_chunk(start, pcm, server_now);
+        }
+    }
+
+    /// A new output's copy of the stream, fed once attached
+    fn output(&self, out_rate: u32) -> Arc<Mutex<Shared>> {
+        let mut shared = Shared {
+            stream: Stream::new(out_rate, CHANNELS),
+            input: self.input,
+            out_rate,
+            resampler: None,
+            buffer: self.buffer,
+            decoded: Vec::new(),
+        };
+        shared.reset();
+        Arc::new(Mutex::new(shared))
+    }
+
+    fn attach(&mut self, shared: &Arc<Mutex<Shared>>) {
+        self.outputs.push(Arc::clone(shared));
+    }
+
+    fn detach(&mut self, shared: &Arc<Mutex<Shared>>) {
+        self.outputs.retain(|output| !Arc::ptr_eq(output, shared));
+    }
+}
+
+/// What the network thread and one output's sound card callback share
+struct Shared {
+    stream: Stream,
+    input: Option<Format>,
+    out_rate: u32,
     resampler: Option<Resampler>,
     buffer: Micros,
     /// Reused between chunks to avoid an allocation per chunk
     decoded: Vec<f32>,
 }
 
-impl Default for Shared {
-    fn default() -> Self {
-        Self {
-            stream: Stream::new(48_000, CHANNELS),
-            input: None,
-            out_rate: None,
-            resampler: None,
-            buffer: 1_000_000,
-            decoded: Vec::new(),
-        }
-    }
-}
-
 impl Shared {
     fn reset(&mut self) {
-        self.resampler = match (self.input, self.out_rate) {
-            (Some(input), Some(out)) => Some(Resampler::new(CHANNELS, input.rate, out)),
-            _ => None,
-        };
-        self.stream = Stream::new(self.out_rate.unwrap_or(48_000), CHANNELS);
+        self.resampler = self
+            .input
+            .map(|input| Resampler::new(CHANNELS, input.rate, self.out_rate));
+        self.stream = Stream::new(self.out_rate, CHANNELS);
         self.stream.set_buffer(self.buffer);
     }
 
-    pub fn set_input(&mut self, format: Format) {
+    fn set_input(&mut self, format: Format) {
         self.input = Some(format);
         self.reset();
     }
 
-    pub fn set_buffer(&mut self, buffer: Micros) {
+    fn set_buffer(&mut self, buffer: Micros) {
         self.buffer = buffer;
         self.stream.set_buffer(buffer);
     }
 
-    fn set_output_rate(&mut self, rate: u32) {
-        if self.out_rate != Some(rate) {
-            self.out_rate = Some(rate);
-            self.reset();
-        }
-    }
-
-    /// Queue a chunk of 16-bit PCM recorded at server time `start`
-    pub fn push_chunk(&mut self, start: Micros, pcm: &[u8], server_now: Micros) {
+    fn push_chunk(&mut self, start: Micros, pcm: &[u8], server_now: Micros) {
         let (Some(input), Some(resampler)) = (self.input, self.resampler.as_mut()) else {
             return;
         };
@@ -93,75 +141,175 @@ impl Shared {
     }
 }
 
-enum Event {
-    Lost,
+pub enum Event {
+    /// The device of an open output went away
+    Lost(String),
     #[cfg(windows)]
     DefaultChanged,
+    /// A device was added or removed, or switched on or off
+    #[cfg(windows)]
+    DevicesChanged,
+    /// The outputs chosen to play besides the default, by name
+    Chosen(Vec<String>),
 }
 
-/// Play the stream on the default output for as long as the process runs
+/// An output playing the stream; dropping it closes the sound card's stream and stops feeding it
+struct Open {
+    name: String,
+    feed: Arc<Mutex<Feed>>,
+    shared: Arc<Mutex<Shared>>,
+    _stream: cpal::Stream,
+}
+
+impl Drop for Open {
+    fn drop(&mut self) {
+        self.feed.lock().detach(&self.shared);
+    }
+}
+
+/// Play the stream on the default output and the chosen ones for as long as the process runs.
+/// Only the default output feeds the visualization. `default` is kept at the default output's name.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
-    shared: &Arc<Mutex<Shared>>,
+    feed: &Arc<Mutex<Feed>>,
     clock: &Arc<Clock>,
     mute: &Arc<Mute>,
     played: Option<&flume::Sender<(u32, Vec<f32>)>>,
+    events: &flume::Sender<Event>,
+    changes: &flume::Receiver<Event>,
+    default: &Mutex<Option<String>>,
+    mut chosen: Vec<String>,
 ) {
-    let (events, changes) = flume::unbounded();
     #[cfg(windows)]
     let _watch = default_device::Watch::register(events.clone())
         .inspect_err(|err| {
-            tracing::warn!("Failed to watch for default audio device changes: {err:#}");
+            tracing::warn!("Failed to watch for audio device changes: {err:#}");
         })
         .ok();
+    let mut main: Option<Open> = None;
+    let mut extras: Vec<Open> = Vec::new();
     loop {
-        match open(shared, clock, mute, played.cloned(), events.clone()) {
-            Ok(stream) => {
-                match changes.recv() {
-                    Ok(Event::Lost) => {
-                        tracing::warn!(
-                            "The audio output device went away; reopening on the default device"
-                        );
-                    }
-                    #[cfg(windows)]
-                    Ok(Event::DefaultChanged) => {
-                        tracing::info!("The default audio output device changed; reopening on it");
-                    }
-                    Err(_) => return,
+        let host = cpal::default_host();
+        let default_device = host.default_output_device();
+        let default_name = default_device
+            .as_ref()
+            .and_then(|device| device.name().ok());
+        default.lock().clone_from(&default_name);
+        let mut retry = false;
+
+        if main.is_none() {
+            match default_device
+                .context("no audio output device")
+                .and_then(|device| open(&device, feed, clock, mute, played.cloned(), events))
+            {
+                Ok(output) => main = Some(output),
+                Err(err) => {
+                    tracing::warn!("Failed to open an audio output: {err:#}");
+                    retry = true;
                 }
-                drop(stream);
-                while changes.try_recv().is_ok() {}
             }
-            Err(err) => {
-                tracing::warn!("Failed to open an audio output: {err:#}");
-                let _ = changes.recv_timeout(REOPEN_INTERVAL);
+        }
+
+        // a chosen output that is now the default plays once, as the default
+        extras.retain(|output| {
+            chosen.contains(&output.name) && Some(&output.name) != default_name.as_ref()
+        });
+        let missing: Vec<&String> = chosen
+            .iter()
+            .filter(|name| {
+                Some(*name) != default_name.as_ref()
+                    && !extras.iter().any(|output| &output.name == *name)
+            })
+            .collect();
+        if !missing.is_empty() {
+            match host.output_devices() {
+                Ok(devices) => {
+                    for device in devices {
+                        if !device.name().is_ok_and(|name| missing.contains(&&name)) {
+                            continue;
+                        }
+                        match open(&device, feed, clock, mute, None, events) {
+                            Ok(output) => extras.push(output),
+                            Err(err) => {
+                                tracing::warn!("Failed to open a chosen audio output: {err:#}");
+                                retry = true;
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!("Failed to list the audio outputs: {err:#}");
+                    retry = true;
+                }
+            }
+        }
+        // without Windows' device notices, a chosen output that isn't there is looked for again
+        let retry = retry || (cfg!(not(windows)) && !missing.is_empty());
+
+        let first = if retry {
+            match changes.recv_timeout(REOPEN_INTERVAL) {
+                Ok(event) => Some(event),
+                Err(flume::RecvTimeoutError::Timeout) => None,
+                Err(flume::RecvTimeoutError::Disconnected) => return,
+            }
+        } else {
+            match changes.recv() {
+                Ok(event) => Some(event),
+                Err(_) => return,
+            }
+        };
+        for event in first.into_iter().chain(changes.try_iter()) {
+            match event {
+                Event::Lost(name) => {
+                    tracing::warn!("The audio output {name} went away");
+                    if main.as_ref().is_some_and(|output| output.name == name) {
+                        main = None;
+                    }
+                    extras.retain(|output| output.name != name);
+                }
+                #[cfg(windows)]
+                Event::DefaultChanged => {
+                    tracing::info!("The default audio output device changed; reopening on it");
+                    main = None;
+                }
+                #[cfg(windows)]
+                Event::DevicesChanged => {}
+                Event::Chosen(names) => chosen = names,
             }
         }
     }
 }
 
+/// The names of this PC's audio outputs
+pub fn names() -> Vec<String> {
+    match cpal::default_host().output_devices() {
+        Ok(devices) => devices.filter_map(|device| device.name().ok()).collect(),
+        Err(err) => {
+            tracing::warn!("Failed to list the audio outputs: {err:#}");
+            Vec::new()
+        }
+    }
+}
+
 fn open(
-    shared: &Arc<Mutex<Shared>>,
+    device: &cpal::Device,
+    feed: &Arc<Mutex<Feed>>,
     clock: &Arc<Clock>,
     mute: &Arc<Mute>,
     played: Option<flume::Sender<(u32, Vec<f32>)>>,
-    events: flume::Sender<Event>,
-) -> anyhow::Result<cpal::Stream> {
-    let device = cpal::default_host()
-        .default_output_device()
-        .context("no audio output device")?;
+    events: &flume::Sender<Event>,
+) -> anyhow::Result<Open> {
+    let name = device
+        .name()
+        .unwrap_or_else(|_| "[unknown name]".to_string());
     let config = device
         .default_output_config()
-        .context("read the device's format")?;
-    tracing::info!(
-        "Using audio device: {} ({config:?})",
-        device
-            .name()
-            .unwrap_or_else(|_| "[unknown name]".to_string())
-    );
+        .with_context(|| format!("read the format of {name}"))?;
+    tracing::info!("Using audio device: {name} ({config:?})");
     let rate = config.sample_rate().0;
-    shared.lock().set_output_rate(rate);
+    let shared = feed.lock().output(rate);
     let callback = Callback {
-        shared: Arc::clone(shared),
+        shared: Arc::clone(&shared),
         clock: Arc::clone(clock),
         mute: Arc::clone(mute),
         played,
@@ -169,22 +317,30 @@ fn open(
         device_channels: usize::from(config.channels()),
         buf: Vec::new(),
     };
+    let events = events.clone();
+    let lost = name.clone();
     let on_error = move |err| {
-        tracing::warn!("Audio stream error: {err}");
+        tracing::warn!("Audio stream error on {lost}: {err}");
         if matches!(err, cpal::StreamError::DeviceNotAvailable) {
-            let _ = events.send(Event::Lost);
+            let _ = events.send(Event::Lost(lost.clone()));
         }
     };
     let stream_config = config.config();
     let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => build::<f32>(&device, &stream_config, callback, on_error),
-        cpal::SampleFormat::I16 => build::<i16>(&device, &stream_config, callback, on_error),
-        cpal::SampleFormat::I32 => build::<i32>(&device, &stream_config, callback, on_error),
-        cpal::SampleFormat::U16 => build::<u16>(&device, &stream_config, callback, on_error),
+        cpal::SampleFormat::F32 => build::<f32>(device, &stream_config, callback, on_error),
+        cpal::SampleFormat::I16 => build::<i16>(device, &stream_config, callback, on_error),
+        cpal::SampleFormat::I32 => build::<i32>(device, &stream_config, callback, on_error),
+        cpal::SampleFormat::U16 => build::<u16>(device, &stream_config, callback, on_error),
         other => anyhow::bail!("unsupported sample format {other}"),
     }?;
     stream.play()?;
-    Ok(stream)
+    feed.lock().attach(&shared);
+    Ok(Open {
+        name,
+        feed: Arc::clone(feed),
+        shared,
+        _stream: stream,
+    })
 }
 
 fn build<T>(
@@ -271,8 +427,8 @@ mod default_device {
 
     use super::Event;
 
-    /// A registration for Windows' notice that the default output device changed. It stays
-    /// registered until dropped.
+    /// A registration for Windows' notices that the default output device changed or a device
+    /// came or went. It stays registered until dropped.
     pub struct Watch {
         enumerator: IMMDeviceEnumerator,
         client: IMMNotificationClient,
@@ -297,12 +453,12 @@ mod default_device {
                 self.enumerator
                     .UnregisterEndpointNotificationCallback(&self.client)
             } {
-                tracing::warn!("Failed to stop watching the default audio device: {err:#}");
+                tracing::warn!("Failed to stop watching the audio devices: {err:#}");
             }
         }
     }
 
-    /// Called by Windows on its own thread, so it only passes the notice on
+    /// Called by Windows on its own thread, so it only passes the notices on
     #[implement(IMMNotificationClient)]
     struct Client {
         events: flume::Sender<Event>,
@@ -318,14 +474,17 @@ mod default_device {
         }
 
         fn OnDeviceStateChanged(&self, _: &PCWSTR, _: DEVICE_STATE) -> Result<()> {
+            let _ = self.events.send(Event::DevicesChanged);
             Ok(())
         }
 
         fn OnDeviceAdded(&self, _: &PCWSTR) -> Result<()> {
+            let _ = self.events.send(Event::DevicesChanged);
             Ok(())
         }
 
         fn OnDeviceRemoved(&self, _: &PCWSTR) -> Result<()> {
+            let _ = self.events.send(Event::DevicesChanged);
             Ok(())
         }
 

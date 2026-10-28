@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 use crate::config;
 use crate::ui::streaming::{Analyzer, VisBands};
 use clock::Clock;
-use output::Shared;
+use output::Feed;
 use protocol::Message;
 
 /// Snapcast's port for audio clients, unless `cast_server` names another
@@ -33,6 +33,8 @@ const QUICK_SYNCS: u32 = 50;
 const TIME_TIMEOUT: Duration = Duration::from_secs(2);
 /// No audio for this long means nothing is playing
 const SILENCE: Duration = Duration::from_millis(300);
+/// The outputs chosen on this PC to play besides the default, in the PC's own cache folder
+const CHOSEN_OUTPUTS_FILE: &str = "outputs.json";
 
 /// Whether this PC's output is silent
 #[derive(Default)]
@@ -56,6 +58,10 @@ struct Cast {
     mute: Arc<Mute>,
     /// The connection's writing half, when connected
     writer: Mutex<Option<TcpStream>>,
+    /// Tells the outputs thread which outputs to play besides the default
+    outputs: flume::Sender<output::Event>,
+    chosen: Mutex<Vec<String>>,
+    default_output: Mutex<Option<String>>,
 }
 
 static CAST: OnceLock<Cast> = OnceLock::new();
@@ -63,11 +69,15 @@ static CAST: OnceLock<Cast> = OnceLock::new();
 /// Attach to the session: connect to the cast server and play its audio, in the background
 pub fn start(bands: Option<Arc<Mutex<VisBands>>>) -> anyhow::Result<()> {
     let server = config::get_config().app_config.cast_server.clone();
+    let (events, changes) = flume::unbounded();
     let cast = CAST.get_or_init(|| Cast {
         mute: Arc::new(Mute::default()),
         writer: Mutex::new(None),
+        outputs: events.clone(),
+        chosen: Mutex::new(load_chosen_outputs()),
+        default_output: Mutex::new(None),
     });
-    let shared = Arc::new(Mutex::new(Shared::default()));
+    let feed = Arc::new(Mutex::new(Feed::default()));
     let clock = Arc::new(Clock::default());
 
     let played = match bands {
@@ -83,15 +93,27 @@ pub fn start(bands: Option<Arc<Mutex<VisBands>>>) -> anyhow::Result<()> {
     std::thread::Builder::new()
         .name("cast-output".to_string())
         .spawn({
-            let shared = Arc::clone(&shared);
+            let feed = Arc::clone(&feed);
             let clock = Arc::clone(&clock);
             let mute = Arc::clone(&cast.mute);
-            move || output::run(&shared, &clock, &mute, played.as_ref())
+            let chosen = cast.chosen.lock().clone();
+            move || {
+                output::run(
+                    &feed,
+                    &clock,
+                    &mute,
+                    played.as_ref(),
+                    &events,
+                    &changes,
+                    &cast.default_output,
+                    chosen,
+                );
+            }
         })?;
     std::thread::Builder::new()
         .name("cast-connection".to_string())
         .spawn(move || loop {
-            if let Err(err) = connect(cast, &server, &shared, &clock) {
+            if let Err(err) = connect(cast, &server, &feed, &clock) {
                 tracing::warn!("The cast connection to {server} ended: {err:#}");
             }
             *cast.writer.lock() = None;
@@ -128,6 +150,82 @@ pub fn toggle_listening() {
         return;
     }
     set_muted(!cast.mute.muted.load(Ordering::Relaxed));
+}
+
+/// How one of this PC's audio outputs plays the session
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum OutputChoice {
+    /// Windows' default output, which always plays it
+    Default,
+    /// Chosen to play it too
+    On,
+    Off,
+}
+
+/// The names of this PC's audio outputs
+pub fn output_names() -> Vec<String> {
+    output::names()
+}
+
+pub fn output_choice(name: &str) -> OutputChoice {
+    let Some(cast) = CAST.get() else {
+        return OutputChoice::Off;
+    };
+    if cast.default_output.lock().as_deref() == Some(name) {
+        OutputChoice::Default
+    } else if cast.chosen.lock().iter().any(|chosen| chosen == name) {
+        OutputChoice::On
+    } else {
+        OutputChoice::Off
+    }
+}
+
+/// Switch an output other than the default between playing the session and not; this PC
+/// remembers the choice
+pub fn toggle_output(name: &str) {
+    let Some(cast) = CAST.get() else {
+        return;
+    };
+    if output_choice(name) == OutputChoice::Default {
+        return;
+    }
+    let mut chosen = cast.chosen.lock();
+    if let Some(i) = chosen.iter().position(|chosen| chosen == name) {
+        chosen.remove(i);
+        tracing::info!("Cast: {name} no longer plays here");
+    } else {
+        chosen.push(name.to_string());
+        tracing::info!("Cast: {name} plays here too");
+    }
+    let _ = cast.outputs.send(output::Event::Chosen(chosen.clone()));
+    let path = config::get_config().cache_folder.join(CHOSEN_OUTPUTS_FILE);
+    if let Err(err) = serde_json::to_vec(&*chosen)
+        .map_err(anyhow::Error::from)
+        .and_then(|json| Ok(std::fs::write(&path, json)?))
+    {
+        tracing::warn!(
+            "Failed to save the chosen outputs to {}: {err:#}",
+            path.display()
+        );
+    }
+}
+
+fn load_chosen_outputs() -> Vec<String> {
+    let path = config::get_config().cache_folder.join(CHOSEN_OUTPUTS_FILE);
+    match std::fs::read(&path) {
+        Ok(json) => serde_json::from_slice(&json).unwrap_or_else(|err| {
+            tracing::warn!(
+                "Failed to read the chosen outputs in {}: {err:#}",
+                path.display()
+            );
+            Vec::new()
+        }),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(err) => {
+            tracing::warn!("Failed to read {}: {err:#}", path.display());
+            Vec::new()
+        }
+    }
 }
 
 /// Mute or unmute this PC
@@ -169,7 +267,7 @@ fn send_client_info(cast: &Cast, muted: bool) {
 fn connect(
     cast: &'static Cast,
     server: &str,
-    shared: &Arc<Mutex<Shared>>,
+    feed: &Arc<Mutex<Feed>>,
     clock: &Arc<Clock>,
 ) -> anyhow::Result<()> {
     let (host, port) = match server.rsplit_once(':') {
@@ -196,14 +294,14 @@ fn connect(
     )?;
     *cast.writer.lock() = Some(writer.try_clone()?);
     clock.reset();
-    shared.lock().stream.clear();
+    feed.lock().clear();
 
     let (answered, answers) = flume::bounded(1);
     std::thread::Builder::new()
         .name("cast-time-sync".to_string())
         .spawn(move || sync_time(&mut writer, &answers))?;
     // dropping `answered` when the connection ends stops the time sync
-    receive(&mut BufReader::new(socket), cast, shared, clock, &answered)
+    receive(&mut BufReader::new(socket), cast, feed, clock, &answered)
 }
 
 /// Send time requests for as long as the connection lasts. Like snapclient, each one waits for the
@@ -233,7 +331,7 @@ fn sync_time(writer: &mut TcpStream, answers: &flume::Receiver<()>) {
 fn receive(
     reader: &mut BufReader<TcpStream>,
     cast: &Cast,
-    shared: &Arc<Mutex<Shared>>,
+    feed: &Arc<Mutex<Feed>>,
     clock: &Arc<Clock>,
     answered: &flume::Sender<()>,
 ) -> anyhow::Result<()> {
@@ -249,8 +347,7 @@ fn receive(
                     cast.mute.muted.store(settings.muted, Ordering::Relaxed);
                 }
                 hello_answered = true;
-                shared
-                    .lock()
+                feed.lock()
                     .set_buffer((settings.buffer_ms - settings.latency) * 1000);
                 let _ = answered.try_send(());
             }
@@ -260,12 +357,12 @@ fn receive(
                     format.bits == 16 && usize::from(format.channels) == output::CHANNELS,
                     "the cast server must stream 16-bit stereo, not {format:?}"
                 );
-                shared.lock().set_input(format);
+                feed.lock().set_input(format);
             }
             Message::WireChunk { timestamp, payload } => {
                 if clock.is_synced() {
                     let now = clock.server_now();
-                    shared.lock().push_chunk(timestamp, &payload, now);
+                    feed.lock().push_chunk(timestamp, &payload, now);
                 }
             }
             Message::Time { latency } => {

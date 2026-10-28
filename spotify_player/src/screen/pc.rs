@@ -392,10 +392,12 @@ fn send_changes(link: &Link, state: &SharedState, woken: &flume::Receiver<()>) {
         let ui = state.ui.lock();
         let screen = serde_json::to_value(Screen {
             history: &ui.history,
-            popup: ui
-                .popup
-                .as_ref()
-                .filter(|popup| !matches!(popup, PopupState::ThemeList(..))),
+            popup: ui.popup.as_ref().filter(|popup| {
+                !matches!(
+                    popup,
+                    PopupState::ThemeList(..) | PopupState::OutputList(..)
+                )
+            }),
             visualization,
             #[cfg(feature = "ascii-cover")]
             ascii_cover: ui.ascii_cover.mode,

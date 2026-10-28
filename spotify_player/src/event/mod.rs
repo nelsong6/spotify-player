@@ -892,6 +892,15 @@ fn handle_global_command(
         Command::PlayHereOnPc => {
             ui.popup = Some(PopupState::PcList(ListState::default()));
         }
+        Command::PlayHereOutputs => {
+            #[cfg(feature = "cast")]
+            {
+                ui.popup = Some(PopupState::OutputList(
+                    crate::cast::output_names(),
+                    ListState::default(),
+                ));
+            }
+        }
         Command::PlayHereEverywhere
         | Command::PlayHereNowhere
         | Command::PlayHereOnlyHere
