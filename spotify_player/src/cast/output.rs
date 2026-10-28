@@ -242,12 +242,9 @@ pub fn run(
                     retry = true;
                 }
             }
-            // without Windows' device notices, a chosen output that isn't there is looked for again
-            #[cfg(not(windows))]
-            {
-                retry = true;
-            }
         }
+        // without Windows' device notices, a chosen output that isn't there is looked for again
+        let retry = retry || (cfg!(not(windows)) && !missing.is_empty());
 
         let first = if retry {
             match changes.recv_timeout(REOPEN_INTERVAL) {
