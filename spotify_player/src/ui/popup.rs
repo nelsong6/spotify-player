@@ -109,6 +109,25 @@ pub fn render_popup(
                 let rect = render_list_popup(frame, rect, "PCs", items, 9, ui);
                 (rect, false)
             }
+            PopupState::OutputList(names, _) => {
+                #[cfg(feature = "cast")]
+                let items = names
+                    .iter()
+                    .map(|name| {
+                        let plays = match crate::cast::output_choice(name) {
+                            crate::cast::OutputChoice::Default => "default, always on",
+                            crate::cast::OutputChoice::On => "on",
+                            crate::cast::OutputChoice::Off => "off",
+                        };
+                        (format!("{name} | {plays}"), false)
+                    })
+                    .collect();
+                #[cfg(not(feature = "cast"))]
+                let items = names.iter().map(|name| (name.clone(), false)).collect();
+
+                let rect = render_list_popup(frame, rect, "Outputs on this PC", items, 7, ui);
+                (rect, false)
+            }
             PopupState::ThemeList(themes, ..) => {
                 let items = themes.iter().map(|t| (t.name.clone(), false)).collect();
 

@@ -70,8 +70,9 @@ Every feature spt has, what it does today, and whether it is part of the radio. 
 | Play here on another PC | `P` | Turns play here on or off for any other client, with the relay key every PC holds. | In |
 | Play here for every PC at once | `P`, palette | Every PC, no PC (the radio pauses), only this PC, or every PC but this one. | In |
 | This PC's output | none | Plays on Windows' default output and follows a change of it; Windows chooses it, not spt. | In |
+| More outputs on this PC | `D`, palette | Plays on other outputs of this PC too, switched on in a list and remembered per PC; one that appears later (a TV switched on) starts playing. Play here still covers the whole PC. | In |
 | Another PC's output | none | Nothing; each PC's Windows chooses its own. | Out for now; may change |
-| Spotify devices | `D` | Lists Spotify's devices and moves playback to one, which stops the radio on Home. The radio has no sense of sending its playback elsewhere: every PC is just a client of the session. | Out |
+| Spotify devices | removed | Listed Spotify's devices and moved playback to one, which stopped the radio on Home. The radio has no sense of sending its playback elsewhere: every PC is just a client of the session. | Out |
 | Pause with nobody listening | (automatic) | The session pauses when no PC plays it aloud, so the radio doesn't advance unless someone is listening. | In |
 
 ### The screen

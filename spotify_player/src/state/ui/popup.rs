@@ -30,6 +30,10 @@ pub enum PopupState {
     /// Not shared with the other PCs, since a theme is applied to one PC only
     #[serde(skip)]
     ThemeList(Vec<crate::config::Theme>, ListState),
+    /// This PC's audio outputs by name, to choose which play the session; not shared with the
+    /// other PCs, since they're this PC's own
+    #[serde(skip)]
+    OutputList(Vec<String>, ListState),
     ActionList(Box<ActionListItem>, ListState),
     PlaylistCreate {
         name: LineInput,
@@ -123,6 +127,7 @@ impl PopupState {
     pub fn list_state(&self) -> Option<&ListState> {
         match self {
             Self::PcList(list_state)
+            | Self::OutputList(.., list_state)
             | Self::UserPlaylistList(.., list_state)
             | Self::UserFollowedArtistList(list_state)
             | Self::UserSavedAlbumList(list_state)
@@ -138,6 +143,7 @@ impl PopupState {
     pub fn list_state_mut(&mut self) -> Option<&mut ListState> {
         match self {
             Self::PcList(list_state)
+            | Self::OutputList(.., list_state)
             | Self::UserPlaylistList(.., list_state)
             | Self::UserFollowedArtistList(list_state)
             | Self::UserSavedAlbumList(list_state)

@@ -87,6 +87,7 @@ pub enum Command {
     CycleAsciiCover,
     PlayHere,
     PlayHereOnPc,
+    PlayHereOutputs,
     PlayHereEverywhere,
     PlayHereNowhere,
     PlayHereOnlyHere,
@@ -389,6 +390,7 @@ impl Command {
                 "turn play here on or off: play the session's audio on this PC, or only show it (the session pauses when no PC plays it here)"
             }
             Self::PlayHereOnPc => "open a popup to turn play here on or off for each PC, or for all at once",
+            Self::PlayHereOutputs => "open a popup to choose which of this PC's audio outputs play the radio besides Windows' default",
             Self::PlayHereEverywhere => "turn play here on for every PC",
             Self::PlayHereNowhere => "turn play here off for every PC (the session pauses)",
             Self::PlayHereOnlyHere => "turn play here on for this PC and off for every other",

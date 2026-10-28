@@ -328,6 +328,28 @@ pub fn handle_key_sequence_for_popup(
             ui.popup = None;
             Ok(true)
         }
+        #[cfg(feature = "cast")]
+        PopupState::OutputList(names, _) => {
+            let names = names.clone();
+            handle_command_for_list_popup(
+                command,
+                ui,
+                names.len(),
+                |_, _| {},
+                |_, id: usize| -> Result<()> {
+                    crate::cast::toggle_output(&names[id]);
+                    Ok(())
+                },
+                |ui: &mut UIStateGuard| {
+                    ui.popup = None;
+                },
+            )
+        }
+        #[cfg(not(feature = "cast"))]
+        PopupState::OutputList(..) => {
+            ui.popup = None;
+            Ok(true)
+        }
     }
 }
 

@@ -356,6 +356,10 @@ impl Default for KeymapConfig {
                     command: Command::PlayHereOnPc,
                 },
                 Keymap {
+                    key_sequence: "D".into(),
+                    command: Command::PlayHereOutputs,
+                },
+                Keymap {
                     key_sequence: "F".into(),
                     command: Command::FollowSpotify,
                 },
