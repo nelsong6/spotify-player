@@ -35,6 +35,8 @@ const TIME_TIMEOUT: Duration = Duration::from_secs(2);
 const SILENCE: Duration = Duration::from_millis(300);
 /// The outputs chosen on this PC to play besides the default, in the PC's own cache folder
 const CHOSEN_OUTPUTS_FILE: &str = "outputs.json";
+/// Whether play here is off on this PC, kept across restarts, in the PC's own cache folder
+const PLAY_HERE_FILE: &str = "play_here_off.json";
 
 /// Whether this PC's output is silent
 #[derive(Default)]
@@ -71,10 +73,13 @@ pub fn start(bands: Option<Arc<Mutex<VisBands>>>) -> anyhow::Result<()> {
     let server = config::get_config().app_config.cast_server.clone();
     let (events, changes) = flume::unbounded();
     let cast = CAST.get_or_init(|| Cast {
-        mute: Arc::new(Mute::default()),
+        mute: Arc::new(Mute {
+            muted: AtomicBool::new(load_cache_file(PLAY_HERE_FILE).unwrap_or(false)),
+            ..Mute::default()
+        }),
         writer: Mutex::new(None),
         outputs: events.clone(),
-        chosen: Mutex::new(load_chosen_outputs()),
+        chosen: Mutex::new(load_cache_file(CHOSEN_OUTPUTS_FILE).unwrap_or_default()),
         default_output: Mutex::new(None),
     });
     let feed = Arc::new(Mutex::new(Feed::default()));
@@ -198,33 +203,38 @@ pub fn toggle_output(name: &str) {
         tracing::info!("Cast: {name} plays here too");
     }
     let _ = cast.outputs.send(output::Event::Chosen(chosen.clone()));
-    let path = config::get_config().cache_folder.join(CHOSEN_OUTPUTS_FILE);
-    if let Err(err) = serde_json::to_vec(&*chosen)
-        .map_err(anyhow::Error::from)
-        .and_then(|json| Ok(std::fs::write(&path, json)?))
-    {
-        tracing::warn!(
-            "Failed to save the chosen outputs to {}: {err:#}",
-            path.display()
-        );
+    save_cache_file(CHOSEN_OUTPUTS_FILE, &*chosen);
+}
+
+fn load_cache_file<T: serde::de::DeserializeOwned>(name: &str) -> Option<T> {
+    let path = config::get_config().cache_folder.join(name);
+    match std::fs::read(&path) {
+        Ok(json) => serde_json::from_slice(&json)
+            .inspect_err(|err| tracing::warn!("Failed to read {}: {err:#}", path.display()))
+            .ok(),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => {
+            tracing::warn!("Failed to read {}: {err:#}", path.display());
+            None
+        }
     }
 }
 
-fn load_chosen_outputs() -> Vec<String> {
-    let path = config::get_config().cache_folder.join(CHOSEN_OUTPUTS_FILE);
-    match std::fs::read(&path) {
-        Ok(json) => serde_json::from_slice(&json).unwrap_or_else(|err| {
-            tracing::warn!(
-                "Failed to read the chosen outputs in {}: {err:#}",
-                path.display()
-            );
-            Vec::new()
-        }),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(err) => {
-            tracing::warn!("Failed to read {}: {err:#}", path.display());
-            Vec::new()
-        }
+fn save_cache_file<T: serde::Serialize + ?Sized>(name: &str, value: &T) {
+    let path = config::get_config().cache_folder.join(name);
+    if let Err(err) = serde_json::to_vec(value)
+        .map_err(anyhow::Error::from)
+        .and_then(|json| Ok(std::fs::write(&path, json)?))
+    {
+        tracing::warn!("Failed to save {}: {err:#}", path.display());
+    }
+}
+
+/// Quitting: turn play here off on the way out, so the session knows this PC left rather than
+/// dropped its connection. This PC's own choice is kept for its next start.
+pub fn leave() {
+    if let Some(cast) = CAST.get() {
+        send_client_info(cast, true);
     }
 }
 
@@ -234,6 +244,7 @@ pub fn set_muted(muted: bool) {
         return;
     };
     cast.mute.muted.store(muted, Ordering::Relaxed);
+    save_cache_file(PLAY_HERE_FILE, &muted);
     tracing::info!(
         "Cast: {}",
         if muted {
@@ -345,6 +356,7 @@ fn receive(
                 tracing::info!("Cast server settings: {settings:?}");
                 if hello_answered {
                     cast.mute.muted.store(settings.muted, Ordering::Relaxed);
+                    save_cache_file(PLAY_HERE_FILE, &settings.muted);
                 }
                 hello_answered = true;
                 feed.lock()

@@ -73,7 +73,8 @@ Every feature spt has, what it does today, and whether it is part of the radio. 
 | More outputs on this PC | `D`, palette | Plays on other outputs of this PC too, switched on in a list and remembered per PC; one that appears later (a TV switched on) starts playing. Play here still covers the whole PC. | In |
 | Another PC's output | none | Nothing; each PC's Windows chooses its own. | Out for now; may change |
 | Spotify devices | removed | Listed Spotify's devices and moved playback to one, which stopped the radio on Home. The radio has no sense of sending its playback elsewhere: every PC is just a client of the session. | Out |
-| Pause with nobody listening | (automatic) | The session pauses when no PC plays it aloud, so the radio doesn't advance unless someone is listening. | In |
+| Pause with nobody listening | (automatic) | The session pauses when no PC plays it aloud, so the radio doesn't advance unless someone is listening. Quitting a PC counts as leaving at once; a dropped connection (a restart, a crash) still counts as listening for 30 seconds. | In |
+| Play here across restarts | (automatic) | Each PC remembers whether play here was on and comes back the same way. | In |
 
 ### The screen
 

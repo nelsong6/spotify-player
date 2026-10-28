@@ -610,6 +610,8 @@ fn handle_global_command(
 ) -> Result<bool> {
     match command {
         Command::Quit => {
+            #[cfg(feature = "cast")]
+            crate::cast::leave();
             ui.is_running = false;
         }
         Command::NextTrack => {
