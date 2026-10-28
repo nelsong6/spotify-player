@@ -222,7 +222,11 @@ impl AppClient {
                 if state.is_session
                     && crate::handover::until_session().await == crate::handover::Became::TookOver
                 {
-                    client.update_playback_non_blocking(&state);
+                    if crate::handover::handed_playing() {
+                        client.resume_if_stopped_after_takeover(&state).await;
+                    } else {
+                        client.update_playback_non_blocking(&state);
+                    }
                     return;
                 }
 
@@ -824,6 +828,35 @@ impl AppClient {
     /// Get user available devices
     pub async fn available_devices(&self) -> Result<Vec<rspotify::model::Device>> {
         Ok(self.device().await?)
+    }
+
+    /// The session was handed over playing: once the moved playback has had time to start, resume
+    /// the radio if it didn't
+    #[cfg(feature = "streaming")]
+    async fn resume_if_stopped_after_takeover(&self, state: &SharedState) {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        if let Err(err) = until_accepted("report the playback", || {
+            self.retrieve_current_playback(state, false)
+        })
+        .await
+        {
+            tracing::error!("Failed to retrieve the playback after taking over: {err:#}");
+        }
+        let playing = state
+            .player
+            .read()
+            .playback
+            .as_ref()
+            .is_some_and(|playback| playback.is_playing);
+        if playing {
+            return;
+        }
+        tracing::warn!("The session was handed over playing but isn't; resuming the radio");
+        if let Err(err) =
+            until_accepted("resume the radio", || self.resume_saved_session(state)).await
+        {
+            tracing::error!("Failed to resume the radio after taking over: {err:#}");
+        }
     }
 
     /// After handling a request changing the player's playback,
