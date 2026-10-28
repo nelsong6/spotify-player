@@ -746,18 +746,26 @@ fn render_transport(
     frame.render_widget(left, left_rect);
     frame.render_widget(right, right_rect);
 
+    if bar.width < 3 {
+        return;
+    }
+    let buf = frame.buffer_mut();
+    buf[(bar.x, bar.y)].set_char('[').set_fg(Color::DarkGray);
+    buf[(bar.right() - 1, bar.y)]
+        .set_char(']')
+        .set_fg(Color::DarkGray);
+    let bar = bar.inner(ratatui::layout::Margin::new(1, 0));
     let width = usize::from(bar.width);
     let filled = (progress.num_milliseconds() as f32 / duration.num_milliseconds().max(1) as f32
         * width as f32) as usize;
-    let buf = frame.buffer_mut();
     for i in 0..width {
         let (ch, fg) = match i.cmp(&filled) {
             std::cmp::Ordering::Less => (
-                '━',
+                '=',
                 colors.at(0.35 + 0.6 * i as f32 / width as f32, NO_TURN),
             ),
-            std::cmp::Ordering::Equal => ('●', accent),
-            std::cmp::Ordering::Greater => ('─', Color::DarkGray),
+            std::cmp::Ordering::Equal => ('>', accent),
+            std::cmp::Ordering::Greater => ('.', Color::DarkGray),
         };
         buf[(bar.x + i as u16, bar.y)].set_char(ch).set_fg(fg);
     }
