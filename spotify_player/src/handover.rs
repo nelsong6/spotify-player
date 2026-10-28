@@ -7,6 +7,10 @@
 //! playback to it when a song ends or while the playback is paused, then exits; the new release
 //! gets the lock, and Snapcast starts the exited slot again as the next one to wait.
 //!
+//! The session records in `handed.json` whether it left the playback playing, so the new release
+//! can resume the radio if the moved playback didn't start (Spotify failing to load the playlist
+//! for the new device left the music stopped, 2026-10-27).
+//!
 //! The slot that isn't the session writes its process id to `waiting.pid`: publishing a release
 //! ends that process, and Snapcast starts it again on the new release.
 
@@ -39,6 +43,11 @@ struct Request {
     device_id: String,
 }
 
+#[derive(Serialize, Deserialize)]
+struct Handed {
+    playing: bool,
+}
+
 struct Slots {
     dir: PathBuf,
     release: String,
@@ -49,6 +58,8 @@ struct Slots {
 static SLOTS: OnceLock<Slots> = OnceLock::new();
 /// Set when this slot started beside an older release's session, to take over from it
 static TAKING_OVER: AtomicBool = AtomicBool::new(false);
+/// Whether the session this slot took over from left the playback playing
+static HANDED_PLAYING: AtomicBool = AtomicBool::new(false);
 /// Whether this slot is the session yet, and whether it became it by taking over
 static BECAME: std::sync::LazyLock<tokio::sync::watch::Sender<Option<Became>>> =
     std::sync::LazyLock::new(|| tokio::sync::watch::channel(None).0);
@@ -143,6 +154,16 @@ impl Slots {
         Ok(())
     }
 
+    /// Whether the session handed over its playback playing, read once
+    fn take_handed(&self) -> bool {
+        let path = self.dir.join("handed.json");
+        let handed = std::fs::read(&path)
+            .ok()
+            .and_then(|data| serde_json::from_slice::<Handed>(&data).ok());
+        let _ = std::fs::remove_file(path);
+        handed.is_some_and(|handed| handed.playing)
+    }
+
     /// The device that asked to take over, other than this one
     fn requested(&self, own_device: &str) -> Option<String> {
         let data = std::fs::read(self.dir.join("handover.json")).ok()?;
@@ -178,6 +199,7 @@ pub fn connected(device_id: &str) -> anyhow::Result<()> {
             let slots = SLOTS.get().expect("set above");
             match slots.lock.lock() {
                 Ok(()) => {
+                    HANDED_PLAYING.store(slots.take_handed(), Ordering::SeqCst);
                     if let Err(err) = slots.record_active() {
                         tracing::error!("Failed to record this slot as the session: {err:#}");
                     }
@@ -187,6 +209,11 @@ pub fn connected(device_id: &str) -> anyhow::Result<()> {
             }
         })?;
     Ok(())
+}
+
+/// Whether the session this slot took over from left the playback playing
+pub fn handed_playing() -> bool {
+    HANDED_PLAYING.load(Ordering::SeqCst)
 }
 
 /// The device waiting to take over, when this process is the session and one has asked
@@ -220,6 +247,15 @@ pub async fn hand_over(client: &AppClient, state: &SharedState, device_id: &str,
         .await
         {
             tracing::error!("Failed to start the playback on the new release: {err:#}");
+        }
+    }
+    if let Some(slots) = SLOTS.get() {
+        let handed = Handed { playing: play };
+        if let Err(err) = serde_json::to_vec(&handed)
+            .map_err(anyhow::Error::from)
+            .and_then(|data| Ok(std::fs::write(slots.dir.join("handed.json"), data)?))
+        {
+            tracing::error!("Failed to record how the session was handed over: {err:#}");
         }
     }
     tracing::info!("Handed the session over; exiting");
@@ -256,6 +292,9 @@ pub async fn watch_while_idle(client: AppClient, state: SharedState) {
         // device plays): nothing to move, and the new release starts from the saved session or
         // follows what Spotify pushes it
         if !ours {
+            if let Some(slots) = SLOTS.get() {
+                let _ = std::fs::remove_file(slots.dir.join("handed.json"));
+            }
             tracing::info!("Nothing to hand over to device_id={device_id}; exiting");
             std::process::exit(0);
         }
