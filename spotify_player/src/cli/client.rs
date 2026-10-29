@@ -239,10 +239,20 @@ async fn handle_get_key_request(
                 "popup": popup,
                 "requests_in_flight": requests.in_flight(),
                 "recent_request_failures": requests.failures(),
+                "problems": crate::problem::current(),
+                "session_problems": session_problems(),
                 "recent_logs": state.logs.lock().iter().rev().take(40).rev().collect::<Vec<_>>(),
             }))?
         }
     })
+}
+
+/// What's wrong on the session, as a PC last heard it
+fn session_problems() -> Vec<crate::problem::Problem> {
+    #[cfg(feature = "cast")]
+    return crate::screen::pc::session_problems();
+    #[cfg(not(feature = "cast"))]
+    Vec::new()
 }
 
 /// Get a Spotify item's ID from its `IdOrName` representation

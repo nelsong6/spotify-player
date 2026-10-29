@@ -69,3 +69,49 @@ pub enum ClientRequest {
         desc: String,
     },
 }
+
+impl ClientRequest {
+    /// What the request does, as the screen names it, for one a person asked for; `None` for
+    /// the app's own background reads
+    pub fn action(&self) -> Option<&'static str> {
+        Some(match self {
+            Self::GetCurrentUser | Self::GetCurrentPlayback | Self::GetCurrentUserQueue => {
+                return None
+            }
+            #[cfg(feature = "cast")]
+            Self::FollowSessionPlayback(_) => return None,
+            #[cfg(feature = "cast")]
+            Self::MutePc { .. } => "mute a PC",
+            Self::GetBrowseCategories | Self::GetBrowseCategoryPlaylists(_) => "load browse",
+            Self::RefreshLibrary => "refresh the library",
+            Self::GetUserPlaylists
+            | Self::GetUserSavedAlbums
+            | Self::GetUserSavedShows
+            | Self::GetUserFollowedArtists => "load the library",
+            Self::GetContext(_) => "load the page",
+            Self::StartRandomTrackRadio(_) => "start a radio",
+            Self::Search(_) => "search",
+            Self::AddPlayableToQueue(_) | Self::AddAlbumToQueue(_) => "add to the queue",
+            Self::AddPlayableToPlaylist(..) => "add to the playlist",
+            Self::DeleteTrackFromPlaylist(..) => "remove from the playlist",
+            Self::ReorderPlaylistItems { .. } => "reorder the playlist",
+            Self::AddToLibrary(_) => "save to the library",
+            Self::DeleteFromLibrary(_) => "remove from the library",
+            Self::GetLyrics { .. } => "load the lyrics",
+            Self::CreatePlaylist { .. } => "create the playlist",
+            Self::Player(request) => match request {
+                PlayerRequest::NextTrack => "skip to the next song",
+                PlayerRequest::PreviousTrack => "go back a song",
+                PlayerRequest::Resume
+                | PlayerRequest::ResumePause
+                | PlayerRequest::StartPlayback(..) => "play",
+                PlayerRequest::Pause => "pause",
+                PlayerRequest::SeekTrack(_) => "seek",
+                PlayerRequest::Repeat => "change repeat",
+                PlayerRequest::Shuffle => "change shuffle",
+                PlayerRequest::Volume(_) => "change the volume",
+                PlayerRequest::ToggleMute => "mute",
+            },
+        })
+    }
+}

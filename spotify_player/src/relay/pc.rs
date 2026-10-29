@@ -132,6 +132,17 @@ pub fn api_base_url() -> String {
     format!("{}{API_PREFIX}", base_url())
 }
 
+/// A relay answer that isn't a success, as an error. A 502 carries the session's own reason, which
+/// is the one worth showing.
+fn answered(status: StatusCode, body: &[u8]) -> anyhow::Result<()> {
+    let body = String::from_utf8_lossy(body);
+    if status == StatusCode::BAD_GATEWAY {
+        anyhow::bail!("{body}");
+    }
+    anyhow::ensure!(status.is_success(), "the relay answered {status}: {body}");
+    Ok(())
+}
+
 /// The session's own requests: lyrics, radios and covers
 #[derive(Clone)]
 pub struct Relay {
@@ -153,11 +164,7 @@ impl Relay {
         let response = self.http.get(format!("{}{path}", self.base)).send().await?;
         let status = response.status();
         let body = response.bytes().await?;
-        anyhow::ensure!(
-            status.is_success(),
-            "the relay answered {status}: {}",
-            String::from_utf8_lossy(&body)
-        );
+        answered(status, &body)?;
         Ok(body.to_vec())
     }
 
@@ -180,12 +187,7 @@ impl Relay {
             .post(format!("{}/spt/resume", self.base))
             .send()
             .await?;
-        let status = response.status();
-        anyhow::ensure!(
-            status.is_success(),
-            "the relay answered {status}: {}",
-            response.text().await.unwrap_or_default()
-        );
+        answered(response.status(), &response.bytes().await?)?;
         Ok(())
     }
 
@@ -197,12 +199,7 @@ impl Relay {
             .json(&serde_json::json!({ "pc": pc, "muted": muted }))
             .send()
             .await?;
-        let status = response.status();
-        anyhow::ensure!(
-            status.is_success(),
-            "the relay answered {status}: {}",
-            response.text().await.unwrap_or_default()
-        );
+        answered(response.status(), &response.bytes().await?)?;
         Ok(())
     }
 
@@ -213,8 +210,7 @@ impl Relay {
             .post(format!("{}/spt/refresh", self.base))
             .send()
             .await?;
-        let status = response.status();
-        anyhow::ensure!(status.is_success(), "the relay answered {status}");
+        answered(response.status(), &response.bytes().await?)?;
         Ok(())
     }
 

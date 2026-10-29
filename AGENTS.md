@@ -34,6 +34,8 @@ This file guides coding agents when working in this repository.
 | `ui/palette.rs`               | Draws the command palette over the page from fzt's rows                     |
 | `fzt.rs`                      | Loads fzt (`fzt.dll`, fzt-terminal's `cmd/fztlib`) and wraps its JSON calls |
 | `keeper.rs`                   | The session's job of trimming played songs and refilling radio playlists    |
+| `problem.rs`                  | What's wrong now, reported by the session and each PC, for the screen       |
+| `ui/problems.rs`              | The red row at the top of the screen that says what's wrong                 |
 | `relay/`                      | The session's relay: a PC's only way to Spotify, behind a key on the NAS    |
 | `follow.rs`                   | Drive and follow: the session follows Spotify when something else drives it |
 | `play_report.rs`              | Reports the session's plays to Spotify (feature-gated)                      |

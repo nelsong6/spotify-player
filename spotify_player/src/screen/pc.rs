@@ -60,6 +60,8 @@ struct Link {
     /// Wakes the sender after a key press, so the other PCs follow without waiting for a poll
     wake: flume::Sender<()>,
     pcs: Mutex<Vec<Pc>>,
+    /// What's wrong on the session, as it last said
+    problems: Mutex<Vec<crate::problem::Problem>>,
     /// Whether this PC knows what it shows: the session's screen arrived, or the session is
     /// out of reach and the PC is its own screen
     settled: AtomicBool,
@@ -87,6 +89,7 @@ pub fn start(state: &SharedState, client_pub: &flume::Sender<ClientRequest>) -> 
         writer: Mutex::new(None),
         wake,
         pcs: Mutex::new(Vec::new()),
+        problems: Mutex::new(Vec::new()),
         settled: AtomicBool::new(false),
     });
     std::thread::Builder::new()
@@ -97,10 +100,19 @@ pub fn start(state: &SharedState, client_pub: &flume::Sender<ClientRequest>) -> 
             move || loop {
                 if let Err(err) = follow(link, &server, &state, &client_pub) {
                     tracing::warn!("The shared screen's connection to {server} ended: {err:#}");
+                    crate::problem::set(
+                        crate::problem::Kind::Screen,
+                        format!(
+                            "Can't reach the session on {server}: {}",
+                            crate::problem::reason(&err)
+                        ),
+                    );
                 }
                 link.settled.store(true, Ordering::Relaxed);
                 link.connected.store(false, Ordering::Relaxed);
                 *link.writer.lock() = None;
+                // what the session said is no longer known
+                link.problems.lock().clear();
                 std::thread::sleep(RECONNECT_INTERVAL);
             }
         })?;
@@ -117,6 +129,13 @@ pub fn start(state: &SharedState, client_pub: &flume::Sender<ClientRequest>) -> 
 pub fn is_settled() -> bool {
     LINK.get()
         .is_some_and(|link| link.settled.load(Ordering::Relaxed))
+}
+
+/// What's wrong on the session, as it last said while connected
+pub fn session_problems() -> Vec<crate::problem::Problem> {
+    LINK.get()
+        .map(|link| link.problems.lock().clone())
+        .unwrap_or_default()
 }
 
 /// Whether another PC is in control, so this one only shows the screen
@@ -258,6 +277,7 @@ fn follow(
         )?;
     }
     link.connected.store(true, Ordering::Relaxed);
+    crate::problem::clear(crate::problem::Kind::Screen);
     tracing::info!("Shared screen: connected to {server}:{PORT}");
     let mut last = None;
     let mut last_playback = None;
@@ -265,6 +285,7 @@ fn follow(
         let mut message: FromSession =
             serde_json::from_str(&line?).context("parse the session's message")?;
         *link.pcs.lock() = std::mem::take(&mut message.pcs);
+        *link.problems.lock() = std::mem::take(&mut message.problems);
         if message.playback != last_playback {
             last_playback.clone_from(&message.playback);
             follow_playback(client_pub, message.playback.take());

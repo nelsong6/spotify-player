@@ -73,8 +73,22 @@ pub async fn run(client: AppClient, session: SharedState) {
     }
     let mut state = load_state();
     loop {
-        if let Err(err) = pass(&client, &session, &kept, &mut state).await {
-            tracing::error!("Failed to keep playlists: {err:#}");
+        match pass(&client, &session, &kept, &mut state).await {
+            Ok(failed) if failed.is_empty() => crate::problem::clear(crate::problem::Kind::Keeper),
+            Ok(failed) => crate::problem::set(
+                crate::problem::Kind::Keeper,
+                format!("Kept playlists aren't refilling: {}", failed.join("; ")),
+            ),
+            Err(err) => {
+                tracing::error!("Failed to keep playlists: {err:#}");
+                crate::problem::set(
+                    crate::problem::Kind::Keeper,
+                    format!(
+                        "Kept playlists aren't refilling: {}",
+                        crate::problem::reason(&err)
+                    ),
+                );
+            }
         }
         save_state(&state);
         tokio::time::sleep(INTERVAL).await;
@@ -86,7 +100,7 @@ async fn pass(
     session: &SharedState,
     kept: &[KeptPlaylist],
     state: &mut KeeperState,
-) -> Result<()> {
+) -> Result<Vec<String>> {
     // where the radio is, from the session that owns it
     let (playing_context, playing_uri) = {
         let mut session = session.session.lock();
@@ -108,6 +122,7 @@ async fn pass(
     let now = Utc::now();
 
     let mut history: Option<Vec<PlayHistory>> = None;
+    let mut failed = Vec::new();
     for playlist in kept {
         let uri = PlaylistId::from_id(&playlist.id)
             .with_context(|| format!("kept playlist id {}", playlist.id))?
@@ -143,12 +158,13 @@ async fn pass(
         let history = history.as_deref().unwrap_or_default();
         if let Err(err) = keep(client, playlist, current, history, playlist_state).await {
             tracing::error!("Failed to keep playlist {uri}: {err:#}");
+            failed.push(format!("{uri} ({})", crate::problem::reason(&err)));
             continue;
         }
         playlist_state.last_kept = Some(now);
         playlist_state.kept_at = song;
     }
-    Ok(())
+    Ok(failed)
 }
 
 /// Keep one playlist. `current` is the song playing from it, if it is the one playing.

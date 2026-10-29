@@ -163,6 +163,11 @@ impl SpotifyApiRequestManager {
     }
 
     async fn store_retry_after(&self, retry_after: Duration) {
+        crate::problem::wait(
+            crate::problem::Kind::Waiting,
+            "Spotify refused the session's requests for its rate limit",
+            retry_after,
+        );
         let retry_after_until = Instant::now() + retry_after + Duration::from_secs(1);
         let mut state = self.state.lock().await;
         if state

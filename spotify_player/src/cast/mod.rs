@@ -120,6 +120,13 @@ pub fn start(bands: Option<Arc<Mutex<VisBands>>>) -> anyhow::Result<()> {
         .spawn(move || loop {
             if let Err(err) = connect(cast, &server, &feed, &clock) {
                 tracing::warn!("The cast connection to {server} ended: {err:#}");
+                crate::problem::set(
+                    crate::problem::Kind::Audio,
+                    format!(
+                        "No audio from the session on {server}: {}",
+                        crate::problem::reason(&err)
+                    ),
+                );
             }
             *cast.writer.lock() = None;
             std::thread::sleep(RECONNECT_INTERVAL);
@@ -306,6 +313,7 @@ fn connect(
     *cast.writer.lock() = Some(writer.try_clone()?);
     clock.reset();
     feed.lock().clear();
+    crate::problem::clear(crate::problem::Kind::Audio);
 
     let (answered, answers) = flume::bounded(1);
     std::thread::Builder::new()

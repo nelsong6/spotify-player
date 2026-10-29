@@ -89,13 +89,27 @@ impl BaseClient for Spotify {
 
         if session.is_invalid() {
             tracing::error!("Failed to get a new token: invalid session");
+            crate::problem::set(
+                crate::problem::Kind::SignIn,
+                "Can't renew the Spotify sign-in: no Spotify connection",
+            );
             return Ok(old_token);
         }
 
         match token::get_token_rspotify(&session).await {
-            Ok(token) => Ok(Some(token)),
+            Ok(token) => {
+                crate::problem::clear(crate::problem::Kind::SignIn);
+                Ok(Some(token))
+            }
             Err(err) => {
                 tracing::error!("Failed to get a new token: {err:#}");
+                crate::problem::set(
+                    crate::problem::Kind::SignIn,
+                    format!(
+                        "Can't renew the Spotify sign-in: {}",
+                        crate::problem::reason(&err)
+                    ),
+                );
                 Ok(old_token)
             }
         }

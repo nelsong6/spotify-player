@@ -22,7 +22,12 @@ pub async fn serve(path: PathBuf, state: SharedState, client: AppClient) {
                     move || crate::follow::start(&state)
                 });
                 let playback = playback(state, client);
-                return relay(listener, path, crate::listeners::pcs(), playback, follow).await;
+                let sources = Sources {
+                    pcs: crate::listeners::pcs(),
+                    playback,
+                    problems: crate::problem::subscribe(),
+                };
+                return relay(listener, path, sources, follow).await;
             }
             Err(err) if !logged => {
                 tracing::info!("Waiting for port {PORT} for the shared screen: {err:#}");
@@ -229,13 +234,24 @@ fn shown_playback(shown: Shown) -> CurrentPlaybackContext {
 /// What the session does when a PC asks it to follow Spotify
 type OnFollow = std::sync::Arc<dyn Fn() + Send + Sync>;
 
+/// What the session passes on to the PCs besides the screen
+struct Sources {
+    pcs: watch::Receiver<Vec<Pc>>,
+    playback: watch::Receiver<Option<serde_json::Value>>,
+    problems: watch::Receiver<Vec<crate::problem::Problem>>,
+}
+
 async fn relay(
     listener: tokio::net::TcpListener,
     path: PathBuf,
-    mut pcs: watch::Receiver<Vec<Pc>>,
-    mut playback: watch::Receiver<Option<serde_json::Value>>,
+    sources: Sources,
     follow: OnFollow,
 ) {
+    let Sources {
+        mut pcs,
+        mut playback,
+        mut problems,
+    } = sources;
     let screen = std::fs::read_to_string(&path)
         .ok()
         .and_then(|saved| serde_json::from_str(&saved).ok());
@@ -244,6 +260,7 @@ async fn relay(
         screen,
         pcs: pcs.borrow_and_update().clone(),
         playback: playback.borrow_and_update().clone(),
+        problems: problems.borrow_and_update().clone(),
     });
     tokio::spawn({
         let shared = shared.clone();
@@ -263,6 +280,13 @@ async fn relay(
                         }
                         let now = playback.borrow_and_update().clone();
                         shared.send_modify(|shared| shared.playback = now);
+                    }
+                    changed = problems.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        let now = problems.borrow_and_update().clone();
+                        shared.send_modify(|shared| shared.problems = now);
                     }
                 }
             }
@@ -366,11 +390,15 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         let (pcs, pcs_rx) = watch::channel(Vec::new());
         let (playback, playback_rx) = watch::channel(None);
+        let (problems, problems_rx) = watch::channel(Vec::new());
         tokio::spawn(relay(
             listener,
             path.clone(),
-            pcs_rx,
-            playback_rx,
+            Sources {
+                pcs: pcs_rx,
+                playback: playback_rx,
+                problems: problems_rx,
+            },
             std::sync::Arc::new(|| {}),
         ));
 
@@ -378,7 +406,7 @@ mod tests {
         let (mut b_in, mut b_out) = pc(addr).await;
         assert_eq!(
             next(&mut a_in).await,
-            serde_json::json!({"controller": null, "screen": null, "pcs": [], "playback": null})
+            serde_json::json!({"controller": null, "screen": null, "pcs": [], "playback": null, "problems": []})
         );
         next(&mut b_in).await;
 
@@ -406,7 +434,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             next(&mut b_in).await,
-            serde_json::json!({"controller": "a", "screen": "library", "pcs": [], "playback": null})
+            serde_json::json!({"controller": "a", "screen": "library", "pcs": [], "playback": null, "problems": []})
         );
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "\"library\"");
 
@@ -429,6 +457,20 @@ mod tests {
         // and of what the session plays
         playback.send(Some(serde_json::json!("playing"))).unwrap();
         assert_eq!(next(&mut c_in).await["playback"], "playing");
+
+        // and of what's wrong on the session
+        problems
+            .send(vec![crate::problem::Problem {
+                kind: crate::problem::Kind::NoPlayer,
+                text: "no player".to_string(),
+                since_ms: 1,
+                until_ms: None,
+            }])
+            .unwrap();
+        assert_eq!(
+            next(&mut c_in).await["problems"],
+            serde_json::json!([{"kind": "no_player", "text": "no player", "since_ms": 1, "until_ms": null}])
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
