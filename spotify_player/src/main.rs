@@ -29,6 +29,7 @@ mod media_control;
 #[cfg(feature = "streaming")]
 mod play_report;
 mod playlist_folders;
+mod problem;
 #[cfg(any(feature = "cast", feature = "streaming"))]
 mod relay;
 #[cfg(any(feature = "cast", feature = "streaming"))]

@@ -60,6 +60,9 @@ struct FromSession {
     /// A [`SessionPlayback`]
     #[serde(default)]
     playback: Option<serde_json::Value>,
+    /// What's wrong on the session
+    #[serde(default)]
+    problems: Vec<crate::problem::Problem>,
 }
 
 /// The session's side: keeps the screen, saved to `path` so a restart keeps it, and passes it on.

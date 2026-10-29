@@ -159,6 +159,14 @@ pub fn render_playback_window(
 /// What the playback window shows when Spotify has no playback: the song the session left off
 /// on, which space resumes, or how to start something.
 fn idle_playback_text(state: &SharedState) -> String {
+    // space can't resume a radio the session can't play
+    #[cfg(feature = "cast")]
+    if let Some(problem) = crate::screen::pc::session_problems()
+        .into_iter()
+        .find(|problem| problem.kind == crate::problem::Kind::NoPlayer)
+    {
+        return format!("{}. Play won't work until it's back.", problem.text);
+    }
     let session = state.session.lock();
     let session = &session.session;
     if session.is_empty() {

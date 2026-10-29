@@ -293,6 +293,7 @@ pub async fn new_connection(
                         tracing::info!("Got a new player event: {event:?}");
                         match event {
                             PlayerEvent::Playing { .. } => {
+                                crate::problem::clear(crate::problem::Kind::RadioStopped);
                                 if crate::listeners::is_unheard() {
                                     tracing::info!("No PC plays the session aloud; pausing");
                                     client.pause_player();
@@ -329,6 +330,13 @@ pub async fn new_connection(
                                     {
                                         tracing::warn!(
                                             "Failed to continue after the playback ran out: {err:#}"
+                                        );
+                                        crate::problem::set(
+                                            crate::problem::Kind::RadioStopped,
+                                            format!(
+                                                "The radio stopped: the next song didn't start ({})",
+                                                crate::problem::reason(&err)
+                                            ),
                                         );
                                     }
                                 });

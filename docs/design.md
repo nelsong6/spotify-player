@@ -88,6 +88,7 @@ Every feature spt has, what it does today, and whether it is part of the radio. 
 | Themes | `T` | Switches the theme on this PC only. | In |
 | Sorting | `s ...` | Sorts track lists and the library. | In |
 | Help, logs | `?`, `g o` | Every key; the app's log. | In |
+| What's wrong | (automatic) | A red row at the top says what's wrong on the session or this PC, and what's still waiting for an answer, until it's fixed. | In |
 | Mouse capture | `M` | Off lets the terminal select text. | In |
 
 ### Behind the scenes

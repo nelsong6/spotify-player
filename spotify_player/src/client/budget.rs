@@ -60,6 +60,11 @@ pub(super) async fn wait_turn(what: &str) {
             "Holding {what} {} ms for the request budget",
             wait.as_millis()
         );
+        crate::problem::wait(
+            crate::problem::Kind::Waiting,
+            "The session holds its Spotify requests under the rate limit",
+            wait,
+        );
         tokio::time::sleep(wait).await;
     }
 }

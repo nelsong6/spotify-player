@@ -204,6 +204,7 @@ pub fn run(
             .and_then(|device| device.name().ok());
         default.lock().clone_from(&default_name);
         let mut retry = false;
+        let mut failures = Vec::new();
 
         if main.is_none() {
             match default_device
@@ -213,6 +214,11 @@ pub fn run(
                 Ok(output) => main = Some(output),
                 Err(err) => {
                     tracing::warn!("Failed to open an audio output: {err:#}");
+                    failures.push(format!(
+                        "{} ({})",
+                        default_name.as_deref().unwrap_or("the default speaker"),
+                        crate::problem::reason(&err)
+                    ));
                     retry = true;
                 }
             }
@@ -236,10 +242,12 @@ pub fn run(
                         if !device.name().is_ok_and(|name| missing.contains(&&name)) {
                             continue;
                         }
+                        let name = device.name().unwrap_or_default();
                         match open(&device, feed, clock, mute, None, events) {
                             Ok(output) => extras.push(output),
                             Err(err) => {
                                 tracing::warn!("Failed to open a chosen audio output: {err:#}");
+                                failures.push(format!("{name} ({})", crate::problem::reason(&err)));
                                 retry = true;
                             }
                         }
@@ -247,9 +255,21 @@ pub fn run(
                 }
                 Err(err) => {
                     tracing::warn!("Failed to list the audio outputs: {err:#}");
+                    failures.push(format!(
+                        "the chosen speakers ({})",
+                        crate::problem::reason(&anyhow::Error::from(err))
+                    ));
                     retry = true;
                 }
             }
+        }
+        if failures.is_empty() {
+            crate::problem::clear(crate::problem::Kind::Output);
+        } else {
+            crate::problem::set(
+                crate::problem::Kind::Output,
+                format!("Can't play on {}", failures.join(", ")),
+            );
         }
         // without Windows' device notices, a chosen output that isn't there is looked for again
         let retry = retry || (cfg!(not(windows)) && !missing.is_empty());

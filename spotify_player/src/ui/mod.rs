@@ -32,6 +32,7 @@ mod page;
 mod palette;
 mod playback;
 mod popup;
+mod problems;
 #[cfg(feature = "cast")]
 pub mod streaming;
 pub mod utils;
@@ -156,6 +157,17 @@ fn clean_up(mut terminal: Terminal) -> Result<()> {
 
 /// Render the application
 fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGuard, rect: Rect) {
+    // what's wrong takes the top row, above everything else, while anything is
+    let shown = problems::shown(state);
+    let rect = if shown.is_empty() {
+        rect
+    } else {
+        let [row, rest] =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(rect);
+        problems::render(frame, &shown, row);
+        rest
+    };
+
     // rendering order: playback window -> shortcut help popup -> other popups -> main layout
 
     // render playback window before other popups and windows to ensure nothing is rendered on top

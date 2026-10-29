@@ -48,9 +48,16 @@ pub fn watch(session: &Session, state: SharedState) {
         "hm://connect-state/v1/cluster",
         Message::from_raw::<ClusterUpdate>,
     ) {
-        Ok(updates) => updates,
+        Ok(updates) => {
+            crate::problem::clear(crate::problem::Kind::Follow);
+            updates
+        }
         Err(err) => {
             tracing::error!("Failed to listen for Spotify's connect state: {err:#}");
+            crate::problem::set(
+                crate::problem::Kind::Follow,
+                format!("Following Spotify (F) won't work until the session reconnects: {err}"),
+            );
             return;
         }
     };

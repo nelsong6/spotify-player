@@ -36,13 +36,21 @@ pub async fn start_client_handler(
         let state = state.clone();
         let client = client.clone();
         let span = tracing::info_span!("client_request", request = ?request);
-        let id = state.requests.lock().start(format!("{request:?}"));
+        let action = request.action();
+        let id = state.requests.lock().start(format!("{request:?}"), action);
 
         tokio::task::spawn(
             async move {
                 let result = client.handle_request(&state, request).await;
                 if let Err(err) = &result {
                     tracing::error!("Failed to handle client request: {err:#}");
+                    if let Some(action) = action {
+                        crate::problem::show_for(
+                            crate::problem::Kind::Command,
+                            format!("Couldn't {action}: {}", crate::problem::reason(err)),
+                            COMMAND_FAILURE_SHOWN,
+                        );
+                    }
                 }
                 state
                     .requests
@@ -53,6 +61,9 @@ pub async fn start_client_handler(
         );
     }
 }
+
+/// How long a failed command stays on screen
+const COMMAND_FAILURE_SHOWN: Duration = Duration::from_secs(15);
 
 /// Interval between background session-validity checks.
 const SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(1);

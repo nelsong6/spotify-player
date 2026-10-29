@@ -169,6 +169,10 @@ pub fn load() -> Option<SavedSession> {
         Ok(_) => None,
         Err(err) => {
             tracing::warn!("Failed to parse the saved session: {err:#}");
+            crate::problem::set(
+                crate::problem::Kind::SavedSession,
+                format!("The radio's saved place couldn't be read, so play has nothing to resume: {err}"),
+            );
             None
         }
     }
@@ -288,8 +292,18 @@ impl SessionState {
         let result = serde_json::to_vec(&self.session)
             .map_err(anyhow::Error::from)
             .and_then(|data| std::fs::write(session_path(), data).map_err(anyhow::Error::from));
-        if let Err(err) = result {
-            tracing::warn!("Failed to save the session: {err:#}");
+        match result {
+            Ok(()) => crate::problem::clear(crate::problem::Kind::SavedSession),
+            Err(err) => {
+                tracing::warn!("Failed to save the session: {err:#}");
+                crate::problem::set(
+                    crate::problem::Kind::SavedSession,
+                    format!(
+                        "The radio's place isn't being saved: {}",
+                        crate::problem::reason(&err)
+                    ),
+                );
+            }
         }
         self.seen = modified();
     }

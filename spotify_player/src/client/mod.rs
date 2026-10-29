@@ -109,6 +109,11 @@ where
                         "Spotify refused to {what}; sending it again in {}s",
                         wait.as_secs()
                     );
+                    crate::problem::wait(
+                        crate::problem::Kind::Waiting,
+                        "Spotify's rate limit holds the session's requests",
+                        wait,
+                    );
                     tokio::time::sleep(wait).await;
                 }
                 None => return Err(err),
@@ -381,9 +386,28 @@ impl AppClient {
     pub async fn check_valid_session(&self, state: &SharedState) -> Result<()> {
         if self.spotify.session().await.is_invalid() {
             tracing::info!("Client's current session is invalid, creating a new session...");
-            self.new_session(Some(state), false)
-                .await
-                .context("create new client session")?;
+            #[cfg(feature = "streaming")]
+            if state.is_session {
+                crate::problem::set(
+                    crate::problem::Kind::NoPlayer,
+                    "The session lost its Spotify connection and is reconnecting",
+                );
+            }
+            let connected = self.new_session(Some(state), false).await;
+            #[cfg(feature = "streaming")]
+            if state.is_session {
+                match &connected {
+                    Ok(()) => crate::problem::clear(crate::problem::Kind::NoPlayer),
+                    Err(err) => crate::problem::set(
+                        crate::problem::Kind::NoPlayer,
+                        format!(
+                            "The session has no Spotify player: reconnecting failed ({})",
+                            crate::problem::reason(err)
+                        ),
+                    ),
+                }
+            }
+            connected.context("create new client session")?;
         }
         Ok(())
     }
@@ -856,6 +880,13 @@ impl AppClient {
             until_accepted("resume the radio", || self.resume_saved_session(state)).await
         {
             tracing::error!("Failed to resume the radio after taking over: {err:#}");
+            crate::problem::set(
+                crate::problem::Kind::RadioStopped,
+                format!(
+                    "The radio stopped: a new release didn't resume it ({})",
+                    crate::problem::reason(&err)
+                ),
+            );
         }
     }
 
@@ -1235,6 +1266,10 @@ impl AppClient {
         #[cfg(feature = "cast")]
         if let Some(relay) = &self.relay {
             return relay.resume().await;
+        }
+        // Spotify answers a play on a player that isn't there with a bare 404
+        if let Some(problem) = crate::problem::get(crate::problem::Kind::NoPlayer) {
+            anyhow::bail!("{problem}");
         }
         let saved = {
             let mut session = state.session.lock();
