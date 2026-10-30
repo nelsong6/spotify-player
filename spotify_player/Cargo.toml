@@ -47,6 +47,7 @@ tokio = { version = "1.53.1", features = [
 toml = "1.1.5"
 ratatui = { version = "0.30.2", features = ["serde"] }
 protobuf = { version = "3.7.2", optional = true }
+rusqlite = { version = "0.40.2", features = ["bundled"], optional = true }
 rand = "0.10.2"
 maybe-async = "0.2.11"
 async-trait = "0.1.92"
@@ -107,7 +108,7 @@ optional = true
 
 [features]
 # the home cast's session (`spotify_player session`): the player, its audio on stdout for Snapcast
-streaming = ["librespot-playback", "librespot-connect", "librespot-protocol", "protobuf", "dep:hyper", "dep:hyper-util", "dep:http-body-util"]
+streaming = ["librespot-playback", "librespot-connect", "librespot-protocol", "protobuf", "dep:hyper", "dep:hyper-util", "dep:http-body-util", "dep:rusqlite"]
 # the terminal UI: pages, popups, keys and the command palette. The session has no screen, so
 # its build leaves this out.
 tui = []

@@ -31,6 +31,8 @@ pub enum Kind {
     Keeper,
     /// The session can't hear what Spotify plays elsewhere
     Follow,
+    /// The session can't keep the play history
+    History,
     /// The session waits on Spotify's rate limit
     Waiting,
     /// A kind from a newer release

@@ -99,6 +99,7 @@ Every feature spt has, what it does today, and whether it is part of the radio. 
 | Request budget | Every request goes under 10 per 30 s and 200 per hour. | In |
 | Upgrades don't stop the music | A new release takes over between songs. | In |
 | Plays reported | The session's plays show in Spotify's listening history. | In |
+| Play history | The session keeps every song it plays, with how it ended and who heard it, in `history.db` in its slots folder, kept forever (SPT-29). Nothing reads it yet. | In |
 | Command line | `spt playback ...`, `spt start ...`, `spt playlist ...` and others, run against the open spt. | In |
 | OS media keys | Off in the shared config. | In |
 | Following Spotify | `F` only: the PCs show what Spotify plays elsewhere. Another device never starts it, since only a deliberate act moves the radio. | On hold (#89, #87) |

@@ -39,6 +39,7 @@ This file guides coding agents when working in this repository.
 | `relay/`                      | The session's relay: a PC's only way to Spotify, behind a key on the NAS    |
 | `follow.rs`                   | Drive and follow: the session follows Spotify when something else drives it |
 | `play_report.rs`              | Reports the session's plays to Spotify (feature-gated)                      |
+| `history.rs`                  | The session's play history, a row per song in SQLite (feature-gated)        |
 | `ui/streaming.rs`             | FFT audio visualizer: `Analyzer`, `VisBands`, visualization page            |
 | `ui/ascii_cover.rs`           | ASCII album cover beside the bars, pulsing with the bass (feature-gated)    |
 | `streaming.rs`                | The session's librespot player, its audio on stdout (feature-gated)         |
