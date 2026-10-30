@@ -19,6 +19,8 @@ mod fzt;
 #[cfg(feature = "streaming")]
 mod handover;
 #[cfg(feature = "streaming")]
+mod history;
+#[cfg(feature = "streaming")]
 mod keeper;
 mod key;
 #[cfg(feature = "streaming")]
@@ -359,7 +361,9 @@ fn main() -> Result<()> {
                 let release = args
                     .get_one::<String>("release")
                     .expect("required with --slots");
-                handover::claim(std::path::Path::new(slots), release)?;
+                let slots = std::path::Path::new(slots);
+                handover::claim(slots, release)?;
+                history::init(slots, Some(release));
             }
             run_app(true, log_buffer)
         }

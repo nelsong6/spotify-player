@@ -213,6 +213,7 @@ pub async fn new_connection(
         async move {
             let mut pause_armed = pause_on_startup;
             let mut play_reporter = crate::play_report::PlayReporter::default();
+            let history = crate::history::Recorder::new();
             while let Some(event) = channel.recv().await {
                 // Suppress Spotify's auto-resume of the previous session on
                 // startup. The `librespot` connect transfer finalizes the
@@ -252,6 +253,7 @@ pub async fn new_connection(
                     .map(|c| c.uri.clone())
                     .unwrap_or_default();
                 play_reporter.handle(&event, &session, &context_uri);
+                history.lock().handle(&event, &state, &context_uri);
                 if let player::PlayerEvent::Playing { .. } = event {
                     crate::follow::radio_started();
                 }
