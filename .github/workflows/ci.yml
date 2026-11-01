@@ -102,6 +102,24 @@ jobs:
           gh release download "$tag" -R romaine-life/fzt-terminal -p fzt-windows-amd64.dll -O target/release/fzt.dll
           echo "$sha256  target/release/fzt.dll" | sha256sum -c -
 
+      # Defender quarantined an unsigned tmux build as Program:Win32/Contebrew.A!ml
+      # and passed the same build signed (TMUX-30). The certificate is at
+      # Terminal's, which every home PC trusts. fzt.dll is signed here, after its
+      # checksum, because this is the CI that publishes it.
+      - name: Sign
+        shell: pwsh
+        env:
+          PFX: ${{ secrets.AT_TERMINAL_PFX }}
+          PFX_PASSWORD: ${{ secrets.AT_TERMINAL_PFX_PASSWORD }}
+        run: |
+          if (-not $env:PFX) { throw 'AT_TERMINAL_PFX is not set' }
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Sort-Object FullName -Descending | Select-Object -First 1
+          [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:PFX))
+          try {
+            & $signtool.FullName sign /fd SHA256 /f cert.pfx /p $env:PFX_PASSWORD target/release/spotify_player.exe target/release/fzt.dll
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          } finally { Remove-Item cert.pfx }
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
