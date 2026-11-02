@@ -1,44 +1,46 @@
-# Publish this fork's CI build as `spt` to \\NelsonNAS\tools (Nelson's home
+# Publish this fork's Forgejo release as `spt` to \\NelsonNAS\tools (Nelson's home
 # setup; see shell-config-profile-home claude\topics\home-tools.md).
-# The version is `git describe` (e.g. v0.25.1-13-g9daae90: 13 commits past
-# upstream v0.25.1), so only committed, pushed code is published.
+# CI releases every master commit that passed in full, named by `git describe`
+# (e.g. v0.25.1-13-g9daae90: 13 commits past upstream v0.25.1, release tags left
+# out), so only committed, pushed code on master is published.
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
 if (git status --porcelain) { throw 'commit first: a published version has to match a commit' }
 git fetch -q origin
-if (git log --oneline '@{u}..HEAD') { throw 'push first: the published commit has to be on GitHub' }
+if (git log --oneline '@{u}..HEAD') { throw 'push first: the published commit has to be on Forgejo' }
 
-$version = git describe --tags --always
+$version = git describe --tags --always --abbrev=7 --exclude '*-g*'
 $commit = git rev-parse HEAD
 $repo = 'nelsong6/spotify-player'
+$api = "https://forgejo.romaine.life/api/v1/repos/$repo"
+$token = ("protocol=https`nhost=forgejo.romaine.life`n`n" | git credential fill | Select-String '^password=(.*)').Matches[0].Groups[1].Value
+$headers = @{ Authorization = "token $token" }
 
-# CI's windows-build and linux-build jobs make the published binaries. A squash merge of a PR
-# whose branch was up to date has the PR's last commit's tree, so that PR run already built
-# this commit and there's no need to wait for the run on master.
-$run = $null
-$head = gh api "repos/$repo/commits/$commit/pulls" --jq '.[0].head.sha'
-if ($head -and (gh api "repos/$repo/git/commits/$head" --jq .tree.sha) -eq (git rev-parse "$commit^{tree}")) {
-    $run = gh run list -R $repo -w CI -c $head -e pull_request --json databaseId --jq '.[0].databaseId'
+# CI's windows-build and linux-build jobs make the binaries, and its release job attaches them
+# to the release once the whole run passed. Wait for that, and stop when the run failed.
+$assets = 'spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt'
+$release = $null
+foreach ($attempt in 1..180) {
+    $r = Invoke-RestMethod "$api/releases/tags/$version" -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable code
+    if ($code -eq 200 -and -not ($assets | Where-Object { $_ -notin $r.assets.name })) { $release = $r; break }
+    $state = (Invoke-RestMethod "$api/commits/$commit/status" -Headers $headers).state
+    if ($state -in 'failure', 'error') { throw "CI failed for $commit`: https://forgejo.romaine.life/$repo/actions" }
+    if ($attempt -eq 1) { Write-Host "waiting for CI to release $version" }
+    Start-Sleep -Seconds 30
 }
-foreach ($attempt in 1..30) {
-    if ($run) { break }
-    $run = gh run list -R $repo -w CI -c $commit -e push --json databaseId --jq '.[0].databaseId'
-    if ($run) { break }
-    Start-Sleep -Seconds 10
-}
-if (-not $run) { throw "no CI run for $commit on $repo" }
-gh run watch $run -R $repo --exit-status --interval 30
-if ($LASTEXITCODE -ne 0) { throw "CI failed: https://github.com/$repo/actions/runs/$run" }
+if (-not $release) { throw "no release $version after 90 minutes: https://forgejo.romaine.life/$repo/actions" }
 
 $dir = Join-Path ([IO.Path]::GetTempPath()) "spt-$version"
 Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory $dir | Out-Null
 # the Windows build is what the PCs run; the Linux one is the session on the NAS
-foreach ($artifact in 'spotify_player-windows', 'spotify_player-linux') {
-    gh run download $run -R $repo -n $artifact -D $dir
-    if ($LASTEXITCODE -ne 0) { throw "downloading $artifact failed" }
+foreach ($asset in $release.assets | Where-Object name -in $assets) {
+    Invoke-WebRequest $asset.browser_download_url -Headers $headers -OutFile (Join-Path $dir $asset.name)
 }
 
+# -Repo stays GitHub, which the push mirror keeps in step: publish-tool's check for an older
+# commit overtaking a newer one asks GitHub (HOMECFG-110 replaces publish-tool)
 publish-tool -Name spt -Version $version -Path $dir `
     -Entry spotify_player.exe -Repo https://github.com/nelsong6/spotify-player -Commit $commit
 

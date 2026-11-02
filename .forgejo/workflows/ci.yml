@@ -1,0 +1,237 @@
+name: CI
+
+# Every pull request runs the checks and both builds; a push to master runs the same and,
+# when all of it passed, releases the builds as a Forgejo release named by `git describe`.
+# publish.ps1 publishes that release.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUST_FEATURES: "streaming,cast,media-control,image,notify,fzf"
+
+jobs:
+  # ubuntu-latest jobs run in containers on the NAS, beside the spt session, so cargo runs
+  # at the lowest priority.
+  rust-ci-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: apt-get update && apt-get install -y pkg-config libssl-dev libasound2-dev libdbus-1-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - uses: actions/checkout@v4
+
+      - uses: https://github.com/dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - uses: https://github.com/Swatinem/rust-cache@v2
+
+      - name: Cargo format
+        run: cargo fmt --all -- --check
+
+      - name: Cargo test
+        run: nice -n 19 cargo test --no-default-features --features $RUST_FEATURES
+
+      - name: Cargo clippy with all features
+        run: nice -n 19 cargo clippy --no-default-features --features $RUST_FEATURES -- -D warnings
+
+      - name: Cargo clippy without features
+        run: nice -n 19 cargo clippy --no-default-features -- -D warnings
+
+  # windows-latest is upstairspc in host mode: `bash` there is WSL's launcher, so every step
+  # is pwsh, and without the runner user's profile. The runner names a custom shell's script
+  # without .ps1, which pwsh won't run as a file, so the shell reads it in.
+  rust-ci-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh -NoLogo -NoProfile -NonInteractive -Command "$ErrorActionPreference = 'Stop'; . ([scriptblock]::Create([IO.File]::ReadAllText('{0}'))); if (Test-Path variable:LASTEXITCODE) { exit $LASTEXITCODE }"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup update stable --no-self-update
+          rustup component add clippy rustfmt --toolchain stable
+
+      - uses: https://github.com/Swatinem/rust-cache@v2
+
+      - name: Cargo format
+        run: cargo fmt --all -- --check
+
+      - name: Cargo test
+        run: cargo test --no-default-features --features $env:RUST_FEATURES
+
+      - name: Cargo clippy with all features
+        run: cargo clippy --no-default-features --features $env:RUST_FEATURES -- -D warnings
+
+      - name: Cargo clippy without features
+        run: cargo clippy --no-default-features -- -D warnings
+
+  cargo-machete:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: apt-get update && apt-get install -y jq
+
+      - uses: actions/checkout@v4
+
+      # the action reads the host triple from rustc
+      - uses: https://github.com/dtolnay/rust-toolchain@stable
+
+      - uses: https://github.com/bnjbvr/cargo-machete@main
+
+  typos:
+    # https://github.com/crate-ci/typos
+    # install and run locally: cargo install typos-cli && typos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: https://github.com/crate-ci/typos@master
+
+  # the build publish.ps1 publishes, made alongside the checks; it is released only from a
+  # master run whose checks all passed
+  windows-build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh -NoLogo -NoProfile -NonInteractive -Command "$ErrorActionPreference = 'Stop'; . ([scriptblock]::Create([IO.File]::ReadAllText('{0}'))); if (Test-Path variable:LASTEXITCODE) { exit $LASTEXITCODE }"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup update stable --no-self-update
+
+      - uses: https://github.com/Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --locked --release
+
+      # the command palette loads fzt.dll from beside the executable; fzt.lock pins its
+      # release. fzt-terminal releases on GitHub until it moves to Forgejo (FORGEJO-3).
+      - name: Fetch fzt
+        run: |
+          $tag, $sha256 = (Get-Content fzt.lock -Raw).Trim() -split '\s+'
+          Invoke-WebRequest "https://github.com/romaine-life/fzt-terminal/releases/download/$tag/fzt-windows-amd64.dll" -OutFile target/release/fzt.dll
+          $got = (Get-FileHash target/release/fzt.dll -Algorithm SHA256).Hash
+          if ($got -ne $sha256) { throw "fzt.dll $tag has sha256 $got, fzt.lock pins $sha256" }
+
+      # Defender quarantined an unsigned tmux build as Program:Win32/Contebrew.A!ml
+      # and passed the same build signed (TMUX-30). The certificate is at
+      # Terminal's, which every home PC trusts. fzt.dll is signed here, after its
+      # checksum, because this is the CI that publishes it.
+      - name: Sign
+        env:
+          PFX: ${{ secrets.AT_TERMINAL_PFX }}
+          PFX_PASSWORD: ${{ secrets.AT_TERMINAL_PFX_PASSWORD }}
+        run: |
+          if (-not $env:PFX) { throw 'AT_TERMINAL_PFX is not set' }
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Sort-Object FullName -Descending | Select-Object -First 1
+          [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:PFX))
+          try {
+            & $signtool.FullName sign /fd SHA256 /f cert.pfx /p $env:PFX_PASSWORD target/release/spotify_player.exe target/release/fzt.dll
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          } finally { Remove-Item cert.pfx }
+
+      # actions/upload-artifact@v4 doesn't work against Forgejo; this is Forgejo's fork of it.
+      - uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: spotify_player-windows
+          path: |
+            target/release/spotify_player.exe
+            target/release/fzt.dll
+          if-no-files-found: error
+
+  linux-build:
+    # the session for the NAS: its audio goes to stdout, so no audio libraries to build
+    # against. Its glibc (ubuntu 24.04's) must not outrun the NAS container's Debian.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: apt-get update && apt-get install -y pkg-config libssl-dev
+
+      - uses: actions/checkout@v4
+
+      - uses: https://github.com/dtolnay/rust-toolchain@stable
+
+      - uses: https://github.com/Swatinem/rust-cache@v2
+
+      - name: Build
+        run: nice -n 19 cargo build --locked --release --no-default-features --features rustls-tls,streaming
+
+      # the repository's files compiled into the session, from Cargo's dependency file:
+      # publish.ps1 moves the session to a release only when one of them changed
+      - name: List the session's sources
+        run: >-
+          tr ' ' '\n' < target/release/spotify_player.d | grep "^$GITHUB_WORKSPACE/"
+          | xargs realpath -m --relative-to="$GITHUB_WORKSPACE" | grep -v '^target/' | sort -u
+          > target/release/session-sources.txt
+
+      - uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: spotify_player-linux
+          path: |
+            target/release/spotify_player
+            target/release/session-sources.txt
+          if-no-files-found: error
+
+  # The release is the master commit's `git describe`, e.g. v0.25.1-102-gabcdef1; release
+  # tags are excluded from the describe so the next one counts from upstream's tag. A rerun
+  # only uploads the assets the release is missing.
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [rust-ci-linux, rust-ci-windows, cargo-machete, typos, windows-build, linux-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Install dependencies
+        run: apt-get update && apt-get install -y jq
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: https://data.forgejo.org/forgejo/download-artifact@v4
+        with:
+          name: spotify_player-windows
+          path: dist
+
+      - uses: https://data.forgejo.org/forgejo/download-artifact@v4
+        with:
+          name: spotify_player-linux
+          path: dist
+
+      - name: Release
+        env:
+          TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag=$(git describe --tags --always --abbrev=7 --exclude '*-g*')
+          api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+          auth="Authorization: token $TOKEN"
+          code=$(curl -sS -o release.json -w '%{http_code}' -H "$auth" "$api/releases/tags/$tag")
+          if [ "$code" = 404 ]; then
+            jq -n --arg t "$tag" --arg c "$GITHUB_SHA" '{tag_name: $t, target_commitish: $c, name: $t, body: "Built from \($c)."}' \
+              | curl -sSf -o release.json -H "$auth" -H 'Content-Type: application/json' -d @- "$api/releases"
+          elif [ "$code" != 200 ]; then
+            echo "release lookup for $tag returned $code"; exit 1
+          fi
+          id=$(jq -r .id release.json)
+          for f in dist/*; do
+            name=$(basename "$f")
+            if jq -e --arg n "$name" '.assets | any(.name == $n)' release.json > /dev/null; then
+              echo "$name is already on $tag"
+            else
+              curl -sSf -o /dev/null -H "$auth" -F "attachment=@$f" "$api/releases/$id/assets?name=$name"
+              echo "uploaded $name"
+            fi
+          done
+          echo "released $tag ($id) at $GITHUB_SHA"
