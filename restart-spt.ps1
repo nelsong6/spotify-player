@@ -27,7 +27,7 @@ if ((Test-Path $local) -and -not (Test-Synced)) {
     }
 }
 
-# A tab keeps the tmux release it opened with, and before win32.7-7 (tmux-windows-fork b3938b48)
+# A tab keeps the tmux release it opened with, and before win32.7-7 (at-tmux b3938b48)
 # respawn-pane -k took the whole server down, with every pane in the tab. Those tabs are left
 # alone; their spt gets the new release when reopened.
 function Test-RespawnSafe([string]$path) {
