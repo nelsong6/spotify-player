@@ -16,8 +16,8 @@ env:
 
 jobs:
   # The NAS runs ubuntu-latest jobs one at a time beside the spt session, on a 4-core
-  # Celeron, so the Linux jobs are the light checks and the session's build; format, tests
-  # and clippy run on upstairspc.
+  # Celeron, so the Linux jobs are the session's build and the release; every check runs
+  # on upstairspc.
   #
   # windows-latest is upstairspc in host mode: `bash` there is WSL's launcher, so every step
   # is pwsh, and without the runner user's profile. The runner names a custom shell's script
@@ -37,6 +37,18 @@ jobs:
           rustup update stable --no-self-update
           rustup component add clippy rustfmt --toolchain stable
 
+      # typos at the version crate-ci/typos@master ran on GitHub; both stay installed in the
+      # runner user's ~/.cargo/bin, so this only builds them once. They run before the build,
+      # with no target directory to walk.
+      - name: Install typos and cargo-machete
+        run: cargo install --locked typos-cli@1.50.2 cargo-machete
+
+      - name: Typos
+        run: typos
+
+      - name: Cargo machete
+        run: cargo machete
+
       - name: Cargo format
         run: cargo fmt --all -- --check
 
@@ -48,28 +60,6 @@ jobs:
 
       - name: Cargo clippy without features
         run: cargo clippy --no-default-features -- -D warnings
-
-  cargo-machete:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install dependencies
-        run: apt-get update && apt-get install -y jq
-
-      - uses: actions/checkout@v4
-
-      # the action reads the host triple from rustc
-      - uses: https://github.com/dtolnay/rust-toolchain@stable
-
-      - uses: https://github.com/bnjbvr/cargo-machete@main
-
-  typos:
-    # https://github.com/crate-ci/typos
-    # install and run locally: cargo install typos-cli && typos
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: https://github.com/crate-ci/typos@master
 
   # the build publish.ps1 publishes, made alongside the checks; it is released only from a
   # master run whose checks all passed
@@ -160,7 +150,7 @@ jobs:
   # only uploads the assets the release is missing.
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: [rust-ci-windows, cargo-machete, typos, windows-build, linux-build]
+    needs: [rust-ci-windows, windows-build, linux-build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
