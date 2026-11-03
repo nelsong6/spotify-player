@@ -185,7 +185,11 @@ Spotify behaviors this fork depends on, each verified live (2026-10-23 to 10-25)
 
 Working on the fork:
 
-- `publish.ps1` publishes CI's build of the pushed commit to `\NelsonNAS\tools\spt`:
+- The repository lives on Forgejo (https://forgejo.romaine.life/nelsong6/spotify-player,
+  FORGEJO-3); GitHub is its push mirror, with Actions off. CI is
+  `.forgejo/workflows/ci.yml`: `ubuntu-latest` jobs run in containers on the NAS,
+  `windows-latest` jobs on upstairspc, where every step is pwsh (its `bash` is WSL's).
+- `publish.ps1` publishes the Forgejo release of the pushed master commit to `\NelsonNAS\tools\spt`:
   the Windows exe plus `fzt.dll` (pinned in `fzt.lock`, from fzt-terminal releases) and the
   Linux binary `nas/` runs for the session, then, when the session's program changed (a file
   in CI's `session-sources.txt`, from Cargo's dependency file, or the dependencies), restarts
@@ -194,12 +198,11 @@ Working on the fork:
   PCs, in its pane (`restart-spt.ps1`, over ssh for the other PCs; one asleep is skipped and
   updates when spt next opens). It skips a tab still on a tmux older than win32.7-7, whose
   `respawn-pane -k` crashed the whole tab (2026-10-26, it took a Claude session with it). CI's `windows-build` and `linux-build`
-  jobs run on PRs and on master, alongside the checks rather than after them;
-  `publish.ps1` takes them only from a run that passed in full. For a squash merge whose
-  tree matches its PR's last commit it takes the PR run's build instead of waiting for the
-  run on master. With `Swatinem/rust-cache`
-  warm, push to publishable binary measured 3m11s (19 min uncached and chained; 12.5 min on
-  a cold cache).
+  jobs run on PRs and on master, alongside the checks rather than after them; on master,
+  CI's `release` job attaches their files to a Forgejo release named by
+  `git describe --tags --always --abbrev=7 --exclude '*-g*'` only when the whole run passed,
+  and `publish.ps1` waits for that release. The 3m11s push-to-binary measured on GitHub's
+  runners (warm `Swatinem/rust-cache`) doesn't carry over to the NAS and upstairspc.
 - On Windows the cast's output follows the system's default output through Windows'
   default-device notice (`IMMNotificationClient`, in `cast/output.rs`). cpal 0.16 only
   opens a fixed device, never a stream that follows the default. Polling the default was
@@ -264,5 +267,3 @@ Working on the fork:
 - An untested change is tried before CI finishes: build the PC's exe here (`-j 4`, this is the
   gaming PC) and run it against the live session; CI still gates the merge. The session's Linux
   build comes only from CI's `linux-build`.
-- No Actions run on a PR, not even a queued one: GitHub may have disabled workflows on
-  this fork (its Actions page says so and has the button to re-enable them).
