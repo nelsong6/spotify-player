@@ -1,5 +1,11 @@
 # Configuration Documentation
 
+Home releases are installed automatically by home-sync on the PCs. CI stages the NAS
+session through its restricted `homesvc spt-upgrade` interface, verifying the release's
+commit, asset checksums and ancestry before switching `current.json`. The waiting slot
+restarts and takes over between songs; the shared configuration below stays in
+`\\NelsonNAS\tools\spt\config` across version changes.
+
 ## Table of Contents
 
 - [General](#general)

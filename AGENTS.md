@@ -185,6 +185,14 @@ Spotify behaviors this fork depends on, each verified live (2026-10-23 to 10-25)
 
 Working on the fork:
 
+- CI publishes complete Forgejo releases, starts the PCs' home-sync tasks, and calls
+  the NAS's restricted `homesvc spt-upgrade` interface with the exact tag and commit.
+  `session-release.json` records the commit and every asset's SHA256 and size; the NAS
+  verifies it before immutable staging and an atomic `current.json` switch, then uses
+  the existing waiting-slot upgrade and between-song handover. PRs validate the forced
+  command without changing the session. `publish.ps1` below is a legacy interface;
+  normal releases need no manual publisher.
+
 - The repository lives on Forgejo (https://forgejo.romaine.life/nelsong6/spotify-player,
   FORGEJO-3); GitHub is its push mirror, with Actions off. CI is
   `.forgejo/workflows/ci.yml`: `ubuntu-latest` jobs run in containers on the NAS,

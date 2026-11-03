@@ -2,7 +2,7 @@ name: CI
 
 # Every pull request runs the checks and both builds; a push to master runs the same and,
 # when all of it passed, releases the builds as a Forgejo release named by `git describe`.
-# publish.ps1 publishes that release.
+# The release triggers the PCs and stages the NAS session for its between-song handover.
 
 on:
   pull_request:
@@ -220,6 +220,12 @@ jobs:
             }
           }
           git describe --tags --always --abbrev=7 --exclude '*-g*'
+          $tag = git describe --tags --always --abbrev=7 --exclude '*-g*'
+          $files = @{}
+          foreach ($name in 'spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt') {
+            $files[$name] = @{ size = (Get-Item "dist/$name").Length; sha256 = (Get-FileHash "dist/$name" -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          @{ tag = $tag; commit = $env:GITHUB_SHA; files = $files } | ConvertTo-Json -Depth 4 | Set-Content dist/session-release.json -Encoding utf8NoBOM
 
       - name: Release
         id: release
@@ -243,7 +249,7 @@ jobs:
           if (($ref -split '\s+')[0] -ne $env:GITHUB_SHA) { throw "tag $tag points to a different commit" }
           $release = Invoke-RestMethod "$api/releases/tags/$tag" -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable code
           if ($code -eq 200 -and -not $release.draft) {
-            $missing = @('spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt' | Where-Object { $_ -notin $release.assets.name })
+            $missing = @('spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt', 'session-release.json' | Where-Object { $_ -notin $release.assets.name })
             if ($missing.Count) { throw "published release $tag is incomplete" }
             Write-Host "$tag already released"
             "tag=$tag" | Add-Content $env:GITHUB_OUTPUT
@@ -253,7 +259,7 @@ jobs:
             $body = @{ tag_name = $tag; target_commitish = $env:GITHUB_SHA; name = $tag; body = "Built from $env:GITHUB_SHA."; draft = $true } | ConvertTo-Json
             $release = Invoke-RestMethod -Method Post "$api/releases" -Headers $headers -ContentType 'application/json' -Body $body
           } elseif ($code -ne 200) { throw "release lookup for $tag returned $code" }
-          foreach ($name in 'spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt') {
+          foreach ($name in 'spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt', 'session-release.json') {
             if ($name -notin $release.assets.name) {
               Invoke-RestMethod -Method Post "$api/releases/$($release.id)/assets?name=$name" -Headers $headers -Form @{ attachment = Get-Item "dist/$name" } | Out-Null
             }
@@ -267,3 +273,47 @@ jobs:
     secrets: inherit
     with:
       release-tag: ${{ needs.release.outputs.release-tag != 'validation-only' && needs.release.outputs.release-tag || '' }}
+
+  nas-session:
+    needs: [release, home-sync]
+    if: always() && needs.release.result == 'success'
+    runs-on: [linux, nas]
+    container:
+      image: ghcr.io/catthehacker/ubuntu:act-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Verify the restricted NAS session interface
+        run: |
+          node <<'JS'
+          const {spawnSync} = require('node:child_process');
+          const result = spawnSync('ssh', ['-T', '-i', '/certs/client/home-sync/spt_id_ed25519',
+            '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes',
+            '-o', 'UserKnownHostsFile=/certs/client/home-sync/known_hosts',
+            '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10', 'Nelson@nas'],
+            {input: JSON.stringify({tag: 'validation-only', commit: 'invalid'}), encoding: 'utf8', timeout: 30000});
+          if (result.error) throw result.error;
+          if (result.status !== 1 || !result.stderr?.includes('invalid spt release tag or commit')) {
+            throw new Error(`restricted NAS session interface validation failed: ${result.status}; ${result.stderr}`);
+          }
+          console.log('Restricted NAS interface rejects invalid requests before touching the session');
+          JS
+
+      - name: Stage the exact release and upgrade only the waiting session slot
+        if: needs.release.outputs.release-tag != 'validation-only'
+        env:
+          TAG: ${{ needs.release.outputs.release-tag }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          node <<'JS'
+          const {spawnSync} = require('node:child_process');
+          const input = JSON.stringify({tag: process.env.TAG, commit: process.env.COMMIT});
+          const result = spawnSync('ssh', ['-T', '-i', '/certs/client/home-sync/spt_id_ed25519',
+            '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes',
+            '-o', 'UserKnownHostsFile=/certs/client/home-sync/known_hosts',
+            '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10', 'Nelson@nas'],
+            {input, encoding: 'utf8', timeout: 420000});
+          if (result.stdout) process.stdout.write(result.stdout);
+          if (result.stderr) process.stderr.write(result.stderr);
+          if (result.error) throw result.error;
+          if (result.status !== 0) throw new Error(`NAS session upgrade: SSH exit ${result.status}`);
+          JS

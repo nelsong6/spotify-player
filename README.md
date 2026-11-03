@@ -54,20 +54,18 @@ Checkout [examples/README.md](https://github.com/aome510/spotify-player/blob/mas
 
 Nelson's fork lives at [Forgejo](https://forgejo.romaine.life/nelsong6/spotify-player).
 Every passing push to `master` cuts a release named by `git describe`, containing
-`spotify_player.exe`, `fzt.dll`, `spotify_player` (the NAS session) and
-`session-sources.txt`. The Windows binaries are signed; `fzt.lock` pins the DLL from
+`spotify_player.exe`, `fzt.dll`, `spotify_player` (the NAS session),
+`session-sources.txt` and `session-release.json` (the commit and SHA256 checksums).
+The Windows binaries are signed; `fzt.lock` pins the DLL from
 fzt-terminal's Forgejo release. GitHub is a push mirror with Actions disabled.
 
-From a clean, current `master` checkout, publish that Forgejo release to the home PCs
-and upgrade the NAS session when its compiled sources changed:
-
-```powershell
-git pull --ff-only
-pwsh -NoProfile -File .\publish.ps1
-```
-
-`publish.ps1` retains the session's between-song handover and the PCs' spt pane
-restarts. It never builds locally.
+CI publishes the complete release and starts home-sync on every PC, which installs
+the signed build and reconciles running spt panes. A dedicated restricted NAS key
+then calls `homesvc spt-upgrade` with that exact tag and commit. The NAS verifies the
+stable release, its provenance, checksums and ancestry before staging its immutable
+version and atomically switching `current.json`; only the waiting session slot restarts.
+The playing slot hands over between songs. The manual `publish.ps1` remains a legacy
+interface during HOMECFG-110; normal releases require no manual publisher.
 
 By default, the application's installed binary is `spotify_player`.
 
