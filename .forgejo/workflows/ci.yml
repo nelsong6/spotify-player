@@ -46,7 +46,9 @@ jobs:
 
   # windows-latest is upstairspc in host mode: `bash` there is WSL's launcher, so every step
   # is pwsh, and without the runner user's profile. The runner names a custom shell's script
-  # without .ps1, which pwsh won't run as a file, so the shell reads it in.
+  # without .ps1, which pwsh won't run as a file, so the shell reads it in. No
+  # Swatinem/rust-cache there: its cleanup empties ~/.cargo/bin, which on a host runner is
+  # the runner user's own rustup install.
   rust-ci-windows:
     runs-on: windows-latest
     defaults:
@@ -59,8 +61,6 @@ jobs:
         run: |
           rustup update stable --no-self-update
           rustup component add clippy rustfmt --toolchain stable
-
-      - uses: https://github.com/Swatinem/rust-cache@v2
 
       - name: Cargo format
         run: cargo fmt --all -- --check
@@ -108,8 +108,6 @@ jobs:
 
       - name: Install Rust toolchain
         run: rustup update stable --no-self-update
-
-      - uses: https://github.com/Swatinem/rust-cache@v2
 
       - name: Build
         run: cargo build --locked --release
