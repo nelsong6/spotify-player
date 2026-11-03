@@ -189,6 +189,9 @@ Working on the fork:
   FORGEJO-3); GitHub is its push mirror, with Actions off. CI is
   `.forgejo/workflows/ci.yml`: `ubuntu-latest` jobs run in containers on the NAS,
   `windows-latest` jobs on upstairspc, where every step is pwsh (its `bash` is WSL's).
+  The NAS takes only the light checks (typos, cargo-machete) and the session's build;
+  format, tests and clippy run on upstairspc's Windows build alone, so Linux-only code
+  is linted by hand (the commands above).
 - `publish.ps1` publishes the Forgejo release of the pushed master commit to `\NelsonNAS\tools\spt`:
   the Windows exe plus `fzt.dll` (pinned in `fzt.lock`, from fzt-terminal releases) and the
   Linux binary `nas/` runs for the session, then, when the session's program changed (a file

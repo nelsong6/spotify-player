@@ -15,38 +15,15 @@ env:
   RUST_FEATURES: "streaming,cast,media-control,image,notify,fzf"
 
 jobs:
-  # ubuntu-latest jobs run in containers on the NAS, beside the spt session, so cargo runs
-  # at the lowest priority.
-  rust-ci-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install dependencies
-        run: apt-get update && apt-get install -y pkg-config libssl-dev libasound2-dev libdbus-1-dev libxcb-shape0-dev libxcb-xfixes0-dev
-
-      - uses: actions/checkout@v4
-
-      - uses: https://github.com/dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
-
-      - uses: https://github.com/Swatinem/rust-cache@v2
-
-      - name: Cargo format
-        run: cargo fmt --all -- --check
-
-      - name: Cargo test
-        run: nice -n 19 cargo test --no-default-features --features $RUST_FEATURES
-
-      - name: Cargo clippy with all features
-        run: nice -n 19 cargo clippy --no-default-features --features $RUST_FEATURES -- -D warnings
-
-      - name: Cargo clippy without features
-        run: nice -n 19 cargo clippy --no-default-features -- -D warnings
-
+  # The NAS runs ubuntu-latest jobs one at a time beside the spt session, on a 4-core
+  # Celeron, so the Linux jobs are the light checks and the session's build; format, tests
+  # and clippy run on upstairspc.
+  #
   # windows-latest is upstairspc in host mode: `bash` there is WSL's launcher, so every step
   # is pwsh, and without the runner user's profile. The runner names a custom shell's script
-  # without .ps1, which pwsh won't run as a file, so the shell reads it in.
+  # without .ps1, which pwsh won't run as a file, so the shell reads it in. No
+  # Swatinem/rust-cache there: its cleanup empties ~/.cargo/bin, which on a host runner is
+  # the runner user's own rustup install.
   rust-ci-windows:
     runs-on: windows-latest
     defaults:
@@ -59,8 +36,6 @@ jobs:
         run: |
           rustup update stable --no-self-update
           rustup component add clippy rustfmt --toolchain stable
-
-      - uses: https://github.com/Swatinem/rust-cache@v2
 
       - name: Cargo format
         run: cargo fmt --all -- --check
@@ -108,8 +83,6 @@ jobs:
 
       - name: Install Rust toolchain
         run: rustup update stable --no-self-update
-
-      - uses: https://github.com/Swatinem/rust-cache@v2
 
       - name: Build
         run: cargo build --locked --release
@@ -187,7 +160,7 @@ jobs:
   # only uploads the assets the release is missing.
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: [rust-ci-linux, rust-ci-windows, cargo-machete, typos, windows-build, linux-build]
+    needs: [rust-ci-windows, cargo-machete, typos, windows-build, linux-build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
