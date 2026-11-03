@@ -200,6 +200,14 @@ jobs:
           $tag = git describe --tags --always --abbrev=7 --exclude '*-g*'
           $api = "$env:GITHUB_SERVER_URL/api/v1/repos/$env:GITHUB_REPOSITORY"
           $headers = @{ Authorization = "token $env:TOKEN" }
+          # Publishing a draft does not create its Git ref on Forgejo. Create the tag
+          # explicitly, including on reruns of releases made before this check existed.
+          $ref = Invoke-RestMethod "$api/tags/$tag" -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable tagCode
+          if ($tagCode -eq 404) {
+            $tagBody = @{ tag_name = $tag; target = $env:GITHUB_SHA } | ConvertTo-Json
+            $ref = Invoke-RestMethod -Method Post "$api/tags" -Headers $headers -ContentType 'application/json' -Body $tagBody
+          } elseif ($tagCode -ne 200) { throw "tag lookup for $tag returned $tagCode" }
+          if ($ref.commit.sha -ne $env:GITHUB_SHA) { throw "tag $tag points to a different commit" }
           $release = Invoke-RestMethod "$api/releases/tags/$tag" -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable code
           if ($code -eq 200 -and -not $release.draft) {
             $missing = @('spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt' | Where-Object { $_ -notin $release.assets.name })
