@@ -180,6 +180,8 @@ jobs:
   # PRs also assemble and validate the release, without publishing it.
   release:
     needs: [tag-check, rust-ci-windows, windows-build, linux-build]
+    outputs:
+      release-tag: ${{ steps.release.outputs.tag || 'validation-only' }}
     runs-on: windows-latest
     defaults:
       run:
@@ -220,6 +222,7 @@ jobs:
           git describe --tags --always --abbrev=7 --exclude '*-g*'
 
       - name: Release
+        id: release
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -243,6 +246,7 @@ jobs:
             $missing = @('spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt' | Where-Object { $_ -notin $release.assets.name })
             if ($missing.Count) { throw "published release $tag is incomplete" }
             Write-Host "$tag already released"
+            "tag=$tag" | Add-Content $env:GITHUB_OUTPUT
             exit 0
           }
           if ($code -eq 404) {
@@ -254,5 +258,12 @@ jobs:
               Invoke-RestMethod -Method Post "$api/releases/$($release.id)/assets?name=$name" -Headers $headers -Form @{ attachment = Get-Item "dist/$name" } | Out-Null
             }
           }
-          Invoke-RestMethod -Method Patch "$api/releases/$($release.id)" -Headers $headers -ContentType 'application/json' -Body '{"draft":false}' | Out-Null
-          Write-Host "released $tag ($($release.id)) at $env:GITHUB_SHA"
+          "tag=$tag" | Add-Content $env:GITHUB_OUTPUT
+          Write-Host "staged $tag; the NAS trigger publishes it before starting the PCs"
+
+  home-sync:
+    needs: release
+    uses: romaine-life/pipeline-templates/.forgejo/workflows/home-sync.yml@main
+    secrets: inherit
+    with:
+      release-tag: ${{ needs.release.outputs.release-tag != 'validation-only' && needs.release.outputs.release-tag || '' }}
