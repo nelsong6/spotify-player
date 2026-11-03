@@ -189,6 +189,8 @@ Working on the fork:
   FORGEJO-3); GitHub is its push mirror, with Actions off. CI is
   `.forgejo/workflows/ci.yml`: `ubuntu-latest` jobs run in containers on the NAS,
   `windows-latest` jobs on upstairspc, where every step is pwsh (its `bash` is WSL's).
+  Only the Linux session build uses the NAS runner; typos, cargo-machete, formatting,
+  tests, clippy and release assembly run on upstairspc. Release assets are validated on PRs.
 - `publish.ps1` publishes the Forgejo release of the pushed master commit to `\NelsonNAS\tools\spt`:
   the Windows exe plus `fzt.dll` (pinned in `fzt.lock`, from fzt-terminal releases) and the
   Linux binary `nas/` runs for the session, then, when the session's program changed (a file
@@ -264,6 +266,5 @@ Working on the fork:
   through a `.cmd` file holding the full command line: quoted Windows paths passed straight
   to `new-session` were dropped, and the instance silently used the real cache. A test with
   an empty `-C` folder runs every first-time sign-in.
-- An untested change is tried before CI finishes: build the PC's exe here (`-j 4`, this is the
-  gaming PC) and run it against the live session; CI still gates the merge. The session's Linux
+- Builds and Rust checks run only in CI; nelsonpc is the gaming PC. The session's Linux
   build comes only from CI's `linux-build`.

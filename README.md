@@ -52,6 +52,23 @@ Checkout [examples/README.md](https://github.com/aome510/spotify-player/blob/mas
 
 ## Installation
 
+Nelson's fork lives at [Forgejo](https://forgejo.romaine.life/nelsong6/spotify-player).
+Every passing push to `master` cuts a release named by `git describe`, containing
+`spotify_player.exe`, `fzt.dll`, `spotify_player` (the NAS session) and
+`session-sources.txt`. The Windows binaries are signed; `fzt.lock` pins the DLL from
+fzt-terminal's Forgejo release. GitHub is a push mirror with Actions disabled.
+
+From a clean, current `master` checkout, publish that Forgejo release to the home PCs
+and upgrade the NAS session when its compiled sources changed:
+
+```powershell
+git pull --ff-only
+pwsh -NoProfile -File .\publish.ps1
+```
+
+`publish.ps1` retains the session's between-song handover and the PCs' spt pane
+restarts. It never builds locally.
+
 By default, the application's installed binary is `spotify_player`.
 
 ### Requirements

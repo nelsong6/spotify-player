@@ -8,7 +8,9 @@ Set-Location $PSScriptRoot
 
 if (git status --porcelain) { throw 'commit first: a published version has to match a commit' }
 git fetch -q origin
+if ($LASTEXITCODE) { throw 'fetching Forgejo failed' }
 if (git log --oneline '@{u}..HEAD') { throw 'push first: the published commit has to be on Forgejo' }
+if ((git rev-parse HEAD) -ne (git rev-parse origin/master)) { throw 'publish from the current master commit' }
 
 $version = git describe --tags --always --abbrev=7 --exclude '*-g*'
 $commit = git rev-parse HEAD
@@ -23,7 +25,8 @@ $assets = 'spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.tx
 $release = $null
 foreach ($attempt in 1..180) {
     $r = Invoke-RestMethod "$api/releases/tags/$version" -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable code
-    if ($code -eq 200 -and -not ($assets | Where-Object { $_ -notin $r.assets.name })) { $release = $r; break }
+    if ($code -eq 200 -and -not $r.draft -and -not ($assets | Where-Object { $_ -notin $r.assets.name })) { $release = $r; break }
+    if ($code -notin 200, 404) { throw "release lookup for $version returned $code" }
     $state = (Invoke-RestMethod "$api/commits/$commit/status" -Headers $headers).state
     if ($state -in 'failure', 'error') { throw "CI failed for $commit`: https://forgejo.romaine.life/$repo/actions" }
     if ($attempt -eq 1) { Write-Host "waiting for CI to release $version" }
@@ -31,8 +34,7 @@ foreach ($attempt in 1..180) {
 }
 if (-not $release) { throw "no release $version after 90 minutes: https://forgejo.romaine.life/$repo/actions" }
 
-$dir = Join-Path ([IO.Path]::GetTempPath()) "spt-$version"
-Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+$dir = Join-Path ([IO.Path]::GetTempPath()) ("spt-" + [guid]::NewGuid())
 New-Item -ItemType Directory $dir | Out-Null
 # the Windows build is what the PCs run; the Linux one is the session on the NAS
 foreach ($asset in $release.assets | Where-Object name -in $assets) {
