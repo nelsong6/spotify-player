@@ -64,8 +64,8 @@ the signed build and reconciles running spt panes. A dedicated restricted NAS ke
 then calls `homesvc spt-upgrade` with that exact tag and commit. The NAS verifies the
 stable release, its provenance, checksums and ancestry before staging its immutable
 version and atomically switching `current.json`; only the waiting session slot restarts.
-The playing slot hands over between songs. The manual `publish.ps1` remains a legacy
-interface during HOMECFG-110; normal releases require no manual publisher.
+The playing slot hands over between songs. Releases require no manual publisher;
+the former `publish.ps1` and `restart-spt.ps1` have been retired.
 
 By default, the application's installed binary is `spotify_player`.
 

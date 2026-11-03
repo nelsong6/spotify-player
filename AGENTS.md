@@ -80,7 +80,7 @@ Event/UI threads never call async functions directly. They send a `ClientRequest
 | `notify`                                                                                                                                | Desktop notifications                                    |
 | `fzf`                                                                                                                                   | Fuzzy search                                             |
 
-Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the NAS's Linux build is `rustls-tls` + `streaming`, without `tui`, so the session's program holds no screen code. Code that's the session's or a PC's alone lives in its own file (`relay/session.rs` and `relay/pc.rs`, `screen/session.rs` and `screen/pc.rs`, `client/session_side.rs` and `client/pc_side.rs`): `publish.ps1` moves the session only when a file compiled into it changed. Gate feature-specific code with `#[cfg(feature = "...")]`.
+Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the NAS's Linux build is `rustls-tls` + `streaming`, without `tui`, so the session's program holds no screen code. Code that's the session's or a PC's alone lives in its own file (`relay/session.rs` and `relay/pc.rs`, `screen/session.rs` and `screen/pc.rs`, `client/session_side.rs` and `client/pc_side.rs`). CI distributes both builds through their Forgejo release. Gate feature-specific code with `#[cfg(feature = "...")]`.
 
 ## Verifying changes
 
@@ -190,8 +190,8 @@ Working on the fork:
   `session-release.json` records the commit and every asset's SHA256 and size; the NAS
   verifies it before immutable staging and an atomic `current.json` switch, then uses
   the existing waiting-slot upgrade and between-song handover. PRs validate the forced
-  command without changing the session. `publish.ps1` below is a legacy interface;
-  normal releases need no manual publisher.
+  command without changing the session. Releases require no manual publisher;
+  `publish.ps1` and `restart-spt.ps1` have been retired (HOMECFG-110).
 
 - The repository lives on Forgejo (https://forgejo.romaine.life/nelsong6/spotify-player,
   FORGEJO-3); GitHub is its push mirror, with Actions off. CI is
@@ -199,20 +199,7 @@ Working on the fork:
   `windows-latest` jobs on upstairspc, where every step is pwsh (its `bash` is WSL's).
   Only the Linux session build uses the NAS runner; typos, cargo-machete, formatting,
   tests, clippy and release assembly run on upstairspc. Release assets are validated on PRs.
-- `publish.ps1` publishes the Forgejo release of the pushed master commit to `\NelsonNAS\tools\spt`:
-  the Windows exe plus `fzt.dll` (pinned in `fzt.lock`, from fzt-terminal releases) and the
-  Linux binary `nas/` runs for the session, then, when the session's program changed (a file
-  in CI's `session-sources.txt`, from Cargo's dependency file, or the dependencies), restarts
-  only the session's waiting slot, which takes over between songs
-  (`handover.rs`, OpenProject #78), and restarts every spt running in a tmux pane on the
-  PCs, in its pane (`restart-spt.ps1`, over ssh for the other PCs; one asleep is skipped and
-  updates when spt next opens). It skips a tab still on a tmux older than win32.7-7, whose
-  `respawn-pane -k` crashed the whole tab (2026-10-26, it took a Claude session with it). CI's `windows-build` and `linux-build`
-  jobs run on PRs and on master, alongside the checks rather than after them; on master,
-  CI's `release` job attaches their files to a Forgejo release named by
-  `git describe --tags --always --abbrev=7 --exclude '*-g*'` only when the whole run passed,
-  and `publish.ps1` waits for that release. The 3m11s push-to-binary measured on GitHub's
-  runners (warm `Swatinem/rust-cache`) doesn't carry over to the NAS and upstairspc.
+- CI's Windows and Linux build jobs run on PRs and master. Once every check passes, the release job publishes the exact source revision using the existing git-describe tag scheme, then home-sync installs the PCs and homesvc stages the NAS waiting slot.
 - On Windows the cast's output follows the system's default output through Windows'
   default-device notice (`IMMNotificationClient`, in `cast/output.rs`). cpal 0.16 only
   opens a fixed device, never a stream that follows the default. Polling the default was
