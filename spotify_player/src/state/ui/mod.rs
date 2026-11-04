@@ -105,6 +105,13 @@ impl UIState {
         }
     }
 
+    /// Whether the app takes the mouse right now. The info panel leaves it to the terminal, so
+    /// the panel's text can be selected, whatever `mouse_capture` is set to.
+    #[cfg(feature = "tui")]
+    pub fn takes_mouse(&self) -> bool {
+        takes_mouse(self.mouse_capture, self.popup.as_ref())
+    }
+
     /// Get a list of items possibly filtered by a search query if exists a search popup
     pub fn search_filtered_items<'a, T: std::fmt::Display>(&self, items: &'a [T]) -> Vec<&'a T> {
         match self.popup {
@@ -112,6 +119,11 @@ impl UIState {
             _ => items.iter().collect::<Vec<_>>(),
         }
     }
+}
+
+#[cfg(feature = "tui")]
+fn takes_mouse(mouse_capture: bool, popup: Option<&PopupState>) -> bool {
+    mouse_capture && !matches!(popup, Some(PopupState::Info(..)))
 }
 
 use ratatui::layout::Rect;
@@ -182,5 +194,19 @@ impl Orientation {
             Self::Vertical => ratatui::layout::Layout::vertical(constraints),
             Self::Horizontal => ratatui::layout::Layout::horizontal(constraints),
         }
+    }
+}
+
+#[cfg(all(test, feature = "tui"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_info_panel_leaves_the_mouse_to_the_terminal_only_while_open() {
+        let info = PopupState::Info(Vec::new());
+        assert!(!takes_mouse(true, Some(&info)));
+        assert!(takes_mouse(true, None));
+        // closing the panel doesn't turn on what the user turned off
+        assert!(!takes_mouse(false, None));
     }
 }

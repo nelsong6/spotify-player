@@ -28,6 +28,7 @@ type Terminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::St
 pub mod ascii_cover;
 #[cfg(feature = "image")]
 pub mod cover_image;
+mod info;
 mod page;
 mod palette;
 mod playback;
@@ -53,8 +54,8 @@ pub fn run(state: &SharedState, mut terminal: Terminal) -> Result<()> {
                 std::process::exit(0);
             }
 
-            if ui.mouse_capture != mouse_captured {
-                mouse_captured = ui.mouse_capture;
+            if ui.takes_mouse() != mouse_captured {
+                mouse_captured = ui.takes_mouse();
                 if mouse_captured {
                     crossterm::execute!(
                         terminal.backend_mut(),
@@ -193,6 +194,7 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
 
     // drawn over the page, so after it
     palette::render(frame, ui, page_rect);
+    info::render(frame, ui, page_rect);
     #[cfg(feature = "cast")]
     if crate::screen::pc::is_locked() {
         render_lock(frame, page_rect);

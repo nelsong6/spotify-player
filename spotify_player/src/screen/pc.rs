@@ -396,6 +396,14 @@ fn data_requests(state: &SharedState, page: &PageState) -> Vec<ClientRequest> {
     requests
 }
 
+/// Whether a popup goes to the other PCs: these three are this PC's own, and can't be serialized
+fn is_shared(popup: &PopupState) -> bool {
+    !matches!(
+        popup,
+        PopupState::ThemeList(..) | PopupState::OutputList(..) | PopupState::Info(..)
+    )
+}
+
 /// While in control, send the screen whenever it changes
 fn send_changes(link: &Link, state: &SharedState, woken: &flume::Receiver<()>) {
     let mut last = String::new();
@@ -413,12 +421,7 @@ fn send_changes(link: &Link, state: &SharedState, woken: &flume::Receiver<()>) {
         let ui = state.ui.lock();
         let screen = serde_json::to_value(Screen {
             history: &ui.history,
-            popup: ui.popup.as_ref().filter(|popup| {
-                !matches!(
-                    popup,
-                    PopupState::ThemeList(..) | PopupState::OutputList(..)
-                )
-            }),
+            popup: ui.popup.as_ref().filter(|popup| is_shared(popup)),
             visualization,
             #[cfg(feature = "ascii-cover")]
             ascii_cover: ui.ascii_cover.mode,
@@ -453,6 +456,13 @@ fn send_changes(link: &Link, state: &SharedState, woken: &flume::Receiver<()>) {
 mod tests {
     use super::*;
     use crate::state::{CommandPalette, ContextPageType, TracksId};
+
+    #[test]
+    fn the_info_panel_stays_on_this_pc() {
+        let info = PopupState::Info(vec![("Installed", "C:\\spt.exe".to_string())]);
+        assert!(!is_shared(&info));
+        assert!(serde_json::to_value(&info).is_err());
+    }
 
     #[test]
     fn a_screen_survives_the_trip_to_another_pc() {

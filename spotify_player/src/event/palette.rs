@@ -16,6 +16,7 @@ const MENU_FILE: &str = "menu.yaml";
 /// The menu used until `menu.yaml` exists, and copied there by "edit menu"
 const DEFAULT_MENU: &str = include_str!("../../../examples/menu.yaml");
 const EDIT_MENU: &str = "edit-menu";
+const INFO: &str = "info";
 
 fn menu_path() -> std::path::PathBuf {
     config::get_config().config_folder.join(MENU_FILE)
@@ -29,6 +30,22 @@ fn read_menu() -> Result<String> {
     }
 }
 
+/// The palette's own entries, beside the shared menu
+fn commands() -> Vec<fzt::Command> {
+    vec![
+        fzt::Command {
+            name: "edit menu".to_string(),
+            description: format!("Open {MENU_FILE} in your editor"),
+            action: EDIT_MENU.to_string(),
+        },
+        fzt::Command {
+            name: "info".to_string(),
+            description: "Show this app's repo, build, install path and checkout".to_string(),
+            action: INFO.to_string(),
+        },
+    ]
+}
+
 /// Open the palette, reading the menu fresh so edits show up without a restart
 pub fn open(ui: &mut UIStateGuard) {
     let opened = read_menu().and_then(|menu| {
@@ -39,11 +56,7 @@ pub fn open(ui: &mut UIStateGuard) {
                 width: 100,
                 height: 40,
                 frontend: "spt".to_string(),
-                commands: vec![fzt::Command {
-                    name: "edit menu".to_string(),
-                    description: format!("Open {MENU_FILE} in your editor"),
-                    action: EDIT_MENU.to_string(),
-                }],
+                commands: commands(),
             },
         )
     });
@@ -136,8 +149,10 @@ pub fn handle_key_sequence(
         }
         "command" => {
             ui.popup = None;
-            if pick.action == EDIT_MENU {
-                edit_menu()?;
+            match pick.action.as_str() {
+                EDIT_MENU => edit_menu()?,
+                INFO => ui.popup = Some(PopupState::Info(crate::info::lines())),
+                _ => {}
             }
         }
         _ => ui.popup = None,
@@ -236,6 +251,17 @@ fn edit_menu() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_info_entry_keeps_the_name_every_home_app_uses() {
+        let commands = commands();
+        let info = commands.iter().find(|c| c.action == INFO).unwrap();
+        assert_eq!(info.name, "info");
+        assert_eq!(
+            info.description,
+            "Show this app's repo, build, install path and checkout"
+        );
+    }
 
     #[test]
     fn default_menu_names_only_real_commands_and_actions() {

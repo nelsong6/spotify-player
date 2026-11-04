@@ -266,6 +266,8 @@ Press `/` to open the command palette: type to search a menu of what you can do,
 
 The palette is fzt itself, loaded from `fzt.dll` (from [fzt-terminal](https://github.com/romaine-life/fzt-terminal)'s releases) beside the executable. Without it, the palette says it couldn't load the library.
 
+"info" under `:` opens a panel naming the app's repo and its link, the version, when that build was made (in Pacific time, with how long ago), the path the running executable is installed at, and its checkout under `D:\repos`, or that this PC has none. CI stamps the repo, link, version and build time when it builds; a local build says `development build, not from CI` on those lines. The panel stays on the PC that opened it, leaves the mouse to the terminal so its text can be selected the usual way, and closes on any key.
+
 ### Kept playlists
 
 The [home cast's](#home-cast) session keeps the playlists listed as `kept_playlists` in the config, so playing one from its top always picks up where you left off, on any device. Every 10 minutes for the playlist that's playing and every hour for the others, it removes the songs Spotify's listening history shows were played from the playlist, and, while it plays, the songs before the playing one. A playlist with `radio_from` is a rolling radio: it's also refilled with radios seeded by random songs of that playlist, so `buffer` songs (default 200) stay ahead. See [config docs](docs/config.md#kept-playlists).

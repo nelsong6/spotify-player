@@ -32,6 +32,7 @@ This file guides coding agents when working in this repository.
 | `ui/mod.rs`                   | ratatui render loop; main layout dispatch                                   |
 | `ui/{page,playback,popup}.rs` | Render functions for pages, playback bar, popups                            |
 | `ui/palette.rs`               | Draws the command palette over the page from fzt's rows                     |
+| `info.rs`, `ui/info.rs`       | The palette's info panel: CI's build stamps, this PC's install and checkout |
 | `fzt.rs`                      | Loads fzt (`fzt.dll`, fzt-terminal's `cmd/fztlib`) and wraps its JSON calls |
 | `keeper.rs`                   | The session's job of trimming played songs and refilling radio playlists    |
 | `problem.rs`                  | What's wrong now, reported by the session and each PC, for the screen       |

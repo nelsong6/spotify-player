@@ -221,7 +221,7 @@ pub fn render_popup(
                 let rect = render_list_popup(frame, rect, "Artists", items, 5, ui);
                 (rect, false)
             }
-            PopupState::CommandPalette(_) => (rect, false),
+            PopupState::CommandPalette(_) | PopupState::Info(_) => (rect, false),
             PopupState::ConfirmAction { message, .. } => {
                 let chunks =
                     Layout::vertical([Constraint::Fill(0), Constraint::Length(3)]).split(rect);

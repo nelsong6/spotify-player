@@ -18,6 +18,10 @@ pub fn handle_key_sequence_for_popup(
         PopupState::CommandPalette(..) => {
             return super::palette::handle_key_sequence(key_sequence, client_pub, state, ui);
         }
+        PopupState::Info(..) => {
+            ui.popup = None;
+            return Ok(true);
+        }
         PopupState::PlaylistCreate { .. } => {
             return handle_key_sequence_for_create_playlist_popup(key_sequence, client_pub, ui);
         }
@@ -63,6 +67,7 @@ pub fn handle_key_sequence_for_popup(
         PopupState::CommandPalette(..) => {
             anyhow::bail!("command palette should be handled before")
         }
+        PopupState::Info(..) => anyhow::bail!("info panel should be handled before"),
         PopupState::PlaylistCreate { .. } => {
             anyhow::bail!("create playlist popup should be handled before")
         }

@@ -46,6 +46,11 @@ pub enum PopupState {
     },
     #[cfg(feature = "tui")]
     CommandPalette(Box<CommandPalette>),
+    /// The info panel's lines; not shared with the other PCs, since they describe this PC's
+    /// install
+    #[cfg(feature = "tui")]
+    #[serde(skip)]
+    Info(Vec<(&'static str, String)>),
 }
 
 /// The command palette: an fzt session over the menu, or why it couldn't open

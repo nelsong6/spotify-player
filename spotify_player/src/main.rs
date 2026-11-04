@@ -20,6 +20,8 @@ mod fzt;
 mod handover;
 #[cfg(feature = "streaming")]
 mod history;
+#[cfg(feature = "tui")]
+mod info;
 #[cfg(feature = "streaming")]
 mod keeper;
 mod key;
@@ -302,6 +304,9 @@ fn run_app(is_session: bool, log_buffer: Arc<Mutex<VecDeque<String>>>) -> Result
 }
 
 fn main() -> Result<()> {
+    #[cfg(feature = "tui")]
+    info::read_installed_path();
+
     // librespot depends on hyper-rustls which requires a crypto provider to be set up.
     // TODO: see if this can be fixed upstream
     rustls::crypto::ring::default_provider()

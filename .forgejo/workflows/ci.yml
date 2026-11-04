@@ -96,13 +96,25 @@ jobs:
       run:
         shell: pwsh -NoLogo -NoProfile -NonInteractive -Command "$ErrorActionPreference = 'Stop'; . ([scriptblock]::Create([IO.File]::ReadAllText('{0}'))); if (Test-Path variable:LASTEXITCODE) { exit $LASTEXITCODE }"
     steps:
+      # the tags, for the same `git describe` the release is named by
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         run: rustup update stable --no-self-update
 
+      # The info panel's stamps; GITHUB_REPOSITORY and GITHUB_SERVER_URL are read as they are.
       - name: Build
-        run: cargo build --locked --release
+        run: |
+          $env:SPT_BUILD_VERSION = git describe --tags --always --abbrev=7 --exclude '*-g*'
+          if ($LASTEXITCODE -or -not $env:SPT_BUILD_VERSION) { throw 'git describe gave no version' }
+          $env:SPT_BUILD_TIME = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+          foreach ($stamp in 'GITHUB_REPOSITORY', 'GITHUB_SERVER_URL') {
+            if (-not [Environment]::GetEnvironmentVariable($stamp)) { throw "$stamp is not set" }
+          }
+          Write-Host "stamping $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY $env:SPT_BUILD_VERSION built $env:SPT_BUILD_TIME"
+          cargo build --locked --release
 
       # the command palette loads fzt.dll from beside the executable; fzt.lock pins its
       # release, including its original checksum, now available on Forgejo.
@@ -221,6 +233,11 @@ jobs:
           }
           git describe --tags --always --abbrev=7 --exclude '*-g*'
           $tag = git describe --tags --always --abbrev=7 --exclude '*-g*'
+          # the info panel must name the release it ships in
+          $exe = [Text.Encoding]::Latin1.GetString([IO.File]::ReadAllBytes("$PWD/dist/spotify_player.exe"))
+          foreach ($stamp in $tag, $env:GITHUB_REPOSITORY, $env:GITHUB_SERVER_URL) {
+            if (-not $exe.Contains($stamp)) { throw "spotify_player.exe is not stamped with $stamp" }
+          }
           $files = @{}
           foreach ($name in 'spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt') {
             $files[$name] = @{ size = (Get-Item "dist/$name").Length; sha256 = (Get-FileHash "dist/$name" -Algorithm SHA256).Hash.ToLowerInvariant() }

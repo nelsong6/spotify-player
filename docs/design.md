@@ -81,6 +81,7 @@ Every feature spt has, what it does today, and whether it is part of the radio. 
 | Feature | Key | What it does today | Radio |
 | --- | --- | --- | --- |
 | One screen, one controller | `space` on a locked PC | Every PC shows the same screen; space takes control. | In |
+| Info | `:` in the palette | Names the build's repo, version and age, this PC's install path and checkout. Stays on the PC that opened it. | In |
 | Visualization | `V` | Audio bars of what plays. | In |
 | ASCII cover | `I` | The album cover beside the bars: pulse, still, off. | In |
 | Lyrics | `l` | Synced lyrics of the song. | In |
