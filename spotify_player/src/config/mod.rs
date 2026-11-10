@@ -399,7 +399,7 @@ impl Default for AppConfig {
             #[cfg(all(unix, not(target_os = "macos")))]
             enable_media_control: true,
 
-            cast_server: "nas".to_string(),
+            cast_server: "spt.home.romaine.life".to_string(),
 
             #[cfg(feature = "cast")]
             enable_audio_visualization: false,

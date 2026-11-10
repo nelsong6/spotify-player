@@ -1,0 +1,15 @@
+# The session runs on the NAS until the takeover (TAKEOVER.md).
+
+# The session, its ports and its name.
+serve: false # takeover: true
+
+# CI's pin PRs move these two (.forgejo/workflows/ci.yml, `pin`): the image (Snapcast, run.sh,
+# stager.sh) by the last commit to k8s/image, and the spt release the stager stages. A new
+# release reaches the running pod without restarting it; a new image restarts it.
+image: forgejo.romaine.life/nelsong6/spt-session:unpinned
+release:
+  tag: v0.25.1-109-g90fef4a
+  commit: 90fef4afe0492e8205e7d48284d8f69953c109f5
+
+# The PCs' `cast_server`: Snapcast on 1704, the shared screen on 1706, the relay on 1707.
+host: spt.home.romaine.life

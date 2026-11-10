@@ -3,6 +3,8 @@ name: CI
 # Every pull request runs the checks and both builds; a push to master runs the same and,
 # when all of it passed, releases the builds as a Forgejo release named by `git describe`.
 # The release triggers the PCs and stages the NAS session for its between-song handover.
+# The session's chart and image (k8s/) are checked on every change; a push to master that
+# changes them, or makes a release, proposes the home cluster's pin PR (`pin`).
 
 on:
   pull_request:
@@ -15,8 +17,36 @@ env:
   RUST_FEATURES: "streaming,cast,media-control,image,notify,fzf"
 
 jobs:
+  # Whether a change touches more than k8s/: a change to the session's chart or image alone
+  # builds no spt and makes no release, so the pin PRs CI proposes don't release again. A push
+  # compares with the last release, so a release that failed is made by the next push.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        run: |
+          set -eu
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            base=$(git merge-base HEAD "origin/$GITHUB_BASE_REF")
+          else
+            base=$(git describe --tags --abbrev=0 --match 'v*-g*' HEAD 2>/dev/null || true)
+          fi
+          if [ -n "$base" ] && git diff --quiet "$base" HEAD -- . ':(exclude)k8s'; then
+            echo 'code=false' >> "$GITHUB_OUTPUT"
+            echo "only k8s/ changed since $base"
+          else
+            echo 'code=true' >> "$GITHUB_OUTPUT"
+          fi
+
   # Exercise tag writes on PRs too: Forgejo's tag API returned 500 from a release job.
   tag-check:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
     permissions:
       contents: write
@@ -52,6 +82,8 @@ jobs:
   # Swatinem/rust-cache there: its cleanup empties ~/.cargo/bin, which on a host runner is
   # the runner user's own rustup install.
   rust-ci-windows:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -91,6 +123,8 @@ jobs:
   # the build publish.ps1 publishes, made alongside the checks; it is released only from a
   # master run whose checks all passed
   windows-build:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -157,6 +191,8 @@ jobs:
   linux-build:
     # the session for the NAS: its audio goes to stdout, so no audio libraries to build
     # against. Its glibc (ubuntu 24.04's) must not outrun the NAS container's Debian.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
@@ -334,3 +370,143 @@ jobs:
           if (result.error) throw result.error;
           if (result.status !== 0) throw new Error(`NAS session upgrade: SSH exit ${result.status}`);
           JS
+
+  # The session's image on the home cluster (k8s/image): Snapcast, run.sh and the stager. It is
+  # named by the last commit to k8s/image, so it's built again only when that changes, and
+  # pushed from master when values.yaml doesn't pin it yet.
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    enable-openid-connect: true
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: tag
+        run: |
+          set -eu
+          tag=$(git log -1 --format=%h --abbrev=7 -- k8s/image)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if grep -qx "image: forgejo.romaine.life/nelsong6/spt-session:$tag" k8s/values.yaml; then
+            echo 'pinned=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'pinned=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build
+        run: docker build --network host -t "spt-session:check-$GITHUB_SHA" k8s/image
+      - name: Check the image's programs
+        run: |
+          set -eu
+          docker run --rm --entrypoint snapserver "spt-session:check-$GITHUB_SHA" --version
+          docker run --rm --entrypoint sh "spt-session:check-$GITHUB_SHA" -c \
+            'for p in bash jq curl inotifywait sqlite3 sha256sum; do command -v "$p"; done; bash -n /stager.sh; sh -n /run.sh'
+      - name: Push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.tag.outputs.pinned == 'false'
+        env:
+          IMAGE: forgejo.romaine.life/nelsong6/spt-session:${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$RUNNER_TEMP/spt-registry"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          jwt=$(printf 'header = "Authorization: bearer %s"\n' "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" | curl -sS --fail-with-body -K - "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=openbao" | jq -er .value)
+          echo "::add-mask::$jwt"
+          # OpenBao's refusals are printed (never its answers, which hold tokens) with the
+          # job identity's claims it checks, so a refused sign-in says why.
+          bao_call() {
+            out=$(curl -sS -w '\n%{http_code}' "$@")
+            code=${out##*$'\n'}; body=${out%$'\n'*}
+            if [ "$code" != 200 ]; then
+              echo "OpenBao answered $code: $(printf '%s' "$body" | jq -c .errors 2>/dev/null || printf '%s' "$body")" >&2
+              printf '%s' "$jwt" | cut -d. -f2 | tr '_-' '/+' | jq -R '@base64d | fromjson | {sub, repository, ref, workflow, event_name, aud}' >&2 || true
+              return 1
+            fi
+            printf '%s' "$body"
+          }
+          bao=$(printf '%s' "$jwt" | jq -Rs '{role:"spotify-player-publish",jwt:.}' | bao_call -H 'Content-Type: application/json' --data-binary @- https://bao.home.romaine.life/v1/auth/forgejo/login | jq -er .auth.client_token)
+          echo "::add-mask::$bao"
+          registry=$(printf 'header = "X-Vault-Token: %s"\n' "$bao" | bao_call -K - https://bao.home.romaine.life/v1/secret/data/services/spt-session-build | jq -er '.data.data["registry-token"]')
+          echo "::add-mask::$registry"
+          printf '%s' "$registry" | docker login forgejo.romaine.life --username nelson --password-stdin
+          docker tag "spt-session:check-$GITHUB_SHA" "$IMAGE"
+          docker push "$IMAGE"
+
+  # The home cluster runs what k8s/values.yaml pins, so a new release or image reaches it
+  # through this PR, merged once its checks pass (auth's pattern, romaine-life/auth). It never
+  # pins an older release than master's, and replaces any pin PR still open.
+  pin:
+    needs: [release, image]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/master'
+      && needs.image.result == 'success'
+      && (needs.release.result == 'success' || needs.release.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # The pin is pushed with PIPELINE_DISPATCH_TOKEN, as auth's is.
+          persist-credentials: false
+      - name: Propose the pin
+        env:
+          TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
+          RELEASE: ${{ needs.release.outputs.release-tag }}
+          IMAGE: ${{ needs.image.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "$TOKEN"
+          api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+          auth() { printf 'Authorization: token %s\n' "$TOKEN"; }
+          git checkout -q -B pin origin/master
+          pinned=$(sed -n 's/^  commit: //p' k8s/values.yaml)
+          if [ -n "$RELEASE" ] && [ "$RELEASE" != validation-only ]; then
+            if git merge-base --is-ancestor "$pinned" "$GITHUB_SHA"; then
+              sed -i -E "s/^  tag: .*/  tag: $RELEASE/; s/^  commit: .*/  commit: $GITHUB_SHA/" k8s/values.yaml
+            else
+              echo "master pins $pinned, which $GITHUB_SHA doesn't follow; not pinning $RELEASE"
+            fi
+          fi
+          sed -i -E "s|^image: forgejo.romaine.life/nelsong6/spt-session:.*|image: forgejo.romaine.life/nelsong6/spt-session:$IMAGE|" k8s/values.yaml
+          git add k8s/values.yaml
+          if git diff --cached --quiet; then echo 'master already pins this'; exit 0; fi
+          what=$(git diff --cached -U0 | sed -n -E 's/^\+ *((image|tag): .*)$/\1/p' | paste -sd, - | sed 's/,/, /g')
+          branch="SPT-35-pin-${GITHUB_SHA:0:7}"
+          git config user.name forgejo-actions
+          git config user.email forgejo-actions@noreply.romaine.life
+          git commit -q -m "chore: pin spt-session $what"
+          # Keep the credential out of git's process arguments.
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
+          export GIT_CONFIG_VALUE_0="Authorization: Basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          git push -q origin "HEAD:refs/heads/$branch"
+          unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+          for old in $(auth | curl -fsS --header @- "$api/pulls?state=open&limit=50" | jq -r --arg b "$branch" '.[] | select(.head.ref | startswith("SPT-35-pin-")) | select(.head.ref != $b) | .number'); do
+            auth | curl -fsS -o /dev/null --header @- -X PATCH -H 'Content-Type: application/json' -d '{"state":"closed"}' "$api/pulls/$old"
+            echo "closed pin PR $old"
+          done
+          body=$(jq -n --arg head "$branch" --arg what "$what" '{base:"master",head:$head,title:("chore: pin spt-session "+$what),body:"The spt-session pin for the home cluster, proposed by CI. https://openproject.romaine.life/wp/SPT-35"}')
+          number=$(auth | curl --fail-with-body -sS -X POST --header @- -H 'Content-Type: application/json' -d "$body" "$api/pulls" | jq -er .number)
+          auth | curl --fail-with-body -sS -X POST --header @- -H 'Content-Type: application/json' -d '{"Do":"squash","merge_when_checks_succeed":true,"delete_branch_after_merge":true}' "$api/pulls/$number/merge"
+          echo "pin PR $number: $what"
+
+  # The chart as it ships and as the takeover sets it, against the cluster's schemas.
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the home cluster's manifests
+        run: |
+          set -euo pipefail
+          apt-get update -qq && apt-get install -y -qq shellcheck >/dev/null
+          curl -fsSL https://get.helm.sh/helm-v3.22.1-linux-amd64.tar.gz | tar xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar xz -C /usr/local/bin kubeconform
+          shellcheck k8s/image/*.sh
+          # The takeover's values, with an image in place of the one CI pins
+          sed -E 's/^( *[^:#]+): [^#]*# takeover: (.*)$/\1: \2/; s/:unpinned$/:0000000/' k8s/values.yaml > /tmp/takeover.yaml
+          if grep -nE '^ *[^ #][^#]*# takeover:' /tmp/takeover.yaml; then echo "a takeover: line above wasn't applied"; exit 1; fi
+          for values in k8s/values.yaml /tmp/takeover.yaml; do
+            echo "== $values"
+            helm template spt-session k8s --namespace spt -f "$values" |
+              kubeconform -strict -summary -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          done

@@ -1,0 +1,5 @@
+# The radio's session on the home cluster (nelsong6/home-cluster, HOMEINFRA-1, SPT-35), synced
+# by its Argo CD as release `spt-session` in namespace `spt`. Plain templates, as Jellyfin's.
+apiVersion: v2
+name: spt-session
+version: 0.1.0

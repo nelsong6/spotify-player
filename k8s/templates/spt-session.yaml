@@ -1,0 +1,188 @@
+{{- if and .Values.serve (hasSuffix ":unpinned" .Values.image) }}
+{{- fail "serve needs the image CI pins (values.yaml image)" }}
+{{- end }}
+# The session's own state, on the VM's disk: cache/ (the Spotify sign-in, and each slot's copy
+# of it), data/ (Snapcast's server.json; slots/ with the handover's lock and history.db) and
+# releases/ (what the stager staged). The NAS's /volume1/docker/spt-session cache/ and data/ go
+# in as they are.
+#
+# The session starts only once .data-ready exists there, which the takeover (or a restore)
+# writes after the state is in place. Without it, the session would start with no sign-in.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: state
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      # The NAS's folder is 42 MB; a staged release is about 215 MB, and two are kept.
+      storage: 5Gi
+---
+# The pinned release, read by the stager from a mounted file that Kubernetes updates in place,
+# so a new pin reaches the running pod; nothing in the pod's template changes with it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: release
+data:
+  release.json: {{ toJson .Values.release | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spt-session
+spec:
+  replicas: {{ ternary 1 0 .Values.serve }}
+  # One at a time: there is one Spotify session, and its handover lock is on the volume.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: spt-session
+  template:
+    metadata:
+      labels:
+        app: spt-session
+    spec:
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      # The stager ends the waiting slot's process, which runs in Snapcast's container.
+      shareProcessNamespace: true
+      imagePullSecrets:
+        - name: forgejo-registry
+      # The NAS's user and group, which own the copied files.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1026
+        runAsGroup: 100
+        fsGroup: 100
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-data
+          image: {{ .Values.image }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - until [ -e /state/.data-ready ]; do echo "waiting for /state/.data-ready (TAKEOVER.md)"; sleep 15; done
+          securityContext:
+            {{- include "spt-session.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: state
+              mountPath: /state
+              readOnly: true
+        # Runs for the pod's life (a sidecar); Snapcast starts once the pinned release is
+        # staged.
+        - name: stager
+          image: {{ .Values.image }}
+          imagePullPolicy: IfNotPresent
+          restartPolicy: Always
+          command: [bash, /stager.sh]
+          startupProbe:
+            exec:
+              command: [test, -s, /state/releases/current.json]
+            periodSeconds: 2
+            failureThreshold: 300
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            {{- include "spt-session.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: state
+              mountPath: /state
+            - name: release
+              mountPath: /pin
+              readOnly: true
+            - name: release-read
+              mountPath: /secrets
+              readOnly: true
+      containers:
+        - name: snapserver
+          image: {{ .Values.image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TZ
+              value: America/Los_Angeles
+          ports:
+            - name: stream
+              containerPort: 1704
+            - name: screen
+              containerPort: 1706
+            - name: relay
+              containerPort: 1707
+          readinessProbe:
+            tcpSocket:
+              port: stream
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            {{- include "spt-session.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: state
+              mountPath: /state
+            # The folder the PCs share with the session: the relay key they read, the saved
+            # session, the shared screen, the kept playlists' state and the kept library.
+            - name: session
+              mountPath: /session
+            - name: config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: state
+        # The NAS's spt share, read-write, and spt-config, read-only, exported to the cluster
+        # alone (home-cluster bootstrap/nas-exports.sh). \\NelsonNAS\spt and
+        # \\NelsonNAS\spt-config on the PCs.
+        - name: session
+          nfs:
+            server: nas.home.romaine.life
+            path: /volume1/spt
+        - name: config
+          nfs:
+            server: nas.home.romaine.life
+            path: /volume1/spt-config
+            readOnly: true
+        - name: release
+          configMap:
+            name: release
+        - name: release-read
+          secret:
+            secretName: release-read
+{{- if .Values.serve }}
+---
+# k3s's service load balancer puts the ports on the node's address, 192.168.50.41. homesvc on
+# the NAS has its DNS Server answer the host with it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: spt-session
+  annotations:
+    home.romaine.life/hostname: {{ .Values.host }}
+spec:
+  type: LoadBalancer
+  selector:
+    app: spt-session
+  ports:
+    - name: stream
+      port: 1704
+      targetPort: stream
+    - name: screen
+      port: 1706
+      targetPort: screen
+    - name: relay
+      port: 1707
+      targetPort: relay
+{{- end }}

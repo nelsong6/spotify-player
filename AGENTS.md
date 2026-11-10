@@ -194,6 +194,12 @@ Working on the fork:
   command without changing the session. Releases require no manual publisher;
   `publish.ps1` and `restart-spt.ps1` have been retired (HOMECFG-110).
 
+- The session is moving to the home cluster (SPT-35, `k8s/TAKEOVER.md`): `k8s/` is its chart,
+  shipped stopped, and `k8s/image` its image (Snapcast, `run.sh`, and `stager.sh`, which stages
+  the release `k8s/values.yaml` pins without restarting the pod). CI's `pin` job proposes each
+  new release and image as a PR that merges itself; a change to `k8s/` alone builds no spt and
+  makes no release.
+
 - The repository lives on Forgejo (https://forgejo.romaine.life/nelsong6/spotify-player,
   FORGEJO-3); GitHub is its push mirror, with Actions off. CI is
   `.forgejo/workflows/ci.yml`: `ubuntu-latest` jobs run in containers on the NAS,
