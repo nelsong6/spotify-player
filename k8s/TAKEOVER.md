@@ -20,21 +20,29 @@ state is 42 MB.
 
 ## Before
 
-These must be live, not only merged:
+These must be live, not only merged. Live since 2026-11-10:
 
 - `spt.home.romaine.life`, a zone on the NAS's DNS Server answering the NAS (192.168.50.42,
-  TTL 60), so the PCs use the new name while the NAS still serves it. Made by hand on
-  2026-11-10; homesvc owns it once the Service exists.
-- This repo's `cast_server` default, `spt.home.romaine.life`, installed on every PC.
+  TTL 60), made by hand so the PCs use the new name while the NAS still serves it; homesvc
+  owns it once the Service exists.
+- This repo's `cast_server` default, `spt.home.romaine.life`, on every PC (v0.25.1-110).
 - The shares `spt` and `spt-config`, exported to the cluster (nelsong6/home-cluster
-  `bootstrap/nas-exports.sh`), `spt-config` holding a copy of `tools/spt/config`, and the PCs
-  reading their settings there: at-home-tools' home-sync and fzt-automate's `tool-config:spt`.
-- nelsong6/home-cluster's Argo CD app `spt-session` and the `nas-backup` Role in `spt`.
-- homesvc's home DNS for LoadBalancer Services (`home.romaine.life/hostname`, at-home-tools).
+  `bootstrap/nas-exports.sh`), with `spt-config` holding a copy of `tools/spt/config`.
+- fzt-automate's `tool-config:spt` reading `spt-config` (v0.1.99).
 - OpenBao `secret/services/spt-session` (`release-read-token`, `registry-read-token`: one
-  Forgejo token with `read:repository` and `read:package`), `secret/services/spt-session-build`
-  (`registry-token`, `write:package`), and the `spotify-player-publish` role (nelsong6/openbao).
+  Forgejo token, `spt-session-read`, with `read:repository` and `read:package`),
+  `secret/services/spt-session-build` (`registry-token`: `spt-session-build`, `write:package`),
+  and the `spotify-player-publish` role (nelsong6/openbao), which binds the subject Forgejo
+  sends, `repo:nelsong6/spotify-player:ref:refs/heads/master`.
+
+Still to land before step 2:
+
 - An image pinned in `values.yaml` by CI's pin PR.
+- nelsong6/home-cluster's Argo CD app `spt-session`, the `nas-backup` Role in `spt`, and
+  homesvc's permission to list Services.
+- at-home-tools' home DNS for LoadBalancer Services (`home.romaine.life/hostname`) and
+  home-sync reading `spt-config`, installed on the NAS with `homesvc update-health` and on
+  every PC.
 - nelsong6/nas-backup's `spt` job reading the cluster, ready to merge and deploy in step 2.7.
 
 ## 1. Ship it stopped
