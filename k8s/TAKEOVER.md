@@ -86,14 +86,19 @@ Both ExternalSecrets `SecretSynced`, the volume `Pending`, no pods.
    ssh nas 'cd /volume1/docker/spt-session && sudo /usr/local/bin/docker compose stop'
    ```
 
-3. Copy the shared folder into the `spt` share on the NAS itself, keeping the share's own
-   permissions (the copies inherit them), and point the PCs' settings at it. A PC still
+3. Copy the shared folder into the `spt` share on the NAS itself, give every copy the share's
+   own permissions, and point the PCs' settings at it. A copy made as root is a plain Linux
+   file that no ACL reaches, which the session, writing over NFS, can't change (on
+   2026-11-10 the keeper failed to save until each file got the share's ACL). A PC still
    running reads the relay key from `Files/spt` until it restarts; it's the same key.
 
    ```bash
    ssh nas 'sudo bash -s' <<'EOF'
    set -euo pipefail
    cp -r --no-preserve=mode,ownership /volume1/Files/spt/. /volume1/spt/
+   find /volume1/spt /volume1/spt-config -mindepth 1 -not -path '*@eaDir*' | while read -r p; do
+     /usr/syno/bin/synoacltool -copy "/volume1/$(echo "${p#/volume1/}" | cut -d/ -f1)" "$p" >/dev/null
+   done
    python3 - /volume1/spt-config/app.toml <<'PY'
    import re, sys
    path = sys.argv[1]
