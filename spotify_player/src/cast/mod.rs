@@ -1,6 +1,6 @@
-//! The home cast, on a PC: spt attaches to the session on the NAS, receives its audio from the
-//! Snapcast server there, and plays it in step with every other PC that has spt open. The
-//! visualization is fed from what plays here, also when this PC is muted.
+//! The home cast, on a PC: spt attaches to the session on the home cluster, receives its audio
+//! from the Snapcast server there, and plays it in step with every other PC that has spt open.
+//! The visualization is fed from what plays here, also when this PC is muted.
 
 mod clock;
 mod output;

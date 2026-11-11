@@ -78,7 +78,7 @@ Both ExternalSecrets `SecretSynced`, the volume `Pending`, no pods.
 
    The pod `Init:0/2` and the volume `Bound`. A pod stuck in `ContainerCreating` hasn't
    mounted an NFS share (`kubectl describe pod -n spt -l app=spt-session` says why): stop
-   here and roll back (section 4).
+   here: the NAS's session is still the one playing.
 
 2. Stop the NAS's session. Nothing writes its folders after this:
 
@@ -199,28 +199,10 @@ Both ExternalSecrets `SecretSynced`, the volume `Pending`, no pods.
   `restarted the waiting slot`, and the new release takes the session over at the next song
   change (`log-search --pc cluster --app spt-session handover`).
 
-## 4. Roll back
+## 4. Teardown
 
-Until the teardown, the NAS still has everything as it was at step 2.2.
-
-1. Revert the takeover PR (`serve: false`); Argo CD stops the session and removes the Service.
-2. Point `spt.home.romaine.life` back at the NAS (192.168.50.42) on the NAS's DNS Server, since
-   homesvc never removes a record.
-3. Copy back what the cluster's session wrote since the takeover: `history.db` from the
-   `state` volume, then start the NAS's session:
-
-   ```bash
-   ssh nas 'cd /volume1/docker/spt-session && sudo /usr/local/bin/docker compose start'
-   ```
-
-The `spt` share's files stay valid for the NAS's session, which reads `Files/spt` and
-`tools/spt/config`: copy `spt` back over `Files/spt` if the cluster ran long enough to change it.
-
-## 5. Teardown, a few days on
-
-- The NAS's container and image (`docker compose down --rmi all` in
-  `/volume1/docker/spt-session`), then `/volume1/docker/spt-session`.
-- `/volume1/tools/spt` (every staged release and the old `config/`) and `/volume1/Files/spt`.
-- This repo's `nas/`, and the docs' last mentions of it.
-- `homesvc spt-upgrade` (at-home-tools), its restricted key in the NAS account's
-  `authorized_keys`, and the runner's `spt_id_ed25519` (OpenBao `secret/services/forgejo`).
+Done on 2026-11-10, the day of the takeover, which ended the roll-back to the NAS: the NAS's
+container, image and `/volume1/docker/spt-session`; `/volume1/tools/spt` and `/volume1/Files/spt`;
+this repo's `nas/`; `homesvc spt-upgrade` (at-home-tools), its restricted key in the NAS account's
+`authorized_keys`, and the runner's `spt_id_ed25519` (OpenBao `secret/services/forgejo`
+`home-sync-spt-key`, mounted by the forgejo repo's `runner-home-sync`).

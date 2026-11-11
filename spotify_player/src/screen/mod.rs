@@ -1,7 +1,7 @@
 //! The shared screen: every PC shows the same page, popup and visualization. The session on the
-//! NAS keeps what the screen shows and passes it to every PC. One PC at a time is in control and
-//! changes the screen; the others show it locked until space takes control. The session also
-//! passes on its playback and lists the PCs playing its audio.
+//! home cluster keeps what the screen shows and passes it to every PC. One PC at a time is in
+//! control and changes the screen; the others show it locked until space takes control. The
+//! session also passes on its playback and lists the PCs playing its audio.
 
 use serde::{Deserialize, Serialize};
 

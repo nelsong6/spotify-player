@@ -2,7 +2,7 @@
 //! recorded at server time `t` reaches the speaker at `t + buffer`. A sample's "age" is how late it
 //! is against that. Large errors are fixed at once by skipping audio or playing silence (hard
 //! sync). Small ones are fixed by dropping or repeating one frame every so often (soft sync),
-//! which absorbs the drift between the NAS's clock and the sound card's.
+//! which absorbs the drift between the session's clock and the sound card's.
 
 use super::protocol::Micros;
 use std::collections::VecDeque;

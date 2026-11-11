@@ -3,8 +3,8 @@
 {{- end }}
 # The session's own state, on the VM's disk: cache/ (the Spotify sign-in, and each slot's copy
 # of it), data/ (Snapcast's server.json; slots/ with the handover's lock and history.db) and
-# releases/ (what the stager staged). The NAS's /volume1/docker/spt-session cache/ and data/ go
-# in as they are.
+# releases/ (what the stager staged). nas-backup's spt job keeps the sign-in and history.db;
+# a restore puts them back.
 #
 # The session starts only once .data-ready exists there, which the takeover (or a restore)
 # writes after the state is in place. Without it, the session would start with no sign-in.
