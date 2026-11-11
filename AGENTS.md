@@ -4,7 +4,7 @@ This file guides coding agents when working in this repository.
 
 ## Project Overview
 
-`spotify-player` is a terminal Spotify client (requires Spotify Premium) written in Rust. In this fork it is a home radio with Spotify as its backend: read `docs/design.md` before designing a feature. It supports playback control, Spotify Connect, synced lyrics, desktop notifications, OS media controls, album art rendering, and a full CLI interface. In this fork every PC plays one shared session on the NAS (the home cast; see Fork notes).
+`spotify-player` is a terminal Spotify client (requires Spotify Premium) written in Rust. In this fork it is a home radio with Spotify as its backend: read `docs/design.md` before designing a feature. It supports playback control, Spotify Connect, synced lyrics, desktop notifications, OS media controls, album art rendering, and a full CLI interface. In this fork every PC plays one shared session on the home cluster (the home cast; see Fork notes).
 
 ## Architecture
 
@@ -81,7 +81,7 @@ Event/UI threads never call async functions directly. They send a `ClientRequest
 | `notify`                                                                                                                                | Desktop notifications                                    |
 | `fzf`                                                                                                                                   | Fuzzy search                                             |
 
-Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the NAS's Linux build is `rustls-tls` + `streaming`, without `tui`, so the session's program holds no screen code. Code that's the session's or a PC's alone lives in its own file (`relay/session.rs` and `relay/pc.rs`, `screen/session.rs` and `screen/pc.rs`, `client/session_side.rs` and `client/pc_side.rs`). CI distributes both builds through their Forgejo release. Gate feature-specific code with `#[cfg(feature = "...")]`.
+Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the session's Linux build is `rustls-tls` + `streaming`, without `tui`, so the session's program holds no screen code. Code that's the session's or a PC's alone lives in its own file (`relay/session.rs` and `relay/pc.rs`, `screen/session.rs` and `screen/pc.rs`, `client/session_side.rs` and `client/pc_side.rs`). CI distributes both builds through their Forgejo release. Gate feature-specific code with `#[cfg(feature = "...")]`.
 
 ## Verifying changes
 
@@ -143,7 +143,7 @@ Keep `.github/copilot-instructions.md` and this `AGENTS.md` in sync when project
 2. Add a default keybinding in `config/keymap.rs`.
 3. Update the command table in `README.md`.
 4. Add it to the command palette's default menu, `examples/menu.yaml` (and the shared
-   `\NelsonNAS\tools\spt\config\menu.yaml`, which overrides it on the home PCs).
+   `\\NelsonNAS\spt-config\menu.yaml`, which overrides it on the home PCs).
 
 ## Writing PR descriptions
 
@@ -186,33 +186,29 @@ Spotify behaviors this fork depends on, each verified live (2026-10-23 to 10-25)
 
 Working on the fork:
 
-- CI publishes complete Forgejo releases, starts the PCs' home-sync tasks, and calls
-  the NAS's restricted `homesvc spt-upgrade` interface with the exact tag and commit.
-  `session-release.json` records the commit and every asset's SHA256 and size; the NAS
-  verifies it before immutable staging and an atomic `current.json` switch, then uses
-  the existing waiting-slot upgrade and between-song handover. PRs validate the forced
-  command without changing the session. Releases require no manual publisher;
-  `publish.ps1` and `restart-spt.ps1` have been retired (HOMECFG-110).
-
-- The session is moving to the home cluster (SPT-35, `k8s/TAKEOVER.md`): `k8s/` is its chart,
-  shipped stopped, and `k8s/image` its image (Snapcast, `run.sh`, and `stager.sh`, which stages
-  the release `k8s/values.yaml` pins without restarting the pod). CI's `pin` job proposes each
-  new release and image as a PR that merges itself; a change to `k8s/` alone builds no spt and
-  makes no release.
+- The session runs on the home cluster (SPT-35, `k8s/TAKEOVER.md`): `k8s/` is its chart and
+  `k8s/image` its image (Snapcast, `run.sh`, and `stager.sh`, which stages the release
+  `k8s/values.yaml` pins without restarting the pod). CI publishes complete Forgejo releases,
+  starts the PCs' home-sync tasks, and its `pin` job proposes each new release and image as a
+  PR that merges itself. The stager checks the pinned release against `session-release.json`
+  (the commit and every asset's SHA256 and size), stages it, and restarts only the waiting
+  slot, which takes over between songs. A change to `k8s/` alone builds no spt and makes no
+  release. The PCs reach the session as `spt.home.romaine.life` on 1704, 1706 and 1707,
+  k3s's service load balancer on the cluster's address.
 
 - The repository lives on Forgejo (https://forgejo.romaine.life/nelsong6/spotify-player,
   FORGEJO-3); GitHub is its push mirror, with Actions off. CI is
-  `.forgejo/workflows/ci.yml`: `ubuntu-latest` jobs run in containers on the NAS,
-  `windows-latest` jobs on upstairspc, where every step is pwsh (its `bash` is WSL's).
-  Only the Linux session build uses the NAS runner; typos, cargo-machete, formatting,
+  `.forgejo/workflows/ci.yml`: `ubuntu-latest` jobs run in containers on the runner `nas`
+  (on the home cluster), `windows-latest` jobs on upstairspc, where every step is pwsh (its
+  `bash` is WSL's). Only the Linux session build uses that runner for Rust; typos, cargo-machete, formatting,
   tests, clippy and release assembly run on upstairspc. Release assets are validated on PRs.
-- CI's Windows and Linux build jobs run on PRs and master. Once every check passes, the release job publishes the exact source revision using the existing git-describe tag scheme, then home-sync installs the PCs and homesvc stages the NAS waiting slot.
+- CI's Windows and Linux build jobs run on PRs and master. Once every check passes, the release job publishes the exact source revision using the existing git-describe tag scheme, then home-sync installs the PCs and the pin PR moves the session.
 - On Windows the cast's output follows the system's default output through Windows'
   default-device notice (`IMMNotificationClient`, in `cast/output.rs`). cpal 0.16 only
   opens a fixed device, never a stream that follows the default. Polling the default was
   rejected by Nelson; so was a hand-written WASAPI sink.
 - The home cast (decided 2026-10-25, OpenProject #71): spt on a PC has one mode. It never
-  plays on its own; it attaches to the one session on the NAS (`nas/spt-session`), plays its
+  plays on its own; it attaches to the one session on the home cluster (`k8s/`), plays its
   audio in sync through Snapcast, and controls it through the session's relay. Only a PC with spt open
   is an output, and the session pauses when none plays it aloud. Kept playlists are a
   separate feature, and phones play only those.
@@ -221,14 +217,14 @@ Working on the fork:
   One PC at a time controls it, by his choice: the controller changes its own screen at once
   and sends it, and a locked PC takes control with space. Rejected: every PC sending commands
   to the session and drawing what comes back (consistent too, but each change waits on the
-  NAS). The lock is plain text; a 🔒 emoji left a stray border character beside it.
+  session). The lock is plain text; a 🔒 emoji left a stray border character beside it.
 - One Spotify sign-in (decided 2026-10-26, OpenProject #82): only the session talks to
   Spotify. Three instances polling `/me/player` every 5 s kept the account rate-limited all
   day. A PC sends its Web API requests, lyrics, radios and covers to the session's relay
   (`relay/`, port 1707), which sends them on as its own; the session asks for its playback
   only on its player's events and pushes it to the PCs over the screen connection. The relay
   takes only requests carrying `relay.key`, which the session keeps beside the saved session
-  on the NAS, where only Nelson's account and the NAS admins can read it: a PC proves itself
+  in the NAS's `spt` share, where only Nelson's account and the NAS admins can read it: a PC proves itself
   through his Windows login and never signs in. The keeper runs in the slot that holds the
   relay's port, so only one slot keeps playlists.
 - Our radio (decided 2026-10-26, OpenProject #86): spt is a radio built on Spotify, not a

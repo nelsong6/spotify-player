@@ -2,9 +2,9 @@ name: CI
 
 # Every pull request runs the checks and both builds; a push to master runs the same and,
 # when all of it passed, releases the builds as a Forgejo release named by `git describe`.
-# The release triggers the PCs and stages the NAS session for its between-song handover.
-# The session's chart and image (k8s/) are checked on every change; a push to master that
-# changes them, or makes a release, proposes the home cluster's pin PR (`pin`).
+# The release triggers the PCs; the home cluster's session takes it through the pin PR
+# (`pin`), which a push to master proposes when it makes a release or a new image. The
+# session's chart and image (k8s/) are checked on every change.
 
 on:
   pull_request:
@@ -72,9 +72,8 @@ jobs:
             }
           }
 
-  # The NAS runs ubuntu-latest jobs one at a time beside the spt session, on a 4-core
-  # Celeron, so the only Linux job is the session's build; every check and release runs
-  # on upstairspc.
+  # ubuntu-latest jobs run one at a time on the runner `nas` (on the home cluster), so the
+  # only Rust job there is the session's build; every check and release runs on upstairspc.
   #
   # windows-latest is upstairspc in host mode: `bash` there is WSL's launcher, so every step
   # is pwsh, and without the runner user's profile. The runner names a custom shell's script
@@ -189,8 +188,8 @@ jobs:
           if-no-files-found: error
 
   linux-build:
-    # the session for the NAS: its audio goes to stdout, so no audio libraries to build
-    # against. Its glibc (ubuntu 24.04's) must not outrun the NAS container's Debian.
+    # the session for the home cluster: its audio goes to stdout, so no audio libraries to
+    # build against. Its glibc (ubuntu 24.04's) must not outrun the image's Debian (k8s/image).
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -318,7 +317,7 @@ jobs:
             }
           }
           "tag=$tag" | Add-Content $env:GITHUB_OUTPUT
-          Write-Host "staged $tag; the NAS trigger publishes it before starting the PCs"
+          Write-Host "released $tag"
 
   home-sync:
     needs: release
@@ -326,50 +325,6 @@ jobs:
     secrets: inherit
     with:
       release-tag: ${{ needs.release.outputs.release-tag != 'validation-only' && needs.release.outputs.release-tag || '' }}
-
-  nas-session:
-    needs: [release, home-sync]
-    if: always() && needs.release.result == 'success'
-    runs-on: [linux, nas]
-    container:
-      image: ghcr.io/catthehacker/ubuntu:act-24.04
-    timeout-minutes: 8
-    steps:
-      - name: Verify the restricted NAS session interface
-        run: |
-          node <<'JS'
-          const {spawnSync} = require('node:child_process');
-          const result = spawnSync('ssh', ['-T', '-i', '/certs/client/home-sync/spt_id_ed25519',
-            '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes',
-            '-o', 'UserKnownHostsFile=/certs/client/home-sync/known_hosts',
-            '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10', 'Nelson@nas'],
-            {input: JSON.stringify({tag: 'validation-only', commit: 'invalid'}), encoding: 'utf8', timeout: 30000});
-          if (result.error) throw result.error;
-          if (result.status !== 1 || !result.stderr?.includes('invalid spt release tag or commit')) {
-            throw new Error(`restricted NAS session interface validation failed: ${result.status}; ${result.stderr}`);
-          }
-          console.log('Restricted NAS interface rejects invalid requests before touching the session');
-          JS
-
-      - name: Stage the exact release and upgrade only the waiting session slot
-        if: needs.release.outputs.release-tag != 'validation-only'
-        env:
-          TAG: ${{ needs.release.outputs.release-tag }}
-          COMMIT: ${{ github.sha }}
-        run: |
-          node <<'JS'
-          const {spawnSync} = require('node:child_process');
-          const input = JSON.stringify({tag: process.env.TAG, commit: process.env.COMMIT});
-          const result = spawnSync('ssh', ['-T', '-i', '/certs/client/home-sync/spt_id_ed25519',
-            '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes',
-            '-o', 'UserKnownHostsFile=/certs/client/home-sync/known_hosts',
-            '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10', 'Nelson@nas'],
-            {input, encoding: 'utf8', timeout: 420000});
-          if (result.stdout) process.stdout.write(result.stdout);
-          if (result.stderr) process.stderr.write(result.stderr);
-          if (result.error) throw result.error;
-          if (result.status !== 0) throw new Error(`NAS session upgrade: SSH exit ${result.status}`);
-          JS
 
   # The session's image on the home cluster (k8s/image): Snapcast, run.sh and the stager. It is
   # named by the last commit to k8s/image, so it's built again only when that changes, and

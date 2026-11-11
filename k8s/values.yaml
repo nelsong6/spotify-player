@@ -1,7 +1,7 @@
-# The session runs on the NAS until the takeover (TAKEOVER.md).
+# The session runs here since the takeover (TAKEOVER.md).
 
 # The session, its ports and its name.
-serve: false # takeover: true
+serve: true
 
 # CI's pin PRs move these two (.forgejo/workflows/ci.yml, `pin`): the image (Snapcast, run.sh,
 # stager.sh) by the last commit to k8s/image, and the spt release the stager stages. A new

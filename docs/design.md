@@ -3,11 +3,11 @@
 spt is a home radio. Spotify is its backend: the catalog, the audio and the playlists' storage.
 It is not a Spotify client, and keeping in step with Spotify's own apps is not a goal.
 
-Nelson is the only user. The house is the NAS and the PCs (nelsonpc, upstairspc, treadmill).
+Nelson is the only user. The house is the home cluster, the NAS and the PCs (nelsonpc, upstairspc, treadmill).
 
 ## The parts
 
-- **The session** (on the NAS) is the radio and its one output device. The music plays there
+- **The session** (on the home cluster) is the radio and its one output device. The music plays there
   and keeps playing there; only a deliberate act moves it. It is the only player and the only
   thing signed in to Spotify. It holds the radio's place, keeps the kept playlists, and stays
   within its own request budget.
