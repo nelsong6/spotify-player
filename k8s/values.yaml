@@ -8,8 +8,8 @@ serve: true
 # release reaches the running pod without restarting it; a new image restarts it.
 image: forgejo.romaine.life/nelsong6/spt-session:d6ab34d
 release:
-  tag: v0.25.1-113-g871b010
-  commit: 871b01028e8e6628591da4eb166931d5eb6b782a
+  tag: v0.25.1-116-g464266e
+  commit: 464266e370d3a30c46e657a37cb40c77c3cdbfd0
 
 # The PCs' `cast_server`: Snapcast on 1704, the shared screen on 1706, the relay on 1707.
 host: spt.home.romaine.life
