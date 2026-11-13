@@ -1,3 +1,4 @@
+# check-fetches: not built by home CI (upstream's image; home CI builds k8s/image)
 FROM rust as builder
 WORKDIR app
 COPY . .
