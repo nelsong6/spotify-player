@@ -203,7 +203,13 @@ jobs:
       - name: Install dependencies
         run: apt-get update && apt-get install -y pkg-config libssl-dev
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain
+        run: |
+          curl -fsSL -o /tmp/rustup-init https://artifacts.home.romaine.life/general/rust/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
+          chmod +x /tmp/rustup-init
+          /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain stable
+          rm /tmp/rustup-init
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - uses: Swatinem/rust-cache@v2
 
