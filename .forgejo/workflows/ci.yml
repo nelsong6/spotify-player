@@ -1,15 +1,21 @@
 name: CI
 
-# Every pull request runs the checks and both builds; a push to master runs the same and,
-# when all of it passed, releases the builds as a Forgejo release named by `git describe`.
-# The release triggers the PCs; the home cluster's session takes it through the pin PR
-# (`pin`), which a push to master proposes when it makes a release or a new image. The
-# session's chart and image (k8s/) are checked on every change.
+# Every pull request runs the checks and both builds; a push to master, or a dispatch of it,
+# runs the same and, when all of it passed, releases the builds as a Forgejo release named
+# by `git describe`. The release triggers the PCs; the home cluster's session takes it
+# through the pin PR (`pin`), which a master run proposes when it makes a release or a new
+# image. The session's chart and image (k8s/) are checked on every change.
 
 on:
   pull_request:
   push:
     branches: [master]
+  workflow_dispatch:
+
+# Never cancelled: the image job runs containers, and a cancelled job skips its cleanup.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,9 +23,10 @@ env:
   RUST_FEATURES: "streaming,cast,media-control,image,notify,fzf"
 
 jobs:
-  # Whether a change touches more than k8s/: a change to the session's chart or image alone
-  # builds no spt and makes no release, so the pin PRs CI proposes don't release again. A push
-  # compares with the last release, so a release that failed is made by the next push.
+  # Whether a change touches more than k8s/ and documentation: a change to the session's chart
+  # or image alone builds no spt and makes no release, so the pin PRs CI proposes don't release
+  # again. A push or dispatch compares with the last release, so a release that failed is made
+  # by the next one.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -37,9 +44,9 @@ jobs:
           else
             base=$(git describe --tags --abbrev=0 --match 'v*-g*' HEAD 2>/dev/null || true)
           fi
-          if [ -n "$base" ] && git diff --quiet "$base" HEAD -- . ':(exclude)k8s' ':(exclude)*.md'; then
+          if [ -n "$base" ] && git diff --quiet "$base" HEAD -- . ':(exclude)k8s' ':(exclude)*.md' ':(exclude)docs' ':(exclude)LICENSE'; then
             echo 'code=false' >> "$GITHUB_OUTPUT"
-            echo "only k8s/ or Markdown changed since $base"
+            echo "only k8s/ or documentation changed since $base"
           else
             echo 'code=true' >> "$GITHUB_OUTPUT"
           fi
@@ -338,7 +345,7 @@ jobs:
 
   # The session's image on the home cluster (k8s/image): Snapcast, run.sh and the stager. It is
   # named by the last commit to k8s/image, so it's built again only when that changes, and
-  # pushed from master when values.yaml doesn't pin it yet. The pin is that tag and the
+  # pushed from a master run when values.yaml doesn't pin it yet. The pin is that tag and the
   # digest the registry holds for it.
   image:
     runs-on: ubuntu-latest
