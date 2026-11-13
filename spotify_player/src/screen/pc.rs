@@ -134,8 +134,7 @@ pub fn is_settled() -> bool {
 /// What's wrong on the session, as it last said while connected
 pub fn session_problems() -> Vec<crate::problem::Problem> {
     LINK.get()
-        .map(|link| link.problems.lock().clone())
-        .unwrap_or_default()
+        .map_or_default(|link| link.problems.lock().clone())
 }
 
 /// Whether another PC is in control, so this one only shows the screen
@@ -174,9 +173,7 @@ pub fn take_control() {
 
 /// The PCs playing the session's audio
 pub fn pcs() -> Vec<Pc> {
-    LINK.get()
-        .map(|link| link.pcs.lock().clone())
-        .unwrap_or_default()
+    LINK.get().map_or_default(|link| link.pcs.lock().clone())
 }
 
 /// Mute or unmute a PC: this one directly, another through the session's relay

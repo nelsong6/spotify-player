@@ -250,8 +250,7 @@ pub async fn new_connection(
                     .playback
                     .as_ref()
                     .and_then(|p| p.context.as_ref())
-                    .map(|c| c.uri.clone())
-                    .unwrap_or_default();
+                    .map_or_default(|c| c.uri.clone());
                 play_reporter.handle(&event, &session, &context_uri);
                 history.lock().handle(&event, &state, &context_uri);
                 if let player::PlayerEvent::Playing { .. } = event {

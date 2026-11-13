@@ -89,7 +89,7 @@ fn handle(state: &SharedState, update: ClusterUpdate) {
         return;
     }
     let info = cluster.device.get(active);
-    let device = info.map(|device| device.name.clone()).unwrap_or_default();
+    let device = info.map_or_default(|device| device.name.clone());
     // Spotify's connect state carries volume from 0 to 65535
     let volume = info.map(|device| (u64::from(device.volume) * 100 / 65535) as u32);
     // either of the session's slots, which share the name

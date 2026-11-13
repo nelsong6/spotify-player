@@ -64,8 +64,7 @@ fn capitalized(text: &str) -> String {
     let mut chars = text.chars();
     chars
         .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
+        .map_or_default(|first| first.to_uppercase().chain(chars).collect())
 }
 
 fn duration(duration: Duration) -> String {
