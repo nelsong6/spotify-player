@@ -6,7 +6,7 @@ serve: true
 # CI's pin PRs move these two (.forgejo/workflows/ci.yml, `pin`): the image (Snapcast, run.sh,
 # stager.sh) by the last commit to k8s/image, and the spt release the stager stages. A new
 # release reaches the running pod without restarting it; a new image restarts it.
-image: forgejo.romaine.life/nelsong6/spt-session:d6ab34d
+image: forgejo.romaine.life/nelsong6/spt-session:a6679c5
 release:
   tag: v0.25.1-120-g0dd4fb3
   commit: 0dd4fb3d0417081a9caf70614efaa0cf7f3af430
