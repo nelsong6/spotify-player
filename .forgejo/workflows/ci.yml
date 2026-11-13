@@ -338,13 +338,14 @@ jobs:
 
   # The session's image on the home cluster (k8s/image): Snapcast, run.sh and the stager. It is
   # named by the last commit to k8s/image, so it's built again only when that changes, and
-  # pushed from master when values.yaml doesn't pin it yet.
+  # pushed from master when values.yaml doesn't pin it yet. The pin is that tag and the
+  # digest the registry holds for it.
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     enable-openid-connect: true
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
+      pin: ${{ steps.push.outputs.pin || steps.tag.outputs.pin }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -354,8 +355,9 @@ jobs:
           set -eu
           tag=$(git log -1 --format=%h --abbrev=7 -- k8s/image)
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if grep -qx "image: forgejo.romaine.life/nelsong6/spt-session:$tag" k8s/values.yaml; then
-            echo 'pinned=true' >> "$GITHUB_OUTPUT"
+          pin=$(sed -n -E "s|^image: forgejo.romaine.life/nelsong6/spt-session:($tag@sha256:[0-9a-f]{64})$|\1|p" k8s/values.yaml)
+          if [ -n "$pin" ]; then
+            printf '%s\n' 'pinned=true' "pin=$pin" >> "$GITHUB_OUTPUT"
           else
             echo 'pinned=false' >> "$GITHUB_OUTPUT"
           fi
@@ -368,8 +370,10 @@ jobs:
           docker run --rm --entrypoint sh "spt-session:check-$GITHUB_SHA" -c \
             'for p in bash jq curl inotifywait sqlite3 sha256sum; do command -v "$p"; done; bash -n /stager.sh; sh -n /run.sh'
       - name: Push
+        id: push
         if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.tag.outputs.pinned == 'false'
         env:
+          TAG: ${{ steps.tag.outputs.tag }}
           IMAGE: forgejo.romaine.life/nelsong6/spt-session:${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
@@ -395,7 +399,11 @@ jobs:
           echo "::add-mask::$registry"
           printf '%s' "$registry" | docker login forgejo.romaine.life --username nelson --password-stdin
           docker tag "spt-session:check-$GITHUB_SHA" "$IMAGE"
-          docker push "$IMAGE"
+          # The push ends with `<tag>: digest: <digest> size: <n>`, the digest the tag names
+          # in the registry.
+          digest=$(docker push "$IMAGE" | tee /dev/stderr | sed -n -E 's/^.*digest: (sha256:[0-9a-f]{64}) .*$/\1/p')
+          test -n "$digest"
+          echo "pin=$TAG@$digest" >> "$GITHUB_OUTPUT"
 
   # The home cluster runs what k8s/values.yaml pins, so a new release or image reaches it
   # through this PR, merged once its checks pass (auth's pattern, romaine-life/auth). It never
@@ -417,10 +425,11 @@ jobs:
         env:
           TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
           RELEASE: ${{ needs.release.outputs.release-tag }}
-          IMAGE: ${{ needs.image.outputs.tag }}
+          IMAGE: ${{ needs.image.outputs.pin }}
         run: |
           set -euo pipefail
           test -n "$TOKEN"
+          [[ "$IMAGE" =~ ^[0-9a-f]{7}@sha256:[0-9a-f]{64}$ ]] || { echo "::error::the image job gave no pin: '$IMAGE'"; exit 1; }
           api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
           auth() { printf 'Authorization: token %s\n' "$TOKEN"; }
           git checkout -q -B pin origin/master
@@ -454,7 +463,8 @@ jobs:
           auth | curl --fail-with-body -sS -X POST --header @- -H 'Content-Type: application/json' -d '{"Do":"squash","merge_when_checks_succeed":true,"delete_branch_after_merge":true}' "$api/pulls/$number/merge"
           echo "pin PR $number: $what"
 
-  # The chart as it ships and as the takeover sets it, against the cluster's schemas.
+  # The chart as it ships and as the takeover sets it, against the cluster's schemas, with
+  # every image named by digest.
   manifests:
     runs-on: ubuntu-latest
     steps:
@@ -470,9 +480,14 @@ jobs:
           # The takeover's values, with an image in place of the one CI pins
           sed -E 's/^( *[^:#]+): [^#]*# takeover: (.*)$/\1: \2/; s/:unpinned$/:0000000/' k8s/values.yaml > /tmp/takeover.yaml
           if grep -nE '^ *[^ #][^#]*# takeover:' /tmp/takeover.yaml; then echo "a takeover: line above wasn't applied"; exit 1; fi
+          mkdir "$RUNNER_TEMP/rendered"
           for values in k8s/values.yaml /tmp/takeover.yaml; do
             echo "== $values"
-            helm template spt-session k8s --namespace spt -f "$values" |
-              kubeconform -strict -summary -schema-location 'https://artifacts.home.romaine.life/general/githubusercontent/yannh/kubernetes-json-schema/master/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json' \
-                -schema-location 'https://artifacts.home.romaine.life/general/githubusercontent/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+            out="$RUNNER_TEMP/rendered/$(basename "$values")"
+            helm template spt-session k8s --namespace spt -f "$values" > "$out"
+            kubeconform -strict -summary -schema-location 'https://artifacts.home.romaine.life/general/githubusercontent/yannh/kubernetes-json-schema/master/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json' \
+              -schema-location 'https://artifacts.home.romaine.life/general/githubusercontent/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' "$out"
           done
+      - uses: romaine-life/pipeline-templates/actions/check-image-digests@main
+        with:
+          manifests: ${{ runner.temp }}/rendered
