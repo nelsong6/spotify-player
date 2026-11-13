@@ -85,6 +85,10 @@ Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the session'
 
 ## Verifying changes
 
+[TESTING.md](TESTING.md) is how to try a change without touching Nelson's music (an
+isolated instance on a throwaway tmux server), how to preview it for him, and how his
+open window gets a new release. Read it before running spt or touching its window.
+
 CI treats all warnings as errors. Before committing, run what CI runs:
 
 ```sh
@@ -192,8 +196,8 @@ Working on the fork:
   starts the PCs' home-sync tasks, and its `pin` job proposes each new release and image as a
   PR that merges itself. The stager checks the pinned release against `session-release.json`
   (the commit and every asset's SHA256 and size), stages it, and restarts only the waiting
-  slot, which takes over between songs. A change to `k8s/` alone builds no spt and makes no
-  release. The PCs reach the session as `spt.home.romaine.life` on 1704, 1706 and 1707,
+  slot, which takes over between songs. A change to `k8s/` or Markdown alone builds no spt and makes
+  no release, so a docs change doesn't restart the PCs' windows. The PCs reach the session as `spt.home.romaine.life` on 1704, 1706 and 1707,
   k3s's service load balancer on the cluster's address.
 
 - The repository lives on Forgejo (https://forgejo.romaine.life/nelsong6/spotify-player,
@@ -256,13 +260,8 @@ Working on the fork:
 - The PCs' sync is snapclient's algorithm (`cast/stream.rs`), timed from cpal's callback
   timestamps (when the buffer reaches the speaker). WASAPI shared mode takes only the
   device's rate, so the 44.1 kHz stream is resampled to it on arrival (`cast/resample.rs`).
-- To see the UI without touching the desktop, run a test instance (its own `-c`/`-C`
-  folders, its own `client_port`, `cast_server` pointing nowhere unless needed) in a
-  detached tmux session on its own server
-  (`tmux -L <name> new-session -d -x <cols> -y <rows> <command>`), read it
-  with `capture-pane -p` (`-e` keeps the colors) and send keys with `send-keys`. Launch it
-  through a `.cmd` file holding the full command line: quoted Windows paths passed straight
-  to `new-session` were dropped, and the instance silently used the real cache. A test with
-  an empty `-C` folder runs every first-time sign-in.
+- To see the UI without touching the desktop or the music, run a test instance as
+  TESTING.md's isolated check does: its own `-c`/`-C` folders, `client_port` and
+  `session_file`, and `cast_server` pointing at this PC, on a throwaway tmux server.
 - Builds and Rust checks run only in CI; nelsonpc is the gaming PC. The session's Linux
   build comes only from CI's `linux-build`.
