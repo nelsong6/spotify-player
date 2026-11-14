@@ -1,7 +1,7 @@
 # Moving the radio's session from the NAS to the home cluster
 
-The steps for [SPT-35](https://openproject.romaine.life/wp/SPT-35), part of
-[HOMEINFRA-1](https://openproject.romaine.life/wp/HOMEINFRA-1): spt-session (Snapcast and the
+The steps for [SPT-35](https://openproject.home.romaine.life/wp/SPT-35), part of
+[HOMEINFRA-1](https://openproject.home.romaine.life/wp/HOMEINFRA-1): spt-session (Snapcast and the
 Spotify session) leaves the NAS for the home cluster. The NAS keeps two shares the PCs read:
 
 | Share | Was | Holds | To the cluster |
