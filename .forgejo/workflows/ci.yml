@@ -481,7 +481,7 @@ jobs:
             auth | curl -fsS -o /dev/null --header @- -X PATCH -H 'Content-Type: application/json' -d '{"state":"closed"}' "$api/pulls/$old"
             echo "closed pin PR $old"
           done
-          body=$(jq -n --arg head "$branch" --arg what "$what" '{base:"master",head:$head,title:("chore: pin spt-session "+$what),body:"The spt-session pin for the home cluster, proposed by CI. https://openproject.romaine.life/wp/SPT-35"}')
+          body=$(jq -n --arg head "$branch" --arg what "$what" '{base:"master",head:$head,title:("chore: pin spt-session "+$what),body:"The spt-session pin for the home cluster, proposed by CI. https://openproject.home.romaine.life/wp/SPT-35"}')
           number=$(auth | curl --fail-with-body -sS -X POST --header @- -H 'Content-Type: application/json' -d "$body" "$api/pulls" | jq -er .number)
           auth | curl --fail-with-body -sS -X POST --header @- -H 'Content-Type: application/json' -d '{"Do":"squash","merge_when_checks_succeed":true,"delete_branch_after_merge":true}' "$api/pulls/$number/merge"
           echo "pin PR $number: $what"
