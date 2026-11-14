@@ -35,6 +35,15 @@ pub fn read_installed_path() {
     LazyLock::force(&INSTALLED);
 }
 
+/// This build's version, as the info panel's "Version" line gives it
+pub fn version() -> String {
+    STAMPS
+        .version
+        .filter(|s| !s.is_empty())
+        .unwrap_or(NOT_FROM_CI)
+        .to_string()
+}
+
 /// The panel's lines, as label and value
 pub fn lines() -> Vec<(&'static str, String)> {
     lines_from(STAMPS, &INSTALLED, Utc::now(), &|path| path.try_exists())

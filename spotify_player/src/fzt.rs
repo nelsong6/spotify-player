@@ -96,6 +96,8 @@ pub struct Options {
     pub height: u16,
     /// The app's name in the `:` palette
     pub frontend: String,
+    /// The app's version, which the palette's version entry shows beside its name
+    pub version: String,
     /// The app's own commands in the `:` palette
     pub commands: Vec<Command>,
 }

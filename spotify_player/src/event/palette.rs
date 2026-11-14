@@ -56,6 +56,7 @@ pub fn open(ui: &mut UIStateGuard) {
                 width: 100,
                 height: 40,
                 frontend: "spt".to_string(),
+                version: crate::info::version(),
                 commands: commands(),
             },
         )
