@@ -93,7 +93,7 @@ apply() {
 	if [ "$tag $commit" = "$applied" ]; then
 		return
 	fi
-	if ! [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-g[0-9a-f]{7}$ && $commit =~ ^[0-9a-f]{40}$ && $tag == *-g${commit:0:7} ]]; then
+	if ! [[ $tag =~ ^v[0-9]+(\.[0-9]+)+$ && $commit =~ ^[0-9a-f]{40}$ ]]; then
 		echo "stager: invalid pin $tag $commit" >&2
 		exit 1
 	fi
