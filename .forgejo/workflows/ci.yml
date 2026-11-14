@@ -99,10 +99,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: romaine-life/pipeline-templates/actions/home-cache@main
 
-      - name: Install Rust toolchain
-        run: |
-          rustup update stable --no-self-update
-          rustup component add clippy rustfmt --toolchain stable
+      - uses: romaine-life/pipeline-templates/actions/rust-toolchain@main
+        with:
+          components: clippy, rustfmt
 
       # typos at the version crate-ci/typos@master ran on GitHub; both stay installed in the
       # runner user's ~/.cargo/bin, so this only builds them once. They run before the build,
@@ -144,8 +143,7 @@ jobs:
           fetch-depth: 0
       - uses: romaine-life/pipeline-templates/actions/home-cache@main
 
-      - name: Install Rust toolchain
-        run: rustup update stable --no-self-update
+      - uses: romaine-life/pipeline-templates/actions/rust-toolchain@main
 
       # The info panel's stamps; GITHUB_REPOSITORY and GITHUB_SERVER_URL are read as they are.
       - name: Build
@@ -210,13 +208,7 @@ jobs:
       - name: Install dependencies
         run: apt-get update && apt-get install -y pkg-config libssl-dev
 
-      - name: Install Rust toolchain
-        run: |
-          curl -fsSL -o /tmp/rustup-init https://artifacts.home.romaine.life/general/rust/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
-          chmod +x /tmp/rustup-init
-          /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain stable
-          rm /tmp/rustup-init
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - uses: romaine-life/pipeline-templates/actions/rust-toolchain@main
 
       - uses: Swatinem/rust-cache@v2
 
