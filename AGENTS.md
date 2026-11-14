@@ -206,7 +206,7 @@ Working on the fork:
   (on the home cluster), `windows-latest` jobs on upstairspc, where every step is pwsh (its
   `bash` is WSL's). Only the Linux session build uses that runner for Rust; typos, cargo-machete, formatting,
   tests, clippy and release assembly run on upstairspc. Release assets are validated on PRs.
-- CI's Windows and Linux build jobs run on PRs and master. Once every check passes, the release job publishes the exact source revision using the existing git-describe tag scheme, then home-sync installs the PCs and the pin PR moves the session.
+- CI's Windows and Linux build jobs run on PRs and master. Once every check passes, the release job publishes the exact source revision as `v0.25.1.N` (pipeline-templates' release-version, numbered on the upstream version in `spotify_player/Cargo.toml`; PR builds show `v0.25.1.N-prPR.RUN`), then home-sync installs the PCs and the pin PR moves the session.
 - On Windows the cast's output follows the system's default output through Windows'
   default-device notice (`IMMNotificationClient`, in `cast/output.rs`). cpal 0.16 only
   opens a fixed device, never a stream that follows the default. Polling the default was

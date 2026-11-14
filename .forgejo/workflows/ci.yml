@@ -1,8 +1,9 @@
 name: CI
 
 # Every pull request runs the checks and both builds; a push to master, or a dispatch of it,
-# runs the same and, when all of it passed, releases the builds as a Forgejo release named
-# by `git describe`. The release triggers the PCs; the home cluster's session takes it
+# runs the same and, when all of it passed, releases the builds as a Forgejo release numbered
+# by pipeline-templates' release-version on the upstream version it's built on (v0.25.1.N).
+# The release triggers the PCs; the home cluster's session takes it
 # through the pin PR (`pin`), which a master run proposes when it makes a release or a new
 # image. The session's chart and image (k8s/) are checked on every change.
 
@@ -25,8 +26,9 @@ env:
 jobs:
   # Whether a change touches more than k8s/ and documentation: a change to the session's chart
   # or image alone builds no spt and makes no release, so the pin PRs CI proposes don't release
-  # again. A push or dispatch compares with the last release, so a release that failed is made
-  # by the next one.
+  # again. A push or dispatch compares with the last published release, so a release that
+  # failed is made by the next one: its tag is reserved before the builds, so a tag alone
+  # doesn't mean it was released.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -37,12 +39,20 @@ jobs:
           fetch-depth: 0
       - uses: romaine-life/pipeline-templates/actions/check-fetches@main
       - id: diff
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             base=$(git merge-base HEAD "origin/$GITHUB_BASE_REF")
           else
-            base=$(git describe --tags --abbrev=0 --match 'v*-g*' HEAD 2>/dev/null || true)
+            code=$(printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sS -K - -o latest.json -w '%{http_code}' \
+              "$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/releases/latest")
+            case "$code" in
+              200) base=$(git rev-parse -q --verify "refs/tags/$(jq -er .tag_name latest.json)^{commit}" || true) ;;
+              404) base= ;;
+              *) echo "::error::the latest release lookup returned HTTP $code"; exit 1 ;;
+            esac
           fi
           if [ -n "$base" ] && git diff --quiet "$base" HEAD -- . ':(exclude)k8s' ':(exclude)*.md' ':(exclude)docs' ':(exclude)LICENSE'; then
             echo 'code=false' >> "$GITHUB_OUTPUT"
@@ -51,7 +61,9 @@ jobs:
             echo 'code=true' >> "$GITHUB_OUTPUT"
           fi
 
-  # Exercise tag writes on PRs too: Forgejo's tag API returned 500 from a release job.
+  # Exercise tag writes on PRs too: Forgejo's tag API returned 500 from a release job, and the
+  # release's tag is reserved through that API (release-version, in windows-build), with the
+  # job's token as here.
   tag-check:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -62,22 +74,21 @@ jobs:
       run:
         shell: pwsh -NoLogo -NoProfile -NonInteractive -Command "$ErrorActionPreference = 'Stop'; . ([scriptblock]::Create([IO.File]::ReadAllText('{0}'))); if (Test-Path variable:LASTEXITCODE) { exit $LASTEXITCODE }"
     steps:
-      - uses: actions/checkout@v4
       - name: Verify tag publishing
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # a commit Forgejo has: the PR's head, or the pushed commit
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          $probe = "FORGEJO-3-ci-g$([guid]::NewGuid().ToString('N'))"
-          $created = $false
+          $api = "$env:GITHUB_SERVER_URL/api/v1/repos/$env:GITHUB_REPOSITORY"
+          $headers = @{ Authorization = "token $env:TOKEN" }
+          $probe = "tag-check-$([guid]::NewGuid().ToString('N'))"
+          $body = @{ tag_name = $probe; target = $env:COMMIT } | ConvertTo-Json
+          $created = Invoke-RestMethod -Method Post "$api/tags" -Headers $headers -ContentType 'application/json' -Body $body
           try {
-            git push origin "$($env:GITHUB_SHA):refs/tags/$probe"
-            if ($LASTEXITCODE) { throw 'creating the temporary tag failed' }
-            $created = $true
-            $ref = git ls-remote origin "refs/tags/$probe"
-            if ($LASTEXITCODE -or ($ref -split '\s+')[0] -ne $env:GITHUB_SHA) { throw 'temporary tag verification failed' }
+            if ($created.commit.sha -ne $env:COMMIT) { throw "temporary tag $probe is on $($created.commit.sha)" }
           } finally {
-            if ($created) {
-              git push origin ":refs/tags/$probe"
-              if ($LASTEXITCODE) { throw "removing temporary tag $probe failed" }
-            }
+            Invoke-RestMethod -Method Delete "$api/tags/$probe" -Headers $headers | Out-Null
           }
 
   # ubuntu-latest jobs run one at a time on the runner `nas` (on the home cluster), so the
@@ -133,23 +144,33 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
+    # the release's tag is reserved here, before the build that's stamped with it
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     defaults:
       run:
         shell: pwsh -NoLogo -NoProfile -NonInteractive -Command "$ErrorActionPreference = 'Stop'; . ([scriptblock]::Create([IO.File]::ReadAllText('{0}'))); if (Test-Path variable:LASTEXITCODE) { exit $LASTEXITCODE }"
     steps:
-      # the tags, for the same `git describe` the release is named by
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: romaine-life/pipeline-templates/actions/home-cache@main
+
+      # v0.25.1.N on a push to master, its tag reserved on the commit; v0.25.1.N-pr12.345 otherwise
+      - id: version
+        uses: romaine-life/pipeline-templates/actions/release-version@main
+        with:
+          prefix-from: spotify_player/Cargo.toml
 
       - uses: romaine-life/pipeline-templates/actions/rust-toolchain@main
 
       # The info panel's stamps; GITHUB_REPOSITORY and GITHUB_SERVER_URL are read as they are.
       - name: Build
+        env:
+          SPT_BUILD_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $env:SPT_BUILD_VERSION = git describe --tags --always --abbrev=7 --exclude '*-g*'
-          if ($LASTEXITCODE -or -not $env:SPT_BUILD_VERSION) { throw 'git describe gave no version' }
+          if (-not $env:SPT_BUILD_VERSION) { throw 'release-version gave no version' }
           $env:SPT_BUILD_TIME = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
           foreach ($stamp in 'GITHUB_REPOSITORY', 'GITHUB_SERVER_URL') {
             if (-not [Environment]::GetEnvironmentVariable($stamp)) { throw "$stamp is not set" }
@@ -231,8 +252,7 @@ jobs:
             target/release/session-sources.txt
           if-no-files-found: error
 
-  # The release is the master commit's `git describe`, e.g. v0.25.1-102-gabcdef1; release
-  # tags are excluded from the describe so the next one counts from upstream's tag.
+  # The release is the tag windows-build reserved on the master commit, e.g. v0.25.1.4.
   # PRs also assemble and validate the release, without publishing it.
   release:
     needs: [tag-check, rust-ci-windows, windows-build, linux-build]
@@ -246,8 +266,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: forgejo/download-artifact@v4
         with:
@@ -260,6 +278,8 @@ jobs:
           path: dist
 
       - name: Validate release assets
+        env:
+          VERSION: ${{ needs.windows-build.outputs.version }}
         run: |
           foreach ($name in 'spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt') {
             if (-not (Get-Item "dist/$name").Length) { throw "empty release asset: $name" }
@@ -275,39 +295,29 @@ jobs:
               throw "invalid session source: $source"
             }
           }
-          git describe --tags --always --abbrev=7 --exclude '*-g*'
-          $tag = git describe --tags --always --abbrev=7 --exclude '*-g*'
+          if (-not $env:VERSION) { throw 'windows-build gave no version' }
           # the info panel must name the release it ships in
           $exe = [Text.Encoding]::Latin1.GetString([IO.File]::ReadAllBytes("$PWD/dist/spotify_player.exe"))
-          foreach ($stamp in $tag, $env:GITHUB_REPOSITORY, $env:GITHUB_SERVER_URL) {
+          foreach ($stamp in $env:VERSION, $env:GITHUB_REPOSITORY, $env:GITHUB_SERVER_URL) {
             if (-not $exe.Contains($stamp)) { throw "spotify_player.exe is not stamped with $stamp" }
           }
           $files = @{}
           foreach ($name in 'spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt') {
             $files[$name] = @{ size = (Get-Item "dist/$name").Length; sha256 = (Get-FileHash "dist/$name" -Algorithm SHA256).Hash.ToLowerInvariant() }
           }
-          @{ tag = $tag; commit = $env:GITHUB_SHA; files = $files } | ConvertTo-Json -Depth 4 | Set-Content dist/session-release.json -Encoding utf8NoBOM
+          @{ tag = $env:VERSION; commit = $env:GITHUB_SHA; files = $files } | ConvertTo-Json -Depth 4 | Set-Content dist/session-release.json -Encoding utf8NoBOM
 
+      # Publishing a draft does not create its Git ref on Forgejo; windows-build reserved the tag.
       - name: Release
         id: release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: needs.windows-build.outputs.tag != ''
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.windows-build.outputs.tag }}
         run: |
-          $tag = git describe --tags --always --abbrev=7 --exclude '*-g*'
+          $tag = $env:TAG
           $api = "$env:GITHUB_SERVER_URL/api/v1/repos/$env:GITHUB_REPOSITORY"
           $headers = @{ Authorization = "token $env:TOKEN" }
-          # Publishing a draft does not create its Git ref on Forgejo. Git pushes use
-          # checkout's persisted job credential, verified by tag-check on every PR.
-          $ref = git ls-remote origin "refs/tags/$tag"
-          if ($LASTEXITCODE) { throw "tag lookup for $tag failed" }
-          if (-not $ref) {
-            git push origin "$($env:GITHUB_SHA):refs/tags/$tag"
-            if ($LASTEXITCODE) { throw "creating tag $tag failed" }
-            $ref = git ls-remote origin "refs/tags/$tag"
-            if ($LASTEXITCODE) { throw "tag verification for $tag failed" }
-          }
-          if (($ref -split '\s+')[0] -ne $env:GITHUB_SHA) { throw "tag $tag points to a different commit" }
           $release = Invoke-RestMethod "$api/releases/tags/$tag" -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable code
           if ($code -eq 200 -and -not $release.draft) {
             $missing = @('spotify_player.exe', 'fzt.dll', 'spotify_player', 'session-sources.txt', 'session-release.json' | Where-Object { $_ -notin $release.assets.name })
@@ -336,25 +346,36 @@ jobs:
       release-tag: ${{ needs.release.outputs.release-tag != 'validation-only' && needs.release.outputs.release-tag || '' }}
 
   # The session's image on the home cluster (k8s/image): Snapcast, run.sh and the stager. It is
-  # named by the last commit to k8s/image, so it's built again only when that changes, and
-  # pushed from a master run when values.yaml doesn't pin it yet. The pin is that tag and the
-  # digest the registry holds for it.
+  # numbered spt-session-v0.1.N by release-version on the last commit to k8s/image, so it's
+  # built again only when that changes, and pushed from a master run when values.yaml doesn't
+  # pin it yet. The pin is that tag and the digest the registry holds for it.
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     enable-openid-connect: true
+    # a master run reserves the image's tag
+    permissions:
+      contents: write
     outputs:
       pin: ${{ steps.push.outputs.pin || steps.tag.outputs.pin }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - id: image-commit
+        run: echo "sha=$(git log -1 --format=%H -- k8s/image)" >> "$GITHUB_OUTPUT"
+      - id: version
+        uses: romaine-life/pipeline-templates/actions/release-version@main
+        with:
+          prefix: v0.1
+          component: spt-session
+          sha: ${{ steps.image-commit.outputs.sha }}
       - id: tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -eu
-          tag=$(git log -1 --format=%h --abbrev=7 -- k8s/image)
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          pin=$(sed -n -E "s|^image: forgejo.romaine.life/nelsong6/spt-session:($tag@sha256:[0-9a-f]{64})$|\1|p" k8s/values.yaml)
+          pin=$(sed -n -E "s|^image: forgejo.romaine.life/nelsong6/spt-session:($VERSION@sha256:[0-9a-f]{64})$|\1|p" k8s/values.yaml)
           if [ -n "$pin" ]; then
             printf '%s\n' 'pinned=true' "pin=$pin" >> "$GITHUB_OUTPUT"
           else
@@ -372,8 +393,8 @@ jobs:
         id: push
         if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.tag.outputs.pinned == 'false'
         env:
-          TAG: ${{ steps.tag.outputs.tag }}
-          IMAGE: forgejo.romaine.life/nelsong6/spt-session:${{ steps.tag.outputs.tag }}
+          TAG: ${{ steps.version.outputs.version }}
+          IMAGE: forgejo.romaine.life/nelsong6/spt-session:${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           export DOCKER_CONFIG="$RUNNER_TEMP/spt-registry"
@@ -428,7 +449,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$TOKEN"
-          [[ "$IMAGE" =~ ^[0-9a-f]{7}@sha256:[0-9a-f]{64}$ ]] || { echo "::error::the image job gave no pin: '$IMAGE'"; exit 1; }
+          [[ "$IMAGE" =~ ^spt-session-v[0-9.]+@sha256:[0-9a-f]{64}$ ]] || { echo "::error::the image job gave no pin: '$IMAGE'"; exit 1; }
           api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
           auth() { printf 'Authorization: token %s\n' "$TOKEN"; }
           git checkout -q -B pin origin/master
@@ -444,6 +465,7 @@ jobs:
           git add k8s/values.yaml
           if git diff --cached --quiet; then echo 'master already pins this'; exit 0; fi
           what=$(git diff --cached -U0 | sed -n -E 's/^\+ *((image|tag): .*)$/\1/p' | paste -sd, - | sed 's/,/, /g')
+          # version-check: a branch name, not a version
           branch="SPT-35-pin-${GITHUB_SHA:0:7}"
           git config user.name forgejo-actions
           git config user.email forgejo-actions@noreply.romaine.life
