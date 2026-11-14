@@ -79,11 +79,8 @@ pub fn start(state: &SharedState, client_pub: &flume::Sender<ClientRequest>) -> 
     };
     let (wake, woken) = flume::bounded(1);
     let link = LINK.get_or_init(|| Link {
-        pc: format!(
-            "{}-{}",
-            gethostname::gethostname().to_string_lossy(),
-            std::process::id()
-        ),
+        // the PC, not this process, so a window restarted by an update keeps control
+        pc: gethostname::gethostname().to_string_lossy().into_owned(),
         connected: AtomicBool::new(false),
         in_control: AtomicBool::new(false),
         writer: Mutex::new(None),
@@ -294,25 +291,28 @@ fn follow(
         }
         last = shown;
         let in_control = message.controller.as_deref() == Some(link.pc.as_str());
-        link.in_control.store(in_control, Ordering::Relaxed);
-        if in_control {
-            link.settled.store(true, Ordering::Relaxed);
-            changed();
-            continue;
+        // a window just started in control, as after an update, picks up where the screen
+        // was before sending its own
+        if !in_control || !link.settled.load(Ordering::Relaxed) {
+            // a screen saved by an older release may not parse; the next one sent replaces it
+            let screen = message
+                .screen
+                .and_then(|screen| {
+                    serde_json::from_value(screen)
+                        .inspect_err(|err| {
+                            tracing::warn!("Failed to parse the shared screen: {err:#}");
+                        })
+                        .ok()
+                })
+                .unwrap_or_default();
+            show(state, client_pub, screen);
         }
-        // a screen saved by an older release may not parse; the next one sent replaces it
-        let screen = message
-            .screen
-            .and_then(|screen| {
-                serde_json::from_value(screen)
-                    .inspect_err(|err| {
-                        tracing::warn!("Failed to parse the shared screen: {err:#}");
-                    })
-                    .ok()
-            })
-            .unwrap_or_default();
-        show(state, client_pub, screen);
+        // only once it shows, or the sender would send what this window had before
+        link.in_control.store(in_control, Ordering::Relaxed);
         link.settled.store(true, Ordering::Relaxed);
+        if in_control {
+            changed();
+        }
     }
     anyhow::bail!("the session closed the connection")
 }

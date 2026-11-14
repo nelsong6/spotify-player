@@ -192,10 +192,9 @@ What the restart keeps and loses:
   folder.
 - **The screen** comes back from the session: page, selection, popups, palette and
   visualization, as the controlling PC last sent it.
-- **Control of the screen** does not come back. The shared screen knows a PC by
-  hostname and process ID (`screen/pc.rs`), so the new process is a new PC: a window
-  that was in control comes back showing `locked: space to take control` until a PC
-  presses space. Don't press it for him.
+- **Control of the screen** stays where it was. The shared screen knows a PC by its
+  hostname (`screen/pc.rs`), so a window that was in control comes back in control,
+  and one that was locked comes back locked.
 - What lives only in the old process is gone: an open info panel and anything typed
   but not run.
 
