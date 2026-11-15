@@ -26,3 +26,7 @@ live session.
 checksum manifest against both fields before staging it. The suite currently updates
 only the image pin; delivery is incomplete until its pin writer also advances these
 release fields. Removing them would break the stager's source identity check.
+
+The stager accepts the currently pinned publisher's body and the shared publisher's
+header; both paths still require the pinned tag, source commit, stable release and
+matching binary checksum manifest.
