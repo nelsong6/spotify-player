@@ -1,35 +1,91 @@
 {
   "version": 1,
   "rust": {
-    "platforms": ["ubuntu-latest", "windows-latest"],
+    "platforms": [
+      "ubuntu-latest",
+      "windows-latest"
+    ],
     "noDefaultFeatures": true,
     "platformFeatures": {
-      "linux": ["rustls-tls", "streaming"],
-      "win32": ["streaming", "cast", "media-control", "image", "notify", "fzf"]
+      "linux": [
+        "rustls-tls",
+        "streaming"
+      ],
+      "win32": [
+        "streaming",
+        "cast",
+        "media-control",
+        "image",
+        "notify",
+        "fzf"
+      ]
     },
-    "lints": ["typos", "machete"]
+    "lints": [
+      "typos",
+      "machete"
+    ]
   },
   "release": {
-    "toolchains": ["rust"],
+    "toolchains": [
+      "rust"
+    ],
     "prefixFrom": "spotify_player/Cargo.toml",
     "homeSync": true,
     "image": "cluster",
     "rustTargets": [
-      {"target": "x86_64-unknown-linux-gnu", "noDefaultFeatures": true, "features": ["rustls-tls", "streaming"]},
-      {"target": "x86_64-pc-windows-msvc", "noDefaultFeatures": false, "features": []}
+      {
+        "target": "x86_64-unknown-linux-gnu",
+        "noDefaultFeatures": true,
+        "features": [
+          "rustls-tls",
+          "streaming"
+        ]
+      },
+      {
+        "target": "x86_64-pc-windows-msvc",
+        "noDefaultFeatures": false,
+        "features": []
+      }
     ],
     "dependencies": [
       {
         "url": "https://forgejo.romaine.life/romaine-life/fzt-terminal/releases/download/{tag}/fzt-windows-amd64.dll",
         "destination": "dist/fzt.dll",
         "lock": "fzt.lock",
-        "toolchain": "rust"
+        "toolchain": "rust",
+        "targets": [
+          "x86_64-pc-windows-msvc"
+        ]
       }
     ],
-    "assets": ["dist/spotify_player-x86_64-unknown-linux-gnu", "dist/spotify_player-x86_64-pc-windows-msvc.exe", "dist/fzt.dll"]
+    "assets": [
+      "dist/spotify_player",
+      "dist/spotify_player.exe",
+      "dist/fzt.dll",
+      "dist/session-sources.txt"
+    ],
+    "assetNames": {
+      "rust-x86_64-unknown-linux-gnu": {
+        "spotify_player-x86_64-unknown-linux-gnu": "spotify_player"
+      },
+      "rust-x86_64-pc-windows-msvc": {
+        "spotify_player-x86_64-pc-windows-msvc.exe": "spotify_player.exe"
+      }
+    },
+    "sourceLists": {
+      "rust-x86_64-unknown-linux-gnu": "session-sources.txt"
+    },
+    "manifest": "session-release.json"
   },
   "cluster": {
-    "renders": [{"kind": "helm", "path": "k8s", "name": "spt-session", "values": "k8s/values.yaml"}],
+    "renders": [
+      {
+        "kind": "helm",
+        "path": "k8s",
+        "name": "spt-session",
+        "values": "k8s/values.yaml"
+      }
+    ],
     "image": "forgejo.romaine.life/nelsong6/spt-session",
     "baoRole": "spotify-player-publish",
     "baoSecret": "services/spt-session-build",
@@ -37,7 +93,11 @@
     "workPackage": "https://openproject.home.romaine.life/wp/PIPT-12"
   },
   "inputs": {
-    "release.build": ["k8s/image/**"],
-    "release.package": ["k8s/image/**"]
+    "release.build": [
+      "k8s/image/**"
+    ],
+    "release.package": [
+      "k8s/image/**"
+    ]
   }
 }

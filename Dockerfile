@@ -16,7 +16,7 @@ RUN sed -i 's#https\?://deb.debian.org/#https://artifacts.home.romaine.life/debi
     && rm -rf /var/lib/apt/lists/*
 COPY k8s/image/snapserver.conf /etc/snapserver.conf
 COPY k8s/image/run.sh k8s/image/stager.sh /
-COPY dist/spotify_player-x86_64-unknown-linux-gnu /opt/spt/spotify_player
+COPY dist/spotify_player /opt/spt/spotify_player
 COPY ci/smoke/entrypoint.sh /entrypoint.sh
 RUN chmod 755 /opt/spt/spotify_player /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
