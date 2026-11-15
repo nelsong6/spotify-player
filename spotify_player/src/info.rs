@@ -1,5 +1,5 @@
 //! What the palette's "info" panel says: where this build came from, stamped by CI when it
-//! compiles (the `Build` step of `.forgejo/workflows/ci.yml`), and where it runs on this PC.
+//! compiles (the shared release suite), and where it runs on this PC.
 
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, TimeDelta, Utc, Weekday};
 use chrono_humanize::{Accuracy, HumanTime, Tense};
@@ -77,7 +77,16 @@ fn lines_from(
 }
 
 fn built_line(stamp: &str, now: DateTime<Utc>) -> String {
-    let Ok(built) = DateTime::parse_from_rfc3339(stamp) else {
+    let built = stamp
+        .parse::<i64>()
+        .ok()
+        .and_then(|seconds| DateTime::from_timestamp(seconds, 0))
+        .or_else(|| {
+            DateTime::parse_from_rfc3339(stamp)
+                .ok()
+                .map(|time| time.to_utc())
+        });
+    let Some(built) = built else {
         return format!("could not read the build time {stamp:?}");
     };
     let built = built.with_timezone(&Utc);
