@@ -98,7 +98,7 @@ jobs:
   # is pwsh, and without the runner user's profile. The runner names a custom shell's script
   # without .ps1, which pwsh won't run as a file, so the shell reads it in. No
   # Swatinem/rust-cache there: its cleanup empties ~/.cargo/bin, which on a host runner is
-  # the runner user's own rustup install.
+  # the runner user's own rustup install; the build folder is kept on the machine instead.
   rust-ci-windows:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -113,6 +113,29 @@ jobs:
       - uses: romaine-life/pipeline-templates/actions/rust-toolchain@main
         with:
           components: clippy, rustfmt
+
+      # Cargo's build folder is kept on upstairspc, so a run rebuilds only what changed, not
+      # every dependency. One per job, so the concurrent jobs never wait on each other's lock;
+      # a new toolchain starts new folders, and the old ones go once no build holds them
+      # (Windows refuses to rename a folder with a file open in it).
+      - name: Kept build folder
+        run: |
+          if (-not $env:RUSTUP_TOOLCHAIN) { throw 'rust-toolchain set no RUSTUP_TOOLCHAIN' }
+          $root = 'D:\ci\cache\cargo-target\spotify-player'
+          $target = Join-Path $root "$env:RUSTUP_TOOLCHAIN\$env:GITHUB_JOB"
+          New-Item -ItemType Directory -Force $target | Out-Null
+          "CARGO_TARGET_DIR=$target" >> $env:GITHUB_ENV
+          foreach ($old in Get-ChildItem -LiteralPath $root -Directory | Where-Object Name -ne $env:RUSTUP_TOOLCHAIN) {
+            try {
+              $doomed = $old.FullName
+              if ($old.Name -notlike '*.removing') {
+                $doomed = "$doomed.removing"
+                Rename-Item -LiteralPath $old.FullName -NewName (Split-Path -Leaf $doomed) -ErrorAction Stop
+              }
+              Remove-Item -LiteralPath $doomed -Recurse -Force -ErrorAction Stop
+              Write-Host "removed the build folders for $($old.Name)"
+            } catch { Write-Host "left the build folders for $($old.Name): $_" }
+          }
 
       # typos at the version crate-ci/typos@master ran on GitHub; both stay installed in the
       # runner user's ~/.cargo/bin, so this only builds them once. They run before the build,
@@ -165,6 +188,26 @@ jobs:
 
       - uses: romaine-life/pipeline-templates/actions/rust-toolchain@main
 
+      # as in rust-ci-windows
+      - name: Kept build folder
+        run: |
+          if (-not $env:RUSTUP_TOOLCHAIN) { throw 'rust-toolchain set no RUSTUP_TOOLCHAIN' }
+          $root = 'D:\ci\cache\cargo-target\spotify-player'
+          $target = Join-Path $root "$env:RUSTUP_TOOLCHAIN\$env:GITHUB_JOB"
+          New-Item -ItemType Directory -Force $target | Out-Null
+          "CARGO_TARGET_DIR=$target" >> $env:GITHUB_ENV
+          foreach ($old in Get-ChildItem -LiteralPath $root -Directory | Where-Object Name -ne $env:RUSTUP_TOOLCHAIN) {
+            try {
+              $doomed = $old.FullName
+              if ($old.Name -notlike '*.removing') {
+                $doomed = "$doomed.removing"
+                Rename-Item -LiteralPath $old.FullName -NewName (Split-Path -Leaf $doomed) -ErrorAction Stop
+              }
+              Remove-Item -LiteralPath $doomed -Recurse -Force -ErrorAction Stop
+              Write-Host "removed the build folders for $($old.Name)"
+            } catch { Write-Host "left the build folders for $($old.Name): $_" }
+          }
+
       # The info panel's stamps; GITHUB_REPOSITORY and GITHUB_SERVER_URL are read as they are.
       - name: Build
         env:
@@ -177,6 +220,9 @@ jobs:
           }
           Write-Host "stamping $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY $env:SPT_BUILD_VERSION built $env:SPT_BUILD_TIME"
           cargo build --locked --release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "$env:CARGO_TARGET_DIR\release\spotify_player.exe" dist
 
       # the command palette loads fzt.dll from beside the executable; fzt.lock pins its
       # release, including its original checksum, now available on Forgejo.
@@ -186,8 +232,8 @@ jobs:
         run: |
           $tag, $sha256 = (Get-Content fzt.lock -Raw).Trim() -split '\s+'
           if (-not $env:FZT_TOKEN) { throw 'FZT_RELEASE_TOKEN is not set' }
-          Invoke-WebRequest "https://forgejo.romaine.life/romaine-life/fzt-terminal/releases/download/$tag/fzt-windows-amd64.dll" -Headers @{ Authorization = "token $env:FZT_TOKEN" } -OutFile target/release/fzt.dll
-          $got = (Get-FileHash target/release/fzt.dll -Algorithm SHA256).Hash
+          Invoke-WebRequest "https://forgejo.romaine.life/romaine-life/fzt-terminal/releases/download/$tag/fzt-windows-amd64.dll" -Headers @{ Authorization = "token $env:FZT_TOKEN" } -OutFile dist/fzt.dll
+          $got = (Get-FileHash dist/fzt.dll -Algorithm SHA256).Hash
           if ($got -ne $sha256) { throw "fzt.dll $tag has sha256 $got, fzt.lock pins $sha256" }
 
       # Defender quarantined an unsigned tmux build as Program:Win32/Contebrew.A!ml
@@ -203,7 +249,7 @@ jobs:
           $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Sort-Object FullName -Descending | Select-Object -First 1
           [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:PFX))
           try {
-            & $signtool.FullName sign /fd SHA256 /f cert.pfx /p $env:PFX_PASSWORD target/release/spotify_player.exe target/release/fzt.dll
+            & $signtool.FullName sign /fd SHA256 /f cert.pfx /p $env:PFX_PASSWORD dist/spotify_player.exe dist/fzt.dll
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           } finally { Remove-Item cert.pfx }
 
@@ -212,8 +258,8 @@ jobs:
         with:
           name: spotify_player-windows
           path: |
-            target/release/spotify_player.exe
-            target/release/fzt.dll
+            dist/spotify_player.exe
+            dist/fzt.dll
           if-no-files-found: error
 
   linux-build:
