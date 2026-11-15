@@ -23,9 +23,8 @@ live session.
 
 `k8s/values.yaml` retains `release.tag` and `release.commit`: the chart writes them to
 `/pin/release.json`, and `k8s/image/stager.sh` validates the published release and its
-checksum manifest against both fields before staging it. The suite currently updates
-only the image pin; delivery is incomplete until its pin writer also advances these
-release fields. Removing them would break the stager's source identity check.
+checksum manifest against both fields before staging it. The declared `pinFields`
+advance both release fields alongside the image in one automatically merged pin PR.
 
 The stager accepts the currently pinned publisher's body and the shared publisher's
 header; both paths still require the pinned tag, source commit, stable release and
