@@ -296,9 +296,13 @@ jobs:
             }
           }
           if (-not $env:VERSION) { throw 'windows-build gave no version' }
-          # the info panel must name the release it ships in
+          # spt must name the release it ships in. Asked, not searched for: a version as short
+          # as v0.25.1.0 is compiled into the code rather than kept as text.
+          $named = (& "$PWD/dist/spotify_player.exe" --version | Out-String).Trim()
+          if ($LASTEXITCODE) { throw "spotify_player.exe --version failed: $named" }
+          if ($named -ne "spotify_player $env:VERSION") { throw "spotify_player.exe says '$named', not $env:VERSION" }
           $exe = [Text.Encoding]::Latin1.GetString([IO.File]::ReadAllBytes("$PWD/dist/spotify_player.exe"))
-          foreach ($stamp in $env:VERSION, $env:GITHUB_REPOSITORY, $env:GITHUB_SERVER_URL) {
+          foreach ($stamp in $env:GITHUB_REPOSITORY, $env:GITHUB_SERVER_URL) {
             if (-not $exe.Contains($stamp)) { throw "spotify_player.exe is not stamped with $stamp" }
           }
           $files = @{}

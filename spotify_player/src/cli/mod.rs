@@ -171,7 +171,8 @@ pub fn init_cli() -> anyhow::Result<clap::Command> {
     let default_config_folder = config::get_config_folder_path()?;
 
     let cmd = clap::Command::new(env!("CARGO_PKG_NAME"))
-        .version(env!("CARGO_PKG_VERSION"))
+        // CI's release version (release-version, PIPT-7); a local build is dev.
+        .version(option_env!("SPT_BUILD_VERSION").unwrap_or("dev"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .subcommand(commands::init_get_subcommand())
