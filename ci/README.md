@@ -7,6 +7,7 @@ and dependency fetches.
 
 The Linux session tests use `rustls-tls,streaming` without default features. Windows
 tests additionally exercise streaming, cast, media-control, image, notify and fzf.
+Linux and Windows checks run in separate jobs.
 The Windows release keeps the application's default features; the Linux release
 uses the session's feature set. The fzt dependency belongs only to the Windows part.
 
