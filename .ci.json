@@ -90,7 +90,11 @@
     "baoRole": "spotify-player-publish",
     "baoSecret": "services/spt-session-build",
     "pinFile": "k8s/values.yaml",
-    "workPackage": "https://openproject.home.romaine.life/wp/PIPT-12"
+    "workPackage": "https://openproject.home.romaine.life/wp/PIPT-12",
+    "pinFields": {
+      "release.tag": "tag",
+      "release.commit": "commit"
+    }
   },
   "inputs": {
     "release.build": [
