@@ -154,7 +154,7 @@ mod tests {
     const STAMPED: Stamps = Stamps {
         repo: Some("nelsong6/spotify-player"),
         server: Some("https://forgejo.romaine.life"),
-        version: Some("v0.25.1-109-gabcdef1"),
+        version: Some("v0.25.1.4"),
         built: Some("2026-11-02T23:14:00Z"),
     };
     const UNSTAMPED: Stamps = Stamps {
@@ -195,7 +195,7 @@ mod tests {
             value(&lines, "Link"),
             "https://forgejo.romaine.life/nelsong6/spotify-player"
         );
-        assert_eq!(value(&lines, "Version"), "v0.25.1-109-gabcdef1");
+        assert_eq!(value(&lines, "Version"), "v0.25.1.4");
         assert_eq!(
             value(&lines, "Built"),
             "Nov 2, 3:14 PM Pacific (2 days ago)"

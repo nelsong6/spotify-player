@@ -53,7 +53,8 @@ Checkout [examples/README.md](https://github.com/aome510/spotify-player/blob/mas
 ## Installation
 
 Nelson's fork lives at [Forgejo](https://forgejo.romaine.life/nelsong6/spotify-player).
-Every passing push to `master` cuts a release named by `git describe`, containing
+Every passing push to `master` cuts a release numbered on the upstream version it is built on
+(`v0.25.1.N`), containing
 `spotify_player.exe`, `fzt.dll`, `spotify_player` (the session),
 `session-sources.txt` and `session-release.json` (the commit and SHA256 checksums).
 The Windows binaries are signed; `fzt.lock` pins the DLL from

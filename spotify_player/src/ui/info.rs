@@ -88,7 +88,7 @@ mod tests {
     use super::*;
     use ratatui::{backend::TestBackend, layout::Margin, Terminal};
 
-    const PATH: &str = r"C:\Program Files\at-home\spt\v0.25.1-109-gabcdef1\spotify_player.exe";
+    const PATH: &str = r"C:\Program Files\at-home\spt\v0.25.1.4\spotify_player.exe";
 
     fn drawn(columns: u16, height: u16) -> String {
         let text = text(&[
