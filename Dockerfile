@@ -20,4 +20,3 @@ COPY dist/spotify_player-x86_64-unknown-linux-gnu /opt/spt/spotify_player
 COPY ci/smoke/entrypoint.sh /entrypoint.sh
 RUN chmod 755 /opt/spt/spotify_player /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
-
