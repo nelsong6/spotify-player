@@ -307,7 +307,7 @@ mod tests {
 
         // a current song that isn't in the playlist removes nothing more
         let played = played_songs(&items, &[], None, Some("z"));
-        assert!(played.is_empty());
+        assert_eq!(played, HashSet::new());
 
         // the radio's song stays though the history shows it played
         let played = played_songs(&items, &plays, None, Some("c"));
