@@ -1,11 +1,28 @@
 # Shared CI
 
 The repository selects the Rust, release and cluster-service suites with Forgejo
-repository topics. `.ci.json` declares the platform features, locked fzt dependency,
-joined release targets and Helm render. The default suite checks workflow rules
+repository topics. `.ci.json` declares platform features, the locked fzt dependency,
+joined release targets and the Helm render. The default suite checks workflow rules
 and dependency fetches.
 
+The Linux session tests use `rustls-tls,streaming` without default features. Windows
+tests additionally exercise streaming, cast, media-control, image, notify and fzf.
+The Windows release keeps the application's default features; the Linux release
+uses the session's feature set. The fzt dependency belongs only to the Windows part.
+
+The published names remain `spotify_player.exe`, `fzt.dll`, `spotify_player`,
+`session-sources.txt` and `session-release.json`. The asset map restores the executable
+names, Cargo depfiles supply the source list, and the shared publisher writes the
+existing tag/commit/files checksum manifest after signing. Home-sync's
+`machine/state.json` consumes the two Windows files without a configuration change.
+
 The root Dockerfile packages the assembled Linux session binary. Its terminating
-`--self-test` checks the binary in the final Debian image, including dynamic linking,
+`--self-test` executes the binary in the final Debian image to check dynamic linking,
 and verifies the Snapcast and staging tools without connecting to Spotify or the
 live session.
+
+`k8s/values.yaml` retains `release.tag` and `release.commit`: the chart writes them to
+`/pin/release.json`, and `k8s/image/stager.sh` validates the published release and its
+checksum manifest against both fields before staging it. The suite currently updates
+only the image pin; delivery is incomplete until its pin writer also advances these
+release fields. Removing them would break the stager's source identity check.

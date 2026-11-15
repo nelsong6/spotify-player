@@ -330,7 +330,7 @@ mod tests {
 
     /// A sample's value encodes the server time it was recorded at, in microseconds
     fn chunk(start: Micros) -> Vec<f32> {
-        let frames = (RATE as i64 * CHUNK_MS / 1000) as usize;
+        let frames = (i64::from(RATE) * CHUNK_MS / 1000) as usize;
         (0..frames)
             .flat_map(|n| {
                 let t = (start + n as i64 * 1_000_000 / i64::from(RATE)) as f32;
