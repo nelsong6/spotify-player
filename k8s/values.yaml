@@ -7,10 +7,10 @@ serve: true
 # stager.sh) by the release that built it and its digest, and the spt release the stager
 # stages. A release whose k8s/image is unchanged keeps the image, so it reaches the running
 # pod without restarting it; a new image restarts it.
-image: forgejo.romaine.life/nelsong6/spt-session:v0.25.1.3@sha256:36350f935bfc3a7c26204ab732f10b7422c08ec1ada98075c195775bc3323b8f
+image: forgejo.romaine.life/nelsong6/spt-session:v0.1.0@sha256:00cd24c42a34078f7cafdbeb15efa2b71e83fb64f04ff18abac1849e03358800
 release:
-  tag: v0.25.1.3
-  commit: 599300db53632109f7d8b392be9980699ac13e34
+  tag: v0.25.1.2
+  commit: d2ca4ef05a990577547506609f70855051ef677c
 
 # The PCs' `cast_server`: Snapcast on 1704, the shared screen on 1706, the relay on 1707.
 host: spt.home.romaine.life
