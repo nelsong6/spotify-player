@@ -4,7 +4,8 @@
 # session over between songs (spotify_player/src/handover.rs). Then waits for the next pin:
 # Kubernetes updates /pin in place, so a new pin never restarts the pod.
 #
-# A release is staged only as CI published it: a stable release of the pinned tag and commit,
+# A release is staged only as CI published it: a stable release of the pinned tag and commit
+# (the shared suites' "Joined release from", or the earlier own CI's "Built from"),
 # and a binary matching session-release.json's size and SHA-256. Staged releases never change.
 # Any failure exits, and Kubernetes starts the stager again after its back-off.
 set -euo pipefail
@@ -26,7 +27,8 @@ stage() {
 	local release manifest size sha stage
 	release=$(get "$FORGEJO/api/v1/repos/$REPO/releases/tags/$tag")
 	jq -e --arg tag "$tag" --arg commit "$commit" '.tag_name == $tag and .target_commitish == $commit
-		and (.body | startswith("Built from \($commit).")) and (.draft | not) and (.prerelease | not)' <<<"$release" >/dev/null ||
+		and (.body | startswith("Joined release from \($commit).") or startswith("Built from \($commit)."))
+		and (.draft | not) and (.prerelease | not)' <<<"$release" >/dev/null ||
 		{ echo "stager: $tag is not a published CI release of $commit" >&2; exit 1; }
 	stage=$(mktemp -d "$R/.stage-XXXXXX")
 	trap 'rm -rf "$stage"' EXIT
