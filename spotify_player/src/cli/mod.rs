@@ -172,7 +172,7 @@ pub fn init_cli() -> anyhow::Result<clap::Command> {
 
     let cmd = clap::Command::new(env!("CARGO_PKG_NAME"))
         // CI's release version (release-version, PIPT-7); a local build is dev.
-        .version(option_env!("SPT_BUILD_VERSION").unwrap_or("dev"))
+        .version(option_env!("VERSION").unwrap_or("dev"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .subcommand(commands::init_get_subcommand())

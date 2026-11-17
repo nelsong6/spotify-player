@@ -3,9 +3,10 @@
 # The session, its ports and its name.
 serve: true
 
-# CI's pin PRs move these two (.forgejo/workflows/ci.yml, `pin`): the image (Snapcast, run.sh,
-# stager.sh) by its number, v0.1.N, and its digest, and the spt release the stager
-# stages. A new release reaches the running pod without restarting it; a new image restarts it.
+# CI's pin PRs (pipeline-templates' release suite) move these: the image (Snapcast, run.sh,
+# stager.sh) by the release that built it and its digest, and the spt release the stager
+# stages. A release whose k8s/image is unchanged keeps the image, so it reaches the running
+# pod without restarting it; a new image restarts it.
 image: forgejo.romaine.life/nelsong6/spt-session:v0.1.0@sha256:00cd24c42a34078f7cafdbeb15efa2b71e83fb64f04ff18abac1849e03358800
 release:
   tag: v0.25.1.2

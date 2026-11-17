@@ -19,5 +19,5 @@ RUN sed -i 's#https\?://deb.debian.org/#https://artifacts.home.romaine.life/debi
     && rm /tmp/snapserver.deb \
     && rm -rf /var/lib/apt/lists/*
 COPY snapserver.conf /etc/snapserver.conf
-COPY run.sh stager.sh /
-ENTRYPOINT ["snapserver", "--config", "/etc/snapserver.conf"]
+COPY run.sh stager.sh entrypoint.sh /
+ENTRYPOINT ["sh", "/entrypoint.sh"]

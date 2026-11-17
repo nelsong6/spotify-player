@@ -593,7 +593,7 @@ mod tests {
         q.advance();
         q.advance();
 
-        assert!(q.remaining_tracks().is_empty());
+        assert_eq!(q.remaining_tracks(), []);
     }
 
     #[test]

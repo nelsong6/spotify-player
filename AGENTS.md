@@ -193,19 +193,17 @@ Working on the fork:
 - The session runs on the home cluster (SPT-35, `k8s/TAKEOVER.md`): `k8s/` is its chart and
   `k8s/image` its image (Snapcast, `run.sh`, and `stager.sh`, which stages the release
   `k8s/values.yaml` pins without restarting the pod). CI publishes complete Forgejo releases,
-  starts the PCs' home-sync tasks, and its `pin` job proposes each new release and image as a
-  PR that merges itself. The stager checks the pinned release against `session-release.json`
+  starts the PCs' home-sync tasks, and proposes each release as a pin PR that merge-queue
+  lands; the image is built again, and its pin moved, only when `k8s/image` changed. The stager checks the pinned release against `session-release.json`
   (the commit and every asset's SHA256 and size), stages it, and restarts only the waiting
-  slot, which takes over between songs. A change to `k8s/` or Markdown alone builds no spt and makes
+  slot, which takes over between songs. A change to `k8s/` outside `k8s/image`, or to Markdown, alone builds no spt and makes
   no release, so a docs change doesn't restart the PCs' windows. The PCs reach the session as `spt.home.romaine.life` on 1704, 1706 and 1707,
   k3s's service load balancer on the cluster's address.
 
 - The repository lives on Forgejo (https://forgejo.romaine.life/nelsong6/spotify-player,
-  FORGEJO-3); GitHub is its push mirror, with Actions off. CI is
-  `.forgejo/workflows/ci.yml`: `ubuntu-latest` jobs run in containers on the runner `nas`
-  (on the home cluster), `windows-latest` jobs on upstairspc, where every step is pwsh (its
-  `bash` is WSL's). Only the Linux session build uses that runner for Rust; typos, cargo-machete, formatting,
-  tests, clippy and release assembly run on upstairspc. Release assets are validated on PRs.
+  FORGEJO-3); GitHub is its push mirror, with Actions off. CI is pipeline-templates' rust,
+  release and cluster-service suites, set by its entry in pipeline-templates' `fleet.json`;
+  the repository has no workflows of its own. Release assets are validated on PRs.
 - CI's Windows and Linux build jobs run on PRs and master. Once every check passes, the release job publishes the exact source revision as `v0.25.1.N` (pipeline-templates' release-version, numbered on the upstream version in `spotify_player/Cargo.toml`; PR builds show `v0.25.1.N-prPR.RUN`), then home-sync installs the PCs and the pin PR moves the session.
 - On Windows the cast's output follows the system's default output through Windows'
   default-device notice (`IMMNotificationClient`, in `cast/output.rs`). cpal 0.16 only

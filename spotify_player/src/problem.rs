@@ -210,7 +210,7 @@ mod tests {
         clear(Kind::Keeper);
         clear(Kind::Other);
         clear(Kind::Follow);
-        assert!(mine().is_empty());
+        assert_eq!(mine(), Vec::<Problem>::new());
     }
 
     fn get_until(kind: Kind) -> Option<i64> {

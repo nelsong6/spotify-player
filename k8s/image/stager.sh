@@ -26,7 +26,7 @@ stage() {
 	local release manifest size sha stage
 	release=$(get "$FORGEJO/api/v1/repos/$REPO/releases/tags/$tag")
 	jq -e --arg tag "$tag" --arg commit "$commit" '.tag_name == $tag and .target_commitish == $commit
-		and .body == "Built from \($commit)." and (.draft | not) and (.prerelease | not)' <<<"$release" >/dev/null ||
+		and (.body | startswith("Built from \($commit).")) and (.draft | not) and (.prerelease | not)' <<<"$release" >/dev/null ||
 		{ echo "stager: $tag is not a published CI release of $commit" >&2; exit 1; }
 	stage=$(mktemp -d "$R/.stage-XXXXXX")
 	trap 'rm -rf "$stage"' EXIT

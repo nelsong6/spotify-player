@@ -1,5 +1,6 @@
 //! What the palette's "info" panel says: where this build came from, stamped by CI when it
-//! compiles (the `Build` step of `.forgejo/workflows/ci.yml`), and where it runs on this PC.
+//! compiles (pipeline-templates' release suite sets `VERSION` and `BUILD_TIME`, in Unix
+//! seconds), and where it runs on this PC.
 
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, TimeDelta, Utc, Weekday};
 use chrono_humanize::{Accuracy, HumanTime, Tense};
@@ -21,8 +22,8 @@ struct Stamps {
 const STAMPS: Stamps = Stamps {
     repo: option_env!("GITHUB_REPOSITORY"),
     server: option_env!("GITHUB_SERVER_URL"),
-    version: option_env!("SPT_BUILD_VERSION"),
-    built: option_env!("SPT_BUILD_TIME"),
+    version: option_env!("VERSION"),
+    built: option_env!("BUILD_TIME"),
 };
 
 /// Read at startup: once an update moves the `current` junction, resolving the path again would
@@ -77,10 +78,13 @@ fn lines_from(
 }
 
 fn built_line(stamp: &str, now: DateTime<Utc>) -> String {
-    let Ok(built) = DateTime::parse_from_rfc3339(stamp) else {
+    let Some(built) = stamp
+        .parse()
+        .ok()
+        .and_then(|seconds| DateTime::from_timestamp(seconds, 0))
+    else {
         return format!("could not read the build time {stamp:?}");
     };
-    let built = built.with_timezone(&Utc);
     format!(
         "{} Pacific ({})",
         pacific(built).format("%b %-d, %-I:%M %p"),
@@ -155,7 +159,7 @@ mod tests {
         repo: Some("nelsong6/spotify-player"),
         server: Some("https://forgejo.romaine.life"),
         version: Some("v0.25.1.4"),
-        built: Some("2026-11-02T23:14:00Z"),
+        built: Some("1793661240"),
     };
     const UNSTAMPED: Stamps = Stamps {
         repo: None,
