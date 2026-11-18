@@ -55,10 +55,12 @@ Checkout [examples/README.md](https://github.com/aome510/spotify-player/blob/mas
 Nelson's fork lives at [Forgejo](https://forgejo.romaine.life/nelsong6/spotify-player).
 Every passing push to `master` cuts a release numbered on the upstream version it is built on
 (`v0.25.1.N`), containing
-`spotify_player.exe`, `fzt.dll`, `spotify_player` (the session),
+`spotify_player.exe` (the client, built for Windows from the `spotify_player` package),
+`spotify_player` (the session, built for Linux from the `spotify_player_session` package),
 `session-sources.txt` and `session-release.json` (the commit and SHA256 checksums).
-The Windows binaries are signed; `fzt.lock` pins the DLL from
-fzt-terminal's Forgejo release. GitHub is a push mirror with Actions disabled.
+Each package builds with its own default features. The Windows binary is signed. The client
+loads fzt from home-sync's install of fzt-terminal, so the release carries no copy of it.
+GitHub is a push mirror with Actions disabled.
 
 CI publishes the complete release and starts home-sync on every PC, which installs
 the signed build and reconciles running spt panes. It then opens a PR pinning the release
@@ -264,7 +266,7 @@ After changing the client ID, re-run `spotify_player authenticate` to get a toke
 
 Press `/` to open the command palette: type to search a menu of what you can do, and press Enter to run it. The menu is a tree in [fzt](https://github.com/romaine-life/fzt)'s format, read from `menu.yaml` in the config folder each time the palette opens; until that file exists, the palette uses [`examples/menu.yaml`](examples/menu.yaml), and "edit menu" under `:` writes it there and opens it. Each entry runs a command, an action on the playing track, a radio from a random song of a playlist, or takes a search term for Spotify or for the list on screen; see [config docs](docs/config.md#command-palette-menu).
 
-The palette is fzt itself, loaded from `fzt.dll` (from [fzt-terminal](https://github.com/romaine-life/fzt-terminal)'s releases) beside the executable. Without it, the palette says it couldn't load the library.
+The palette is fzt itself, loaded from `fzt.dll` where home-sync installs [fzt-terminal](https://github.com/romaine-life/fzt-terminal) on the Windows home PCs (`C:\Program Files\at-home\fzt\current\fzt.dll`, under `%ProgramFiles%`). Without it, the palette says fzt isn't installed; once it is, the next `/` opens it without a restart.
 
 "info" under `:` opens a panel naming the app's repo and its link, the version, when that build was made (in Pacific time, with how long ago), the path the running executable is installed at, and its checkout under `D:\repos`, or that this PC has none. CI stamps the repo, link, version and build time when it builds; a local build says `development build, not from CI` on those lines. The panel stays on the PC that opened it, leaves the mouse to the terminal so its text can be selected the usual way, and closes on any key.
 
@@ -276,7 +278,7 @@ The [home cast's](#home-cast) session keeps the playlists listed as `kept_playli
 
 One session, running on an always-on machine, plays the music; every PC with `spotify_player` open plays it aloud, in sync with the others, and controls it. Which PC you sit at doesn't matter: close the app in one room and open it in the next, and the same queue keeps playing.
 
-- **The session** is `spotify_player session`, built with the `streaming` feature and without `tui` (the terminal UI), since it has no screen. It runs the [librespot](https://github.com/librespot-org/librespot) player, the one Spotify Connect device for the house, named by `name` under `[device]`. It reports what it plays to Spotify, as Spotify's own apps do, so its plays show in your listening history. It also keeps its own history of every song it plays, in a SQLite database (`history.db` in its `--slots` folder): when it started and ended, how much played and how it ended (`finished`, `skipped`, `stopped`, or `cut_off` by a restart), the song's details, the radio it came from, and which PCs played it aloud. It writes its audio to stdout for [Snapcast](https://github.com/badaix/snapcast)'s server, which runs it as a `process` source (`codec=pcm`, `sampleformat=44100:16:2`) and streams it to the PCs. [`k8s/`](k8s) runs both on the home cluster, its image built by CI from `k8s/image`; the PCs reach it as `spt.home.romaine.life`.
+- **The session** is its own program, `spotify_player_session session` (the `spotify_player_session` package: this crate built with the `streaming` and `rustls-tls` features and without `tui`, the terminal UI, since it has no screen, nor the cast, media control or images, so it links no ALSA or D-Bus). It runs the [librespot](https://github.com/librespot-org/librespot) player, the one Spotify Connect device for the house, named by `name` under `[device]`. It reports what it plays to Spotify, as Spotify's own apps do, so its plays show in your listening history. It also keeps its own history of every song it plays, in a SQLite database (`history.db` in its `--slots` folder): when it started and ended, how much played and how it ended (`finished`, `skipped`, `stopped`, or `cut_off` by a restart), the song's details, the radio it came from, and which PCs played it aloud. It writes its audio to stdout for [Snapcast](https://github.com/badaix/snapcast)'s server, which runs it as a `process` source (`codec=pcm`, `sampleformat=44100:16:2`) and streams it to the PCs. [`k8s/`](k8s) runs both on the home cluster, its image built by CI from `k8s/image`; the PCs reach it as `spt.home.romaine.life`.
 - **A PC** runs `spotify_player` built with the `cast` feature (on by default). It attaches to the Snapcast server named by `cast_server`, plays the session's audio on the system's default output (on Windows it follows a change of default output) and on any other outputs chosen on that PC, and controls the session like any Connect device. It never starts a player of its own and never picks another device to play on.
 - **One Spotify sign-in**: only the session signs in to Spotify. A PC sends every Spotify request (the library, search, play, lyrics, covers) to the session's relay, on port 1707 of the `cast_server` host, which sends it on with the session's sign-in, merges identical requests and holds the whole house to Spotify's waits. The session doesn't poll what it plays: it asks Spotify when its player reports a change, and passes the playback to every PC with the [shared screen](#home-cast). The relay takes only requests carrying the key the session keeps beside `session_file` (`relay.key`), so a PC needs read access to that folder and nothing else; deleting the key revokes it, and the session makes a new one.
 - **Play here**: the session is the one output device, and the music keeps playing there. Each PC chooses whether it plays it here: `PlayHere` (`H`) turns play here on or off. With it off, the PC still shows and controls the radio, and the other rooms play on; the playback window shows `play here: off`, and the visualization's transport line `play here off`. A PC with play here off still draws the [audio visualization](#audio-visualization).
@@ -287,7 +289,7 @@ One session, running on an always-on machine, plays the music; every PC with `sp
 - The PCs share the saved session through `session_file` on shared storage, so the radio and continue mode set on one PC are what the session continues with.
 - **One screen**: every PC shows the same screen: the page and what's selected on it, popups and the command palette, whether the [audio visualization](#audio-visualization) is shown, and the ASCII cover's mode. The session keeps it (on port 1706 of the `cast_server` host, saved beside `session_file`), so a PC opens on whatever was last on screen, or on the visualization the first time. One PC at a time is in control; the others show `locked: space to take control` at the top right and ignore every other key and the mouse. Space takes control there. A theme picked on one PC stays on that PC. A PC that can't reach the session is its own screen.
 - **What's wrong shows on screen**: while anything is wrong, a red row at the top of every PC's screen says what, on every page. It covers the session (no Spotify player, the radio stopped on its own, its saved place unreadable, a kept playlist not refilling, the Spotify sign-in not renewing, a wait on Spotify's rate limit with the time left) and the PC itself (the session or its audio out of reach, a speaker that won't open, a command that failed or is still waiting for an answer after a second). Several take turns, numbered. Each clears itself once fixed, and a failed command after 15 seconds. `spotify_player get key app` lists them all.
-- **Upgrades don't stop the music**: `spotify_player session --slots <folder> --release <version>` runs as one of two slots, which Snapcast's `meta` source joins as one stream. The slot that isn't the session waits; started on a newer release, it connects beside the session and takes the playback over at the next song change, or right away while paused. The session's pod runs both slots, and a new release's pin restarts only the waiting one.
+- **Upgrades don't stop the music**: `spotify_player_session session --slots <folder> --release <version>` runs as one of two slots, which Snapcast's `meta` source joins as one stream. The slot that isn't the session waits; started on a newer release, it connects beside the session and takes the playback over at the next song change, or right away while paused. The session's pod runs both slots, and a new release's pin restarts only the waiting one.
 
 ### Audio Visualization
 
@@ -381,7 +383,7 @@ To enable [fuzzy search](https://en.wikipedia.org/wiki/Approximate_string_matchi
 - `like`: Like currently playing track
 - `authenticate`: Authenticate the application
 - `playlist`: Playlist editing (new, delete, import, fork, etc)
-- `session`: Run the [home cast's](#home-cast) session (`streaming` feature only)
+- `session`: Run the [home cast's](#home-cast) session (`streaming` feature only: the `spotify_player_session` program)
 
 For more details, run `spotify_player -h` or `spotify_player {command} -h`.
 

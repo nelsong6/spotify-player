@@ -1,5 +1,8 @@
 [workspace]
-members = ["spotify_player"]
+members = ["spotify_player", "spotify_player_session"]
+# a plain `cargo build` is the client; `-p spotify_player_session` builds the session. Built
+# together, Cargo would give the client the session's features.
+default-members = ["spotify_player"]
 resolver = "2"
 
 [profile.release]

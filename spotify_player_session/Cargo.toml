@@ -1,0 +1,16 @@
+[package]
+name = "spotify_player_session"
+edition = "2021"
+license = "MIT"
+description = "The home cast's session: spotify_player's player, headless, its audio on stdout for Snapcast"
+repository = "https://forgejo.romaine.life/nelsong6/spotify-player"
+publish = false
+
+[dependencies]
+anyhow = "1.0.104"
+# spotify_player's code with the session's features: the player and the relay, without the
+# terminal UI, the cast, media control or images, so the session links no ALSA or D-Bus
+spotify_player = { path = "../spotify_player", default-features = false, features = ["rustls-tls", "streaming"] }
+
+[lints]
+workspace = true

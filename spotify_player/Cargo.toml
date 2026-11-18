@@ -107,10 +107,11 @@ features = [
 optional = true
 
 [features]
-# the home cast's session (`spotify_player session`): the player, its audio on stdout for Snapcast
+# the home cast's session (the `spotify_player_session` package, which turns it on): the player,
+# its audio on stdout for Snapcast
 streaming = ["librespot-playback", "librespot-connect", "librespot-protocol", "protobuf", "dep:hyper", "dep:hyper-util", "dep:http-body-util", "dep:rusqlite"]
 # the terminal UI: pages, popups, keys and the command palette. The session has no screen, so
-# its build leaves this out.
+# its package leaves this out.
 tui = []
 # a PC attached to the session: plays its audio from Snapcast and draws the visualization
 cast = ["tui", "dep:cpal", "rustfft", "dep:gethostname", "windows", "dep:windows-core"]

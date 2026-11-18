@@ -1,18 +1,12 @@
-//! fzt, loaded from its library beside the executable: a menu session that takes key presses and
-//! returns what to draw as data. The library is fzt-terminal's `cmd/fztlib`; every call passes
-//! and returns JSON.
+//! fzt, the home PCs' fuzzy menu, loaded from the library its managed install keeps (`fzt.dll`,
+//! fzt-terminal's `cmd/fztlib`): a menu session that takes key presses and returns what to draw
+//! as data. Every call passes and returns JSON.
 
 use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 use std::ffi::{c_char, c_int, CStr, CString};
+use std::path::PathBuf;
 use std::sync::OnceLock;
-
-#[cfg(windows)]
-const LIBRARY: &str = "fzt.dll";
-#[cfg(target_os = "macos")]
-const LIBRARY: &str = "libfzt.dylib";
-#[cfg(all(unix, not(target_os = "macos")))]
-const LIBRARY: &str = "libfzt.so";
 
 type OpenFn = unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_char;
 type SessionFn = unsafe extern "C" fn(c_int, *const c_char) -> *mut c_char;
@@ -29,17 +23,35 @@ struct Api {
     free: FreeFn,
 }
 
+/// Where home-sync installs fzt's library: the managed install's `current` folder, which moves to
+/// each new release
+fn library_path() -> Result<PathBuf> {
+    if !cfg!(windows) {
+        anyhow::bail!("fzt is installed by home-sync, on the Windows home PCs only");
+    }
+    let root = std::env::var_os("ProgramFiles").context("ProgramFiles isn't set")?;
+    Ok(PathBuf::from(root).join(r"at-home\fzt\current\fzt.dll"))
+}
+
+/// The library, loaded the first time it's there: until then each opening of the palette tries
+/// again, so fzt installed later works without a restart
 fn api() -> Result<&'static Api> {
-    static API: OnceLock<std::result::Result<Api, String>> = OnceLock::new();
-    API.get_or_init(|| load().map_err(|err| format!("{err:#}")))
-        .as_ref()
-        .map_err(|err| anyhow::anyhow!("{err}"))
+    static API: OnceLock<Api> = OnceLock::new();
+    if let Some(api) = API.get() {
+        return Ok(api);
+    }
+    let api = load()?;
+    Ok(API.get_or_init(|| api))
 }
 
 fn load() -> Result<Api> {
-    let path = std::env::current_exe()
-        .context("find the executable")?
-        .with_file_name(LIBRARY);
+    let path = library_path()?;
+    if !path.is_file() {
+        anyhow::bail!(
+            "fzt isn't installed at {} (home-sync installs it)",
+            path.display()
+        );
+    }
     // SAFETY: fzt's library has no initialization side effects, and each symbol is cast to the
     // signature cmd/fztlib exports it with.
     unsafe {

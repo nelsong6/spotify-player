@@ -4,15 +4,20 @@
 //! session file: only the one whose integrated player is playing records progress, and each takes
 //! in what another wrote.
 
-use std::time::{Duration, Instant, SystemTime};
+#[cfg(feature = "streaming")]
+use std::time::Duration;
+use std::time::{Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
-use super::{Id as _, Playback, PlayerState, Track};
+#[cfg(feature = "streaming")]
+use super::PlayerState;
+use super::{Id as _, Playback, Track};
 use crate::config;
 
 const SESSION_FILE: &str = "last_session.json";
 /// How often the playing position is written to disk while playing.
+#[cfg(feature = "streaming")]
 const SAVE_INTERVAL: Duration = Duration::from_secs(10);
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -79,6 +84,7 @@ pub struct SessionState {
     pub session: SavedSession,
     last_saved: Option<Instant>,
     /// This instance's integrated player, the only device whose playback it records
+    #[cfg(feature = "streaming")]
     pub own_device: Option<String>,
     /// The integrated player's volume in percent, shown at the saved spot
     #[cfg(feature = "streaming")]
@@ -147,6 +153,7 @@ fn modified() -> Option<SystemTime> {
 }
 
 /// The playing item's URI and position
+#[cfg(feature = "streaming")]
 pub fn playing_item(player: &PlayerState) -> Option<(String, i64)> {
     let uri = player.currently_playing().and_then(|item| match item {
         rspotify::model::PlayableItem::Track(track) => {
@@ -244,6 +251,7 @@ impl SessionState {
     /// Record the playing item and position, when it plays on this instance's integrated
     /// player. Written to disk when the item changes, at most every `SAVE_INTERVAL` otherwise, or
     /// always when `force` is set.
+    #[cfg(feature = "streaming")]
     pub fn record_progress(&mut self, player: &PlayerState, force: bool) {
         let device = player
             .playback
@@ -271,6 +279,7 @@ impl SessionState {
         self.record(current_uri.to_string(), progress_ms, false);
     }
 
+    #[cfg(feature = "streaming")]
     fn record(&mut self, current_uri: String, progress_ms: i64, force: bool) {
         let item_changed = self.session.current_uri.as_deref() != Some(current_uri.as_str());
         let due = self.last_saved.is_none_or(|t| t.elapsed() >= SAVE_INTERVAL);

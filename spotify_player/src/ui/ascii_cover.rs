@@ -144,6 +144,9 @@ mod tests {
         assert_eq!(cell_span((0.0, [0, 0, 0]), 1.0).content, " ");
         assert_eq!(cell_span((1.0, [255, 255, 255]), 1.0).content, "@");
         // pulse gain brightens a mid-gray cell's character
-        assert!(cell_span((0.5, [128; 3]), 1.4).content != cell_span((0.5, [128; 3]), 1.0).content);
+        assert_ne!(
+            cell_span((0.5, [128; 3]), 1.4).content,
+            cell_span((0.5, [128; 3]), 1.0).content
+        );
     }
 }

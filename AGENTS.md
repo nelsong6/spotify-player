@@ -12,7 +12,8 @@ This file guides coding agents when working in this repository.
 
 | Module                        | Responsibility                                                              |
 | ----------------------------- | --------------------------------------------------------------------------- |
-| `main.rs`                     | Entry point; wires threads/tasks; CLI arg parsing; logging init             |
+| `lib.rs`                      | `run`, both programs' entry; wires threads/tasks; CLI parsing; logging init |
+| `main.rs`                     | The client's `main`, which calls `run` (the session's is its package's)     |
 | `state/`                      | Shared app state (`Arc<State>`): UI, player data, library caches, queue     |
 | `state/model.rs`              | Core domain types: `Track`, `Album`, `Artist`, `Playlist`, `Playback`, etc. |
 | `state/player.rs`             | `PlayerState`: current playback, devices, queue, progress estimation        |
@@ -33,7 +34,7 @@ This file guides coding agents when working in this repository.
 | `ui/{page,playback,popup}.rs` | Render functions for pages, playback bar, popups                            |
 | `ui/palette.rs`               | Draws the command palette over the page from fzt's rows                     |
 | `info.rs`, `ui/info.rs`       | The palette's info panel: CI's build stamps, this PC's install and checkout |
-| `fzt.rs`                      | Loads fzt (`fzt.dll`, fzt-terminal's `cmd/fztlib`) and wraps its JSON calls |
+| `fzt.rs`                      | Loads home-sync's fzt (`fzt.dll`, `cmd/fztlib`) and wraps its JSON calls    |
 | `keeper.rs`                   | The session's job of trimming played songs and refilling radio playlists    |
 | `problem.rs`                  | What's wrong now, reported by the session and each PC, for the screen       |
 | `ui/problems.rs`              | The red row at the top of the screen that says what's wrong                 |
@@ -70,7 +71,7 @@ Event/UI threads never call async functions directly. They send a `ClientRequest
 
 | Feature                                                                                                                                 | Effect                                                   |
 | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `streaming`                                                                                                                             | The session: librespot player, `spotify_player session`  |
+| `streaming`                                                                                                                             | The session: librespot player, the `session` subcommand  |
 | `cast`                                                                                                                                  | A PC: plays the session from Snapcast, visualization     |
 | `tui`                                                                                                                                   | The terminal UI: pages, keys, palette (part of `cast`)   |
 | `media-control`                                                                                                                         | OS media key integration                                 |
@@ -81,7 +82,7 @@ Event/UI threads never call async functions directly. They send a `ClientRequest
 | `notify`                                                                                                                                | Desktop notifications                                    |
 | `fzf`                                                                                                                                   | Fuzzy search                                             |
 
-Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the session's Linux build is `rustls-tls` + `streaming`, without `tui`, so the session's program holds no screen code. Code that's the session's or a PC's alone lives in its own file (`relay/session.rs` and `relay/pc.rs`, `screen/session.rs` and `screen/pc.rs`, `client/session_side.rs` and `client/pc_side.rs`). CI distributes both builds through their Forgejo release. Gate feature-specific code with `#[cfg(feature = "...")]`.
+Two programs, each its own workspace package built with plain defaults (as Snapcast ships snapserver and snapclient): the client, `spotify_player` (this crate's binary; default `cast` + `media-control` + `rustls-tls` + `ascii-cover`), which the PCs install; and the session, `spotify_player_session` (`spotify_player_session/`, a `main` that calls this crate's `run`), whose dependency on this crate turns on `rustls-tls` + `streaming` only, without `tui`, so the session's program holds no screen code and links no ALSA or D-Bus. The workspace's `default-members` is the client, so a plain `cargo build` builds it; `-p spotify_player_session` builds the session. Check and build each package on its own (`-p`): built together (`--workspace`), Cargo unifies their features into one build of this crate, so each program would carry the other's. Code that's the session's or a PC's alone lives in its own file (`relay/session.rs` and `relay/pc.rs`, `screen/session.rs` and `screen/pc.rs`, `client/session_side.rs` and `client/pc_side.rs`). CI distributes both builds through their Forgejo release. Gate feature-specific code with `#[cfg(feature = "...")]`.
 
 ## Verifying changes
 
@@ -89,16 +90,18 @@ Default: `cast` + `media-control` + `ascii-cover` (the PCs' build); the session'
 isolated instance on a throwaway tmux server), how to preview it for him, and how his
 open window gets a new release. Read it before running spt or touching its window.
 
-CI treats all warnings as errors. Before committing, run what CI runs:
+CI treats all warnings as errors. Before pushing, `ci-check` runs what CI runs. By hand, each
+package on its own, with its defaults:
 
 ```sh
-cargo fmt --all                      # CI checks: cargo fmt --all -- --check
-cargo test --no-default-features --features streaming,cast,media-control,image,notify,fzf
-cargo clippy --no-default-features --features streaming,cast,media-control,image,notify,fzf -- -D warnings
-cargo clippy --no-default-features -- -D warnings   # core paths, no features
+cargo fmt --all                                                           # CI checks: cargo fmt --all -- --check
+cargo clippy -j 4 -p spotify_player --all-targets -- -D warnings          # the client
+cargo clippy -j 4 -p spotify_player_session --all-targets -- -D warnings  # the session
+cargo test -j 4 -p spotify_player
+cargo test -j 4 -p spotify_player_session
 ```
 
-When fixing no-feature clippy warnings, you may need `#[allow(dead_code)]` / `#[allow(unused_variables)]` on items only used in feature-gated paths. Lint the session's build on its own too: `cargo clippy --no-default-features --features rustls-tls,streaming -- -D warnings`.
+Code only one program uses is gated on its feature (`#[cfg(feature = "streaming")]` for the session's), so neither build warns about the other's dead code. Upstream's optional features lint with `cargo clippy -j 4 -p spotify_player --no-default-features --features streaming,cast,media-control,image,notify,fzf -- -D warnings`.
 
 ## Conventions
 
@@ -261,5 +264,6 @@ Working on the fork:
 - To see the UI without touching the desktop or the music, run a test instance as
   TESTING.md's isolated check does: its own `-c`/`-C` folders, `client_port` and
   `session_file`, and `cast_server` pointing at this PC, on a throwaway tmux server.
-- Builds and Rust checks run only in CI; nelsonpc is the gaming PC. The session's Linux
-  build comes only from CI's `linux-build`.
+- nelsonpc is the gaming PC: local builds and Rust checks (`ci-check` included) run at four
+  jobs (`-j 4`). The session's Linux build comes only from CI's release build of the
+  `spotify_player_session` package.

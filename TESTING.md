@@ -32,7 +32,7 @@ plays nothing into it.
 
 ## Automated checks
 
-CI runs formatting, tests, both clippy runs and the builds on every PR (AGENTS.md,
+CI runs formatting, tests, clippy and the builds of both packages on every PR (AGENTS.md,
 Verifying changes); a PR's Windows job also leaves a signed build as the
 `spotify_player-windows` artifact. nelsonpc is the gaming PC: don't build here when
 CI can, and cap any local build at four jobs (`cargo build -j 4`).
@@ -132,7 +132,7 @@ remove `$sptQa` after checking it is the `spt-qa-*` folder under `$env:TEMP`.
 
 A change to what he sees is shown to him before it ships. Run the PR's build in the
 isolated check above in place of the installed one: the PR's Windows job uploads it,
-signed, with `fzt.dll`, as the `spotify_player-windows` artifact. Find the one whose
+signed, as the `spotify_player-windows` artifact. Find the one whose
 run built the PR's head commit:
 
 ```powershell
@@ -145,14 +145,15 @@ $artifact = @(Invoke-RestMethod -Headers $forgejo "$api/actions/artifacts?name=s
     Select-Object -First 1
 Invoke-WebRequest -Headers $forgejo $artifact.archive_download_url -OutFile "$sptQa\build.zip"
 Expand-Archive "$sptQa\build.zip" "$sptQa\build"
-Get-AuthenticodeSignature "$sptQa\build\spotify_player.exe", "$sptQa\build\fzt.dll" | Select-Object Status, SignerCertificate
+Get-AuthenticodeSignature "$sptQa\build\spotify_player.exe" | Select-Object Status, SignerCertificate
 $sptQaExe = '"' + "$sptQa\build\spotify_player.exe" + '"'
 ```
 
-Both are `Valid`, `CN=at-terminal`. Never preview the build of a commit already
+It is `Valid`, `CN=at-terminal`. Never preview the build of a commit already
 released: it is the released binary, and a copy of that is never made. A local build
-(`cargo build -j 4 --release`) is the fallback; it is unsigned and needs `fzt.dll`
-pinned by `fzt.lock` beside it, as CI's Fetch fzt step does.
+(`cargo build -j 4 --release`, which builds the client package) is the fallback; it is
+unsigned. Every build loads fzt from home-sync's install
+(`C:\Program Files\at-home\fzt\current\fzt.dll`), so none needs a copy beside it.
 
 Put it in front of him with `tmux-throwaway show spt-qa -t system`, the bottom half of
 your own pane. Before telling him what it shows, read what he will see: list every pane

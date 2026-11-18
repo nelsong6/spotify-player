@@ -1305,6 +1305,7 @@ impl AppClient {
     /// there at the playing item and position: Spotify's apps drop a transferred track list, while
     /// another `spotify_player` plays one. Returns false, for a plain transfer, when the playback
     /// isn't the session's track list.
+    #[cfg(feature = "streaming")]
     pub async fn hand_off_track_list(
         &self,
         state: &SharedState,

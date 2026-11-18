@@ -5467,6 +5467,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "spotify_player_session"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "spotify_player",
+]
+
+[[package]]
 name = "sqlite-wasm-rs"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
