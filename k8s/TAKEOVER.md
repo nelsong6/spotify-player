@@ -31,7 +31,7 @@ These must be live, not only merged. Live since 2026-11-10:
 - fzt-automate's `tool-config:spt` reading `spt-config` (v0.1.99).
 - OpenBao `secret/services/spt-session` (`release-read-token`, `registry-read-token`: one
   Forgejo token, `spt-session-read`, with `read:repository` and `read:package`),
-  `secret/services/spt-session-build` (`registry-token`: `spt-session-build`, `write:package`),
+  `secret/services/spotify-player-build` (`registry-token`: `spt-session-build`, `write:package`),
   and the `spotify-player-publish` role (nelsong6/openbao), which binds the subject Forgejo
   sends, `repo:nelsong6/spotify-player:ref:refs/heads/master`.
 

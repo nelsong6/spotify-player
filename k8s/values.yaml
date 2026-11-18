@@ -7,7 +7,7 @@ serve: true
 # stager.sh) by the release that built it and its digest, and the spt release the stager
 # stages. A release whose k8s/image is unchanged keeps the image, so it reaches the running
 # pod without restarting it; a new image restarts it.
-image: forgejo.romaine.life/nelsong6/spt-session:v0.25.1.4@sha256:c791d7ab85a1b7131ea86b3f3010b72fd813347444c5300e4c69e607ad91403a
+image: forgejo.romaine.life/nelsong6/spotify-player:v0.25.1.4@sha256:c791d7ab85a1b7131ea86b3f3010b72fd813347444c5300e4c69e607ad91403a
 release:
   tag: v0.25.1.5
   commit: d3d068c1f00277cb23a09882db3e8ba29788497d
