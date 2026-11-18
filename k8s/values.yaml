@@ -9,8 +9,8 @@ serve: true
 # pod without restarting it; a new image restarts it.
 image: forgejo.romaine.life/nelsong6/spt-session:v0.25.1.4@sha256:c791d7ab85a1b7131ea86b3f3010b72fd813347444c5300e4c69e607ad91403a
 release:
-  tag: v0.25.1.4
-  commit: e80a6152cdc5987c444570139cb66b131aa06490
+  tag: v0.25.1.5
+  commit: d3d068c1f00277cb23a09882db3e8ba29788497d
 
 # The PCs' `cast_server`: Snapcast on 1704, the shared screen on 1706, the relay on 1707.
 host: spt.home.romaine.life
