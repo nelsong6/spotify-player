@@ -10,7 +10,7 @@ if [ "${1:-}" = --self-test ]; then
 	for p in bash jq curl inotifywait sqlite3 sha256sum; do command -v "$p"; done
 	bash -n /stager.sh
 	sh -n /run.sh
-	/lib64/ld-linux-x86-64.so.2 /ci/dist/spotify_player --version
+	/lib64/ld-linux-x86-64.so.2 /ci/dist/spotify_player_session-linux-amd64 --version
 	exit 0
 fi
 exec snapserver --config /etc/snapserver.conf "$@"

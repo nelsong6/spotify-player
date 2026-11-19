@@ -145,8 +145,8 @@ $artifact = @(Invoke-RestMethod -Headers $forgejo "$api/actions/artifacts?name=s
     Select-Object -First 1
 Invoke-WebRequest -Headers $forgejo $artifact.archive_download_url -OutFile "$sptQa\build.zip"
 Expand-Archive "$sptQa\build.zip" "$sptQa\build"
-Get-AuthenticodeSignature "$sptQa\build\spotify_player.exe" | Select-Object Status, SignerCertificate
-$sptQaExe = '"' + "$sptQa\build\spotify_player.exe" + '"'
+Get-AuthenticodeSignature "$sptQa\build\spotify_player-windows-amd64.exe" | Select-Object Status, SignerCertificate
+$sptQaExe = '"' + "$sptQa\build\spotify_player-windows-amd64.exe" + '"'
 ```
 
 It is `Valid`, `CN=at-terminal`. Never preview the build of a commit already

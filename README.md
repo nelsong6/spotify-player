@@ -55,9 +55,9 @@ Checkout [examples/README.md](https://github.com/aome510/spotify-player/blob/mas
 Nelson's fork lives at [Forgejo](https://forgejo.romaine.life/nelsong6/spotify-player).
 Every passing push to `master` cuts a release numbered on the upstream version it is built on
 (`v0.25.1.N`), containing
-`spotify_player.exe` (the client, built for Windows from the `spotify_player` package),
-`spotify_player` (the session, built for Linux from the `spotify_player_session` package),
-`session-sources.txt` and `session-release.json` (the commit and SHA256 checksums).
+`spotify_player-windows-amd64.exe` (the client, built for Windows from the `spotify_player` package),
+`spotify_player_session-linux-amd64` (the session, built for Linux from the `spotify_player_session` package)
+and `SHA256SUMS` (every file's SHA-256).
 Each package builds with its own default features. The Windows binary is signed. The client
 loads fzt from home-sync's install of fzt-terminal, so the release carries no copy of it.
 GitHub is a push mirror with Actions disabled.
@@ -65,7 +65,7 @@ GitHub is a push mirror with Actions disabled.
 CI publishes the complete release and starts home-sync on every PC, which installs
 the signed build and reconciles running spt panes. It then opens a PR pinning the release
 in `k8s/values.yaml`, which merges itself once its checks pass. On the home cluster the
-session's stager checks the pinned release against `session-release.json`, stages it, and
+session's stager checks the pinned release's session binary against `SHA256SUMS`, stages it, and
 restarts only the waiting session slot. The playing slot hands over between songs. Releases require no manual publisher;
 the former `publish.ps1` and `restart-spt.ps1` have been retired.
 

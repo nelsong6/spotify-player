@@ -6,13 +6,16 @@
 #
 # A release is staged only as CI published it: a stable release of the pinned tag and commit
 # (the shared suites' "Joined release from", or the earlier own CI's "Built from"),
-# and a binary matching session-release.json's size and SHA-256. Staged releases never change.
+# and a session binary of the size the release lists and the SHA-256 its SHA256SUMS lists.
+# It is staged as spotify_player, which run.sh starts. Staged releases never change.
 # Any failure exits, and Kubernetes starts the stager again after its back-off.
 set -euo pipefail
 FORGEJO=https://forgejo.romaine.life
 REPO=nelsong6/spotify-player
 R=/state/releases
 SLOTS=/state/data/slots
+# The session's Linux build, as the release publishes it.
+ASSET=spotify_player_session-linux-amd64
 
 get() {
 	printf 'header = "Authorization: token %s"\n' "$(cat /secrets/release-read-token)" |
@@ -21,27 +24,29 @@ get() {
 
 stage() {
 	local tag=$1 commit=$2
-	if [ -f "$R/$tag/session-release.json" ]; then
+	if [ -f "$R/$tag/spotify_player" ]; then
 		return
 	fi
-	local release manifest size sha stage
+	local release size sums sha stage
 	release=$(get "$FORGEJO/api/v1/repos/$REPO/releases/tags/$tag")
 	jq -e --arg tag "$tag" --arg commit "$commit" '.tag_name == $tag and .target_commitish == $commit
 		and (.body | startswith("Joined release from \($commit).") or startswith("Built from \($commit)."))
 		and (.draft | not) and (.prerelease | not)' <<<"$release" >/dev/null ||
 		{ echo "stager: $tag is not a published CI release of $commit" >&2; exit 1; }
+	size=$(jq -er --arg name "$ASSET" '[.assets[] | select(.name == $name)] | if length == 1 then .[0].size else empty end' <<<"$release") ||
+		{ echo "stager: $tag has no $ASSET" >&2; exit 1; }
+	sums=$(jq -er '[.assets[] | select(.name == "SHA256SUMS")] | if length == 1 then .[0].size else empty end' <<<"$release") ||
+		{ echo "stager: $tag has no SHA256SUMS" >&2; exit 1; }
 	stage=$(mktemp -d "$R/.stage-XXXXXX")
 	trap 'rm -rf "$stage"' EXIT
-	get "$FORGEJO/$REPO/releases/download/$tag/session-release.json" >"$stage/session-release.json"
-	manifest=$(cat "$stage/session-release.json")
-	jq -e --arg tag "$tag" --arg commit "$commit" '.tag == $tag and .commit == $commit' <<<"$manifest" >/dev/null ||
-		{ echo "stager: $tag's session-release.json names another release" >&2; exit 1; }
-	size=$(jq -er '.files.spotify_player.size' <<<"$manifest")
-	sha=$(jq -er '.files.spotify_player.sha256' <<<"$manifest")
-	get --max-filesize "$size" "$FORGEJO/$REPO/releases/download/$tag/spotify_player" >"$stage/spotify_player"
+	get --max-filesize "$sums" "$FORGEJO/$REPO/releases/download/$tag/SHA256SUMS" >"$stage/SHA256SUMS"
+	sha=$(awk -v name="$ASSET" '$2 == name { print $1 }' "$stage/SHA256SUMS")
+	[[ $sha =~ ^[0-9a-f]{64}$ ]] ||
+		{ echo "stager: $tag's SHA256SUMS doesn't list $ASSET once" >&2; exit 1; }
+	get --max-filesize "$size" "$FORGEJO/$REPO/releases/download/$tag/$ASSET" >"$stage/spotify_player"
 	if [ "$(stat -c %s "$stage/spotify_player")" != "$size" ] ||
 		! echo "$sha  $stage/spotify_player" | sha256sum -c --quiet -; then
-		echo "stager: $tag's spotify_player doesn't match session-release.json" >&2
+		echo "stager: $tag's $ASSET doesn't match its SHA256SUMS" >&2
 		exit 1
 	fi
 	chmod 755 "$stage" "$stage/spotify_player"

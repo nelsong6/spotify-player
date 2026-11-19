@@ -197,8 +197,8 @@ Working on the fork:
   `k8s/image` its image (Snapcast, `run.sh`, and `stager.sh`, which stages the release
   `k8s/values.yaml` pins without restarting the pod). CI publishes complete Forgejo releases,
   starts the PCs' home-sync tasks, and proposes each release as a pin PR that merge-queue
-  lands; the image is built again, and its pin moved, only when `k8s/image` changed. The stager checks the pinned release against `session-release.json`
-  (the commit and every asset's SHA256 and size), stages it, and restarts only the waiting
+  lands; the image is built again, and its pin moved, only when `k8s/image` changed. The stager checks the pinned release
+  (its tag and commit, and the session binary's size and its SHA256 in `SHA256SUMS`), stages it, and restarts only the waiting
   slot, which takes over between songs. A change to `k8s/` outside `k8s/image`, or to Markdown, alone builds no spt and makes
   no release, so a docs change doesn't restart the PCs' windows. The PCs reach the session as `spt.home.romaine.life` on 1704, 1706 and 1707,
   k3s's service load balancer on the cluster's address.
