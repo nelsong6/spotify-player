@@ -5,6 +5,13 @@ members = ["spotify_player", "spotify_player_session"]
 default-members = ["spotify_player"]
 resolver = "2"
 
+# The release ships the session for the cluster and the client for the PCs.
+[workspace.metadata.pipeline-templates.targets.x86_64-unknown-linux-gnu]
+package = "spotify_player_session"
+
+[workspace.metadata.pipeline-templates.targets.x86_64-pc-windows-msvc]
+package = "spotify_player"
+
 [profile.release]
 debug = 1
 
