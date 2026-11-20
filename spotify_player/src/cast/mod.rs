@@ -82,7 +82,7 @@ pub fn start(bands: Option<Arc<Mutex<VisBands>>>) -> anyhow::Result<()> {
         chosen: Mutex::new(load_cache_file(CHOSEN_OUTPUTS_FILE).unwrap_or_default()),
         default_output: Mutex::new(None),
     });
-    let feed = Arc::new(Mutex::new(Feed::default()));
+    let feed = Arc::new(Mutex::new(Feed::new(events.clone())));
     let clock = Arc::new(Clock::default());
 
     let played = match bands {

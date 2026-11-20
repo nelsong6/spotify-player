@@ -4,9 +4,15 @@
 //! the system's default output changes, and picks up a chosen output when it appears (a TV switched
 //! on). The sound card's callback is told when its buffer reaches the speaker, which is what keeps
 //! the PCs, and a PC's outputs, in step.
+//!
+//! The outputs are open only while the session sends audio. An open output plays silence when
+//! there is none, and Windows counts an open stream on some sound cards (Realtek's) as audio
+//! playing, which keeps the PC from sleeping; so after `IDLE` without audio they close, and the
+//! next audio opens them again.
 
+use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Context as _;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -20,6 +26,9 @@ use super::Mute;
 
 /// How long to wait between attempts to open an output that failed to open
 const REOPEN_INTERVAL: Duration = Duration::from_secs(2);
+/// How long the outputs stay open with no audio arriving (the session paused): longer than the
+/// gap between songs, so they close only when the music stops
+const IDLE: Duration = Duration::from_secs(10);
 /// The stream is always stereo; the session's player makes nothing else
 pub const CHANNELS: usize = 2;
 
@@ -28,21 +37,30 @@ pub struct Feed {
     input: Option<Format>,
     buffer: Micros,
     outputs: Vec<Arc<Mutex<Shared>>>,
+    /// The chunks not yet due at the speaker, for an output that opens after they arrived
+    recent: VecDeque<(Micros, Vec<u8>)>,
+    last_chunk: Option<Instant>,
+    /// Set when the outputs close for want of audio; the next chunk wakes the outputs thread
+    closed: bool,
+    events: flume::Sender<Event>,
 }
 
-impl Default for Feed {
-    fn default() -> Self {
+impl Feed {
+    pub fn new(events: flume::Sender<Event>) -> Self {
         Self {
             input: None,
             buffer: 1_000_000,
             outputs: Vec::new(),
+            recent: VecDeque::new(),
+            last_chunk: None,
+            closed: false,
+            events,
         }
     }
-}
 
-impl Feed {
     pub fn set_input(&mut self, format: Format) {
         self.input = Some(format);
+        self.recent.clear();
         for output in &self.outputs {
             output.lock().set_input(format);
         }
@@ -56,6 +74,7 @@ impl Feed {
     }
 
     pub fn clear(&mut self) {
+        self.recent.clear();
         for output in &self.outputs {
             output.lock().stream.clear();
         }
@@ -63,9 +82,37 @@ impl Feed {
 
     /// Queue a chunk of 16-bit PCM recorded at server time `start`
     pub fn push_chunk(&mut self, start: Micros, pcm: &[u8], server_now: Micros) {
+        self.push_chunk_at(start, pcm, server_now, Instant::now());
+    }
+
+    fn push_chunk_at(&mut self, start: Micros, pcm: &[u8], server_now: Micros, now: Instant) {
+        self.last_chunk = Some(now);
+        if self.closed {
+            self.closed = false;
+            let _ = self.events.send(Event::Audio);
+        }
+        self.recent.push_back((start, pcm.to_vec()));
+        while self
+            .recent
+            .front()
+            .is_some_and(|(start, _)| server_now - start > self.buffer)
+        {
+            self.recent.pop_front();
+        }
         for output in &self.outputs {
             output.lock().push_chunk(start, pcm, server_now);
         }
+    }
+
+    /// How long until the outputs should close for want of audio; `None` when they should now,
+    /// which also arms the wake-up on the next chunk
+    fn until_idle(&mut self, now: Instant) -> Option<Duration> {
+        let left = self
+            .last_chunk
+            .and_then(|last| IDLE.checked_sub(now.saturating_duration_since(last)))
+            .filter(|left| !left.is_zero());
+        self.closed = left.is_none();
+        left
     }
 
     /// A new output's copy of the stream, fed once attached
@@ -82,13 +129,20 @@ impl Feed {
         Arc::new(Mutex::new(shared))
     }
 
-    fn attach(&mut self, shared: &Arc<Mutex<Shared>>) {
+    /// Start feeding an output, with the chunks that arrived before it opened and are still to
+    /// play, so it starts in time with the rest. `server_now` is `None` while the clock isn't synced.
+    fn attach(&mut self, shared: &Arc<Mutex<Shared>>, server_now: Option<Micros>) {
         // the format or buffer may have changed while the output's stream was opening
         let mut output = shared.lock();
         if output.input != self.input || output.buffer != self.buffer {
             output.input = self.input;
             output.buffer = self.buffer;
             output.reset();
+        }
+        if let Some(server_now) = server_now {
+            for (start, pcm) in &self.recent {
+                output.push_chunk(*start, pcm, server_now);
+            }
         }
         drop(output);
         self.outputs.push(Arc::clone(shared));
@@ -159,6 +213,8 @@ pub enum Event {
     DevicesChanged,
     /// The outputs chosen to play besides the default, by name
     Chosen(Vec<String>),
+    /// Audio arrived after the outputs closed for want of it
+    Audio,
 }
 
 /// An output playing the stream; dropping it closes the sound card's stream and stops feeding it
@@ -175,8 +231,9 @@ impl Drop for Open {
     }
 }
 
-/// Play the stream on the default output and the chosen ones for as long as the process runs.
-/// Only the default output feeds the visualization. `default` is kept at the default output's name.
+/// Play the stream on the default output and the chosen ones for as long as the process runs,
+/// with the outputs open only while audio arrives. Only the default output feeds the
+/// visualization. `default` is kept at the default output's name.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     feed: &Arc<Mutex<Feed>>,
@@ -203,6 +260,27 @@ pub fn run(
             .as_ref()
             .and_then(|device| device.name().ok());
         default.lock().clone_from(&default_name);
+
+        // the feed's lock is released here: closing an output takes it
+        let idle_in = feed.lock().until_idle(Instant::now());
+        let Some(idle_in) = idle_in else {
+            if main.is_some() || !extras.is_empty() {
+                tracing::info!(
+                    "No audio from the session; closing the audio outputs until there is"
+                );
+                main = None;
+                extras.clear();
+            }
+            // nothing is failing to play while there is nothing to play
+            crate::problem::clear(crate::problem::Kind::Output);
+            let Ok(first) = changes.recv() else {
+                return;
+            };
+            for event in std::iter::once(first).chain(changes.try_iter()) {
+                handle(event, &mut main, &mut extras, &mut chosen);
+            }
+            continue;
+        };
         let mut retry = false;
         let mut failures = Vec::new();
 
@@ -274,37 +352,43 @@ pub fn run(
         // without Windows' device notices, a chosen output that isn't there is looked for again
         let retry = retry || (cfg!(not(windows)) && !missing.is_empty());
 
-        let first = if retry {
-            match changes.recv_timeout(REOPEN_INTERVAL) {
-                Ok(event) => Some(event),
-                Err(flume::RecvTimeoutError::Timeout) => None,
-                Err(flume::RecvTimeoutError::Disconnected) => return,
-            }
+        // woken by a change, a retry, or the time the audio would have to stop by to close them
+        let wait = if retry {
+            idle_in.min(REOPEN_INTERVAL)
         } else {
-            match changes.recv() {
-                Ok(event) => Some(event),
-                Err(_) => return,
-            }
+            idle_in
+        };
+        let first = match changes.recv_timeout(wait) {
+            Ok(event) => Some(event),
+            Err(flume::RecvTimeoutError::Timeout) => None,
+            Err(flume::RecvTimeoutError::Disconnected) => return,
         };
         for event in first.into_iter().chain(changes.try_iter()) {
-            match event {
-                Event::Lost(name) => {
-                    tracing::warn!("The audio output {name} went away");
-                    if main.as_ref().is_some_and(|output| output.name == name) {
-                        main = None;
-                    }
-                    extras.retain(|output| output.name != name);
-                }
-                #[cfg(windows)]
-                Event::DefaultChanged => {
-                    tracing::info!("The default audio output device changed; reopening on it");
-                    main = None;
-                }
-                #[cfg(windows)]
-                Event::DevicesChanged => {}
-                Event::Chosen(names) => chosen = names,
+            handle(event, &mut main, &mut extras, &mut chosen);
+        }
+    }
+}
+
+fn handle(event: Event, main: &mut Option<Open>, extras: &mut Vec<Open>, chosen: &mut Vec<String>) {
+    match event {
+        Event::Lost(name) => {
+            tracing::warn!("The audio output {name} went away");
+            if main.as_ref().is_some_and(|output| output.name == name) {
+                *main = None;
+            }
+            extras.retain(|output| output.name != name);
+        }
+        #[cfg(windows)]
+        Event::DefaultChanged => {
+            if main.take().is_some() {
+                tracing::info!("The default audio output device changed; reopening on it");
             }
         }
+        #[cfg(windows)]
+        Event::DevicesChanged => {}
+        Event::Chosen(names) => *chosen = names,
+        // the loop opens the outputs again
+        Event::Audio => {}
     }
 }
 
@@ -362,7 +446,8 @@ fn open(
         other => anyhow::bail!("unsupported sample format {other}"),
     }?;
     stream.play()?;
-    feed.lock().attach(&shared);
+    feed.lock()
+        .attach(&shared, clock.is_synced().then(|| clock.server_now()));
     Ok(Open {
         name,
         feed: Arc::clone(feed),
@@ -519,5 +604,82 @@ mod default_device {
         fn OnPropertyValueChanged(&self, _: &PCWSTR, _: &PROPERTYKEY) -> Result<()> {
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FORMAT: Format = Format {
+        rate: 44_100,
+        channels: 2,
+        bits: 16,
+    };
+    const CHUNK: Micros = 20_000;
+
+    /// 20 ms of a constant, non-silent 16-bit stereo signal
+    fn pcm() -> Vec<u8> {
+        let frames = (i64::from(FORMAT.rate) * CHUNK / 1_000_000) as usize;
+        std::iter::repeat_n(8_000i16.to_le_bytes(), frames * CHANNELS)
+            .flatten()
+            .collect()
+    }
+
+    #[test]
+    fn closes_without_audio_and_wakes_on_the_next() {
+        let (events, changes) = flume::unbounded();
+        let mut feed = Feed::new(events);
+        let start = Instant::now();
+        assert_eq!(feed.until_idle(start), None, "nothing has played yet");
+
+        feed.push_chunk_at(0, &pcm(), 0, start);
+        assert!(matches!(changes.try_recv(), Ok(Event::Audio)));
+        feed.push_chunk_at(CHUNK, &pcm(), CHUNK, start);
+        assert!(changes.try_recv().is_err(), "one wake-up per close");
+
+        assert_eq!(
+            feed.until_idle(start + Duration::from_secs(4)),
+            IDLE.checked_sub(Duration::from_secs(4))
+        );
+        feed.push_chunk_at(2 * CHUNK, &pcm(), 2 * CHUNK, start);
+        assert!(
+            changes.try_recv().is_err(),
+            "still open, so nothing to wake"
+        );
+        assert_eq!(feed.until_idle(start + IDLE), None);
+        feed.push_chunk_at(3 * CHUNK, &pcm(), 3 * CHUNK, start + IDLE);
+        assert!(matches!(changes.try_recv(), Ok(Event::Audio)));
+    }
+
+    #[test]
+    fn an_output_that_opens_late_plays_what_already_arrived() {
+        let (events, _changes) = flume::unbounded();
+        let mut feed = Feed::new(events);
+        let buffer = 600_000;
+        feed.set_input(FORMAT);
+        feed.set_buffer(buffer);
+        let now = Instant::now();
+        let server_now = 1_000_000;
+        let mut start = 0;
+        while start < server_now {
+            feed.push_chunk_at(start, &pcm(), start, now);
+            start += CHUNK;
+        }
+        // only what is not yet due at the speaker is kept
+        assert_eq!(feed.recent.len(), (buffer / CHUNK + 1) as usize);
+
+        let mut out = vec![0.0f32; 480 * CHANNELS];
+        let late = feed.output(48_000);
+        feed.attach(&late, Some(server_now));
+        assert!(late.lock().stream.fill(&mut out, server_now, 10_000));
+        assert!(
+            out.iter().all(|&s| s > 0.2),
+            "plays the signal, not silence"
+        );
+
+        let unsynced = feed.output(48_000);
+        feed.attach(&unsynced, None);
+        assert!(!unsynced.lock().stream.fill(&mut out, server_now, 10_000));
     }
 }

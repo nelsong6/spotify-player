@@ -27,8 +27,9 @@ run in isolation; never point a test at the real session to get one. Never send 
 to his window (space there pauses or takes control), and never start, stop or skip
 playback from a test.
 
-A test instance opens this PC's default output (`Using audio device` in its log) and
-plays nothing into it.
+A test instance gets no audio, so it never opens this PC's audio outputs: spt opens
+them only while the session sends audio and closes them 10 seconds after it stops
+(`cast/output.rs`), so its log has no `Using audio device` line.
 
 ## Automated checks
 
