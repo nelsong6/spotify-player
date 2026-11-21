@@ -186,6 +186,12 @@ Spotify behaviors this fork depends on, each verified live (2026-10-23 to 10-25)
   `"reason": "QUOTA_EXCEEDED"`. Neither size is published. On 2026-10-26 a day of polling from
   three instances, then a publish whose restart burst the library load, earned a 68,401 s wait
   (about 19 h) on spt's app. The middleware now logs every refusal's body.
+- **A Web API play of `uris` reaches the player under a placeholder context**,
+  `spotify:webapi` (since 2026-11-17 also `spotify:webapi:<id>`), with the tracks inline.
+  librespot 0.8.0 tries to resolve it, `context-resolve` answers 400, and the Web API returns
+  403 "Restriction violated", so the radio (a song list) couldn't be resumed (SPT-41). The
+  workspace patches in `vendor/librespot-connect`, 0.8.0 with only that fixed (it plays the
+  inline tracks); drop the patch once a librespot release has librespot-org/librespot#1870.
 - **ncspot's client ID accepts only `/ncspot_login`** as its redirect path (any loopback
   port); `/login` gets "redirect_uri: no matching configuration". Upstream still sends
   `/login` for the fallback client, which only shows on a first sign-in, since refreshing a

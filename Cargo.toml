@@ -4,6 +4,7 @@ members = ["spotify_player", "spotify_player_session"]
 # together, Cargo would give the client the session's features.
 default-members = ["spotify_player"]
 resolver = "2"
+exclude = ["vendor"]
 
 # The release ships the session for the cluster and the client for the PCs.
 [workspace.metadata.pipeline-templates.targets.x86_64-unknown-linux-gnu]
@@ -11,6 +12,12 @@ package = "spotify_player_session"
 
 [workspace.metadata.pipeline-templates.targets.x86_64-pc-windows-msvc]
 package = "spotify_player"
+
+# librespot-connect 0.8.0 with the fix for Web API plays of a song list, which Spotify now sends
+# under a placeholder context uri that 0.8.0 tries to resolve, failing the play (SPT-41;
+# librespot-org/librespot#1870). Drop it once a librespot release has the fix.
+[patch.crates-io]
+librespot-connect = { path = "vendor/librespot-connect" }
 
 [profile.release]
 debug = 1
