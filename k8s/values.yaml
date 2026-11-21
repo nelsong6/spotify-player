@@ -9,8 +9,8 @@ serve: true
 # pod without restarting it; a new image restarts it.
 image: forgejo.romaine.life/nelsong6/spotify-player:v0.25.1.6@sha256:74284415720e5c6669ccd339c185a2eef17d55be5db9a99c278a4339768a60ba
 release:
-  tag: v0.25.1.8
-  commit: e39d9be7672b9ab5bb8a2e8017013fa3f85f1d8b
+  tag: v0.25.1.9
+  commit: f2523b64c5151bd3571efc9fa3ff5c32395f6c7e
 
 # The PCs' `cast_server`: Snapcast on 1704, the shared screen on 1706, the relay on 1707.
 host: spt.home.romaine.life
